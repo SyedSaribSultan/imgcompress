@@ -195,8 +195,9 @@ function onWorkerMessage(slot, msg) {
 
   if (msg.type === "progress") {
     item.frac = msg.frac ?? item.frac ?? 0;
-    item.progress = msg.stage === "decoding"
-      ? "decoding…"
+    item.progress =
+      msg.stage === "codec" ? `loading ${msg.detail} engine…`
+      : msg.stage === "decoding" ? "decoding…"
       : `${msg.detail || "encoding"} · ${Math.round((item.frac || 0) * 100)}%`;
     scheduleRender("queue");
     return;
@@ -861,44 +862,90 @@ function pushSettings() {
 /* ----------------------------- sample images ------------------------------ */
 
 /** No images handy? Generate two on the spot - one photographic, one flat -
- *  so the bake-off's whole point (different winners) shows immediately. */
+ *  so the bake-off's whole point (different winners) shows immediately.
+ *
+ *  The grain matters (it is what makes the photo behave like a photo rather
+ *  than a gradient), but a per-pixel JS loop over a megapixel froze the main
+ *  thread for seconds with no feedback. Instead the noise is built once as a
+ *  small tile and stamped by the compositor, which is instant. */
+function paintPhoto(ctx, W, H) {
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, "#e8927c"); g.addColorStop(.5, "#c56a8b"); g.addColorStop(1, "#4a3f6b");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const sx = W * 0.74, sy = H * 0.31, sr = Math.min(W, H) * 0.18;
+  const sun = ctx.createRadialGradient(sx, sy, sr * 0.07, sx, sy, sr);
+  sun.addColorStop(0, "#fbe7bd"); sun.addColorStop(1, "rgba(251,231,189,0)");
+  ctx.fillStyle = sun; ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 7); ctx.fill();
+
+  // Light film grain: enough that this behaves like a photograph rather than
+  // a flat gradient, gentle enough that JPEG still wins the bake-off.
+  const TILE = 128;
+  const tile = document.createElement("canvas");
+  tile.width = TILE; tile.height = TILE;
+  const tctx = tile.getContext("2d");
+  const id = tctx.createImageData(TILE, TILE);
+  for (let i = 0; i < id.data.length; i += 4) {
+    id.data[i] = id.data[i + 1] = id.data[i + 2] = 128;
+    id.data[i + 3] = Math.random() * 40;   // sparse, low-amplitude speckle
+  }
+  tctx.putImageData(id, 0, 0);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay";
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = ctx.createPattern(tile, "repeat");
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+function paintUi(ctx, W, H) {
+  ctx.fillStyle = "#f4f5f7"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#191c22"; ctx.fillRect(0, 0, W, 64);
+  const rows = Math.floor((H - 96) / 80);
+  for (let i = 0; i < rows; i++) {
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(48, 96 + i * 80, W - 96, 64);
+    ctx.fillStyle = ["#4471e0", "#3d9e6d", "#c2542e"][i % 3];
+    ctx.fillRect(64, 112 + i * 80, 32, 32);
+    ctx.fillStyle = "#2a2e36";
+    ctx.fillRect(116, 118 + i * 80, Math.min(W - 200, 300 + (i * 83) % 400), 9);
+    ctx.fillStyle = "#9aa1ad";
+    ctx.fillRect(116, 136 + i * 80, Math.min(W - 240, 220 + (i * 131) % 500), 7);
+  }
+}
+
+let samplesBusy = false;
 async function addSamples() {
-  const photo = document.createElement("canvas");
-  photo.width = 1280; photo.height = 840;
-  {
-    const ctx = photo.getContext("2d");
-    const g = ctx.createLinearGradient(0, 0, 1280, 840);
-    g.addColorStop(0, "#e8927c"); g.addColorStop(.5, "#c56a8b"); g.addColorStop(1, "#4a3f6b");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 1280, 840);
-    ctx.fillStyle = "#f7d9a0";
-    ctx.beginPath(); ctx.arc(950, 260, 130, 0, 7); ctx.fill();
-    const id = ctx.getImageData(0, 0, 1280, 840);
-    for (let i = 0; i < id.data.length; i += 4) {
-      const n = (Math.random() - 0.5) * 22;
-      id.data[i] += n; id.data[i + 1] += n; id.data[i + 2] += n;
-    }
-    ctx.putImageData(id, 0, 0);
+  if (samplesBusy) return;
+  samplesBusy = true;
+  const btn = $("sample-btn");
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Building samples…";
+  // Yield twice so the button actually repaints before any drawing starts.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  try {
+    const make = (paint, W, H) => {
+      const c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      paint(c.getContext("2d"), W, H);
+      return new Promise((r) => c.toBlob(r, "image/png"));
+    };
+    // Deliberately modest: a sample exists to demonstrate the bake-off in a
+    // few seconds, not to benchmark the machine.
+    const photo = await make(paintPhoto, 900, 600);
+    const ui = await make(paintUi, 1000, 700);
+    addFiles([
+      new File([photo], "sample-photo.png", { type: "image/png" }),
+      new File([ui], "sample-ui.png", { type: "image/png" }),
+    ]);
+  } catch {
+    toast("Could not build the samples — try dropping your own image");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+    samplesBusy = false;
   }
-  const ui = document.createElement("canvas");
-  ui.width = 1280; ui.height = 840;
-  {
-    const ctx = ui.getContext("2d");
-    ctx.fillStyle = "#f4f5f7"; ctx.fillRect(0, 0, 1280, 840);
-    ctx.fillStyle = "#191c22"; ctx.fillRect(0, 0, 1280, 64);
-    for (let i = 0; i < 9; i++) {
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(48, 96 + i * 80, 1184, 64);
-      ctx.fillStyle = ["#4471e0", "#3d9e6d", "#c2542e"][i % 3];
-      ctx.fillRect(64, 112 + i * 80, 32, 32);
-      ctx.fillStyle = "#2a2e36"; ctx.fillRect(116, 118 + i * 80, 300 + (i * 83) % 400, 9);
-      ctx.fillStyle = "#9aa1ad"; ctx.fillRect(116, 136 + i * 80, 220 + (i * 131) % 500, 7);
-    }
-  }
-  const blobs = await Promise.all([photo, ui].map(
-    (c) => new Promise((r) => c.toBlob(r, "image/png"))));
-  addFiles([
-    new File([blobs[0]], "sample-photo.png", { type: "image/png" }),
-    new File([blobs[1]], "sample-ui.png", { type: "image/png" }),
-  ]);
 }
 
 /* -------------------------------- events ---------------------------------- */

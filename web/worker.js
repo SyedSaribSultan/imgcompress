@@ -81,9 +81,12 @@ async function probeWebp() {
 
 const CODECS = { mozjpeg: null, oxipng: null, avif: null };
 
+let onCodecStatus = null;   // set per job so the UI can narrate the first load
+
 async function loadCodec(name, script, globalName, wasmFile) {
   if (CODECS[name] !== null) return CODECS[name];
   try {
+    if (onCodecStatus) onCodecStatus(name);
     importScripts(`vendor/${script}`);
     const bytes = await (await fetch(`vendor/${wasmFile}`)).arrayBuffer();
     const module = await WebAssembly.compile(bytes);
@@ -264,42 +267,79 @@ function exactPalette(rgba, maxColors) {
   return { indices, palette, exact: true };
 }
 
+/** Median cut over a sampled pixel set.
+ *
+ *  Boxes carry their own precomputed range and are kept in a flat sample
+ *  array, so each split touches only the box being split rather than
+ *  re-scanning every pixel in every box. The naive version was
+ *  O(boxes x pixels) and took tens of seconds on a noisy megapixel photo. */
 function medianCutPalette(rgba, maxColors) {
   const n = rgba.length >> 2;
-  // Sample at most ~250k pixels for box statistics; mapping still sees all.
-  const stride = Math.max(1, Math.floor(n / 250_000));
-  const px = [];
-  for (let i = 0; i < n; i += stride) {
-    const o = i * 4;
-    px.push([rgba[o], rgba[o + 1], rgba[o + 2], rgba[o + 3]]);
+  // Sample at most ~60k pixels for box statistics; mapping still sees all.
+  const stride = Math.max(1, Math.floor(n / 60_000));
+  const count = Math.ceil(n / stride);
+  const samples = new Uint8Array(count * 4);
+  for (let i = 0, s = 0; s < count; i += stride, s++) {
+    samples.set(rgba.subarray(i * 4, i * 4 + 4), s * 4);
   }
 
-  const boxes = [px];
-  while (boxes.length < maxColors) {
-    // Split the box with the widest channel range.
-    let bi = -1, bc = -1, bw = -1;
-    for (let i = 0; i < boxes.length; i++) {
-      const box = boxes[i];
-      if (box.length < 2) continue;
+  const rangeOf = (lo, hi) => {           // [widestChannel, width]
+    const min = [255, 255, 255, 255], max = [0, 0, 0, 0];
+    for (let i = lo; i < hi; i++) {
       for (let c = 0; c < 4; c++) {
-        let lo = 255, hi = 0;
-        for (const p of box) { if (p[c] < lo) lo = p[c]; if (p[c] > hi) hi = p[c]; }
-        const w = hi - lo;
-        if (w > bw) { bw = w; bi = i; bc = c; }
+        const v = samples[i * 4 + c];
+        if (v < min[c]) min[c] = v;
+        if (v > max[c]) max[c] = v;
       }
     }
-    if (bi < 0 || bw <= 0) break;
+    let ch = 0, width = -1;
+    for (let c = 0; c < 4; c++) {
+      // Alpha errors are the most visible, luma next; weight the search.
+      const w = (max[c] - min[c]) * (c === 3 ? 2 : 1);
+      if (w > width) { width = w; ch = c; }
+    }
+    return [ch, width];
+  };
+
+  const boxes = [];
+  const [ch0, w0] = rangeOf(0, count);
+  boxes.push({ lo: 0, hi: count, ch: ch0, width: w0 });
+
+  while (boxes.length < maxColors) {
+    let bi = -1, best = 0;
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      if (b.hi - b.lo < 2 || b.width <= 0) continue;
+      if (b.width > best) { best = b.width; bi = i; }
+    }
+    if (bi < 0) break;
+
     const box = boxes[bi];
-    box.sort((a, b) => a[bc] - b[bc]);
-    const mid = box.length >> 1;
-    boxes.splice(bi, 1, box.slice(0, mid), box.slice(mid));
+    // Sort just this box's slice on its widest channel.
+    const slice = [];
+    for (let i = box.lo; i < box.hi; i++) {
+      const o = i * 4;
+      slice.push([samples[o], samples[o + 1], samples[o + 2], samples[o + 3]]);
+    }
+    slice.sort((a, b) => a[box.ch] - b[box.ch]);
+    for (let i = 0; i < slice.length; i++) samples.set(slice[i], (box.lo + i) * 4);
+
+    const mid = box.lo + (slice.length >> 1);
+    const [chA, wA] = rangeOf(box.lo, mid);
+    const [chB, wB] = rangeOf(mid, box.hi);
+    boxes.splice(bi, 1,
+      { lo: box.lo, hi: mid, ch: chA, width: wA },
+      { lo: mid, hi: box.hi, ch: chB, width: wB });
   }
 
-  return boxes.filter((b) => b.length).map((box) => {
-    let r = 0, g = 0, b2 = 0, a = 0;
-    for (const p of box) { r += p[0]; g += p[1]; b2 += p[2]; a += p[3]; }
-    const k = box.length;
-    return [Math.round(r / k), Math.round(g / k), Math.round(b2 / k), Math.round(a / k)];
+  return boxes.filter((b) => b.hi > b.lo).map((b) => {
+    let r = 0, g = 0, bl = 0, a = 0;
+    for (let i = b.lo; i < b.hi; i++) {
+      const o = i * 4;
+      r += samples[o]; g += samples[o + 1]; bl += samples[o + 2]; a += samples[o + 3];
+    }
+    const k = b.hi - b.lo;
+    return [Math.round(r / k), Math.round(g / k), Math.round(bl / k), Math.round(a / k)];
   });
 }
 
@@ -909,9 +949,12 @@ async function runJob(msg) {
     ? settings.formats
     : TARGETS[settings.target] || TARGETS.figma;
   // Codecs load lazily, but availability gating needs them resolved first.
+  // The first job of a session pays for the download; say so out loud.
+  onCodecStatus = (codec) => post({ type: "progress", stage: "codec", detail: codec, frac: 0 });
   if (names.includes("avif")) await loadAvif();
   if (names.includes("jpeg")) await loadMozjpeg();
   if (names.includes("png") || names.includes("png8") || names.includes("png8x")) await loadOxipng();
+  onCodecStatus = null;
   names = names.filter((n) => {
     const e = encoders[n];
     if (!e) return false;

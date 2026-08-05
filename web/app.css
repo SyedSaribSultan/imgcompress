@@ -128,8 +128,10 @@ a:hover { text-decoration-color: var(--accent); }
   white-space: nowrap; text-decoration: none;
 }
 .btn:hover { background: var(--raised-hi); border-color: var(--ink-3); }
-.btn:active { transform: translateY(.5px); }
-.btn[disabled] { opacity: .4; pointer-events: none; }
+/* Presses must register instantly - a button that looks inert while work
+   starts reads as broken, however fast the work actually is. */
+.btn:active { transform: translateY(1px) scale(.985); filter: brightness(.94); }
+.btn[disabled] { opacity: .55; pointer-events: none; cursor: progress; }
 .btn.ghost { background: none; border-color: transparent; color: var(--ink-2); }
 .btn.ghost:hover { background: var(--raised); color: var(--ink); }
 .btn.primary {
