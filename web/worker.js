@@ -744,10 +744,43 @@ function ss2Rgba(refRgba, candRgba, W, H) {
   return worst;
 }
 
+/* Full-frame SSIMULACRA 2 above ~2.75MP would need hundreds of megabytes of
+ * planes per call; on a 12MP frame the float64 version needed ~1.8GB and the
+ * allocations threw, silently killing every lossy candidate. Past the budget,
+ * verification runs on a 3x3 spread of native-resolution 512px tiles - denser
+ * than the search's sampling, bounded in memory, and still a measurement of
+ * the actual pixels rather than a downscale. */
+const VERIFY_BUDGET = 2_750_000;
+
+function denseVerify(scoreFn, refRgba, candRgba, W, H) {
+  if (W * H <= VERIFY_BUDGET || Math.min(W, H) < TILE) {
+    return scoreFn(refRgba, candRgba, W, H);
+  }
+  const cols = Math.min(3, Math.floor(W / TILE));
+  const rows = Math.min(3, Math.floor(H / TILE));
+  let sum = 0, count = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const left = cols > 1 ? Math.floor((W - TILE) * col / (cols - 1)) : (W - TILE) >> 1;
+      const top = rows > 1 ? Math.floor((H - TILE) * row / (rows - 1)) : (H - TILE) >> 1;
+      const box = [left, top, left + TILE, top + TILE];
+      sum += scoreFn(cropRgba(refRgba, W, box), cropRgba(candRgba, W, box), TILE, TILE);
+      count++;
+    }
+  }
+  return sum / count;
+}
+
 function metricFor(name) {
-  return name === "ssim"
-    ? { name: "ssim", full: ssimRgba, perfect: 1.0 }
-    : { name: "ssimulacra2", full: ss2Rgba, perfect: 100.0 };
+  if (name === "ssim") {
+    return { name: "ssim", full: ssimRgba, verify: ssimRgba, perfect: 1.0 };
+  }
+  return {
+    name: "ssimulacra2",
+    full: ss2Rgba,
+    verify: (r, c, w, h) => denseVerify(ss2Rgba, r, c, w, h),
+    perfect: 100.0,
+  };
 }
 
 /* ------------------------------------------------------------------------- *
@@ -945,11 +978,12 @@ async function searchOne(job, encoder, target, report) {
     return { data, score: timed("ssimTiled", () => sampledScore(metric.full, rgba, cand, width, height)) };
   };
 
-  /* Full-frame verification on the level the search landed on. */
+  /* Verification on the level the search landed on: full-frame within the
+     memory budget, a dense native-resolution tile grid beyond it. */
   const finalScore = async (data) => {
     if (data._exact) return { score: metric.perfect };
     const cand = await timedAsync("back", () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
-    return { score: timed("ssimFull", () => metric.full(rgba, cand, width, height)) };
+    return { score: timed("ssimFull", () => metric.verify(rgba, cand, width, height)) };
   };
 
   /* Straight bisection over the whole ladder. The old version probed the top

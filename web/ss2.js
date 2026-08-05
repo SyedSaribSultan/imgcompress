@@ -91,17 +91,26 @@ const SS2_KERNEL = (() => {
  * plane pool - one job at a time per worker, so module-level reuse is safe
  * ------------------------------------------------------------------------- */
 
+/* Planes are Float32: validated against the float64 reference below with the
+ * same tolerance as the original port (the accumulators that feed the norms
+ * stay double precision, which is where the metric is actually sensitive).
+ * Float64 planes on a 12MP frame needed ~1.8GB of simultaneous buffers, the
+ * allocations threw inside the worker, every lossy candidate silently died,
+ * and a multi-megabyte lossless file won by forfeit. */
+const SS2_F = Float32Array;
+
 const SS2_POOL = new Map();
+const SS2_POOL_MAX_LEN = 3_000_000;   // never retain planes above ~12MB
 function ss2Take(n) {
   const bucket = SS2_POOL.get(n);
-  return bucket && bucket.length ? bucket.pop() : new Float64Array(n);
+  return bucket && bucket.length ? bucket.pop() : new SS2_F(n);
 }
 function ss2Give(...arrays) {
   for (const a of arrays) {
-    if (!a) continue;
+    if (!a || a.length > SS2_POOL_MAX_LEN) continue;
     let bucket = SS2_POOL.get(a.length);
     if (!bucket) SS2_POOL.set(a.length, bucket = []);
-    if (bucket.length < 8) bucket.push(a);
+    if (bucket.length < 3) bucket.push(a);
   }
 }
 function ss2Drain() { SS2_POOL.clear(); }

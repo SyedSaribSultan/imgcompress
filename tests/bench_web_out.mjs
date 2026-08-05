@@ -67,7 +67,12 @@ const server = spawn(process.execPath, ["-e", `
 `], { stdio: "ignore" });
 await new Promise((r) => setTimeout(r, 900));
 
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
+// protocolTimeout: a waitForFunction rides a single CDP call until it
+// resolves, and a 12MP image searched at full effort takes longer than the
+// 180s default.
+const browser = await puppeteer.launch({
+  executablePath: CHROME, headless: true, protocolTimeout: 3_600_000,
+});
 try {
   for (const target of ["figma", "web"]) {
     const dir = path.join(OUT, target);
@@ -110,6 +115,7 @@ try {
         out.push({
           name: it.name, fmt: it.fmt, ext: it.result?.ext || "",
           score: it.score, lossless: !!it.lossless,
+          warnings: it.warnings || [],
           bytes: b64(await it.afterBlob.arrayBuffer()),
         });
       }
@@ -124,7 +130,9 @@ try {
       writeFileSync(dest, buf);
       console.log(`  ${target.padEnd(5)} ${stem.padEnd(24)} ${String(r.fmt).padEnd(5)} ` +
         `${String(buf.length).padStart(9)} B  ` +
-        `${r.lossless ? "lossless" : "ssim " + (r.score ?? 0).toFixed(4)}`);
+        `${r.lossless ? "lossless" : "ss2 " + (r.score ?? 0).toFixed(1)}` +
+        // A silent forfeit must never look like a considered choice again.
+        (r.warnings.length ? `  WARN: ${r.warnings.join("; ")}` : ""));
     }
     await pg.close();
   }
