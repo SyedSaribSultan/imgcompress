@@ -215,3 +215,30 @@ Design notes that are decisions rather than accidents:
 Python 3.9–3.13, plus a **core-only job** that proves the tool still works with
 every optional engine absent. Keep that job passing: silently requiring an extra
 is how a "no dependencies to compile" promise quietly breaks.
+
+---
+
+# The web version (`web/`)
+
+A static port of the same engine that runs entirely in the browser, deployed at
+[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app). Four files:
+`index.html` (landing + app shell), `app.css`, `app.js` (UI, worker pool, zip
+download), `worker.js` (the engine: SSIM at the 5th percentile with
+dual-backdrop transparency scoring, ladder binary search, the bake-off, the
+never-bigger rule — a port of `quality.py` + `core.py` + `encoders.py`).
+
+What's honestly different from the desktop version, and why:
+
+* The metric is **SSIM p5, not SSIMULACRA 2** — there is no browser build of
+  SSIMULACRA 2. The page says so out loud rather than pretending.
+* Encoders are the browser's own (canvas JPEG/WebP/PNG), except **png8, which
+  is ours**: a median-cut quantizer with Floyd–Steinberg dithering and a
+  hand-rolled palette-PNG writer over `CompressionStream`. It detects exact
+  palettes (≤256 unique colours) and is genuinely lossless on flat artwork.
+* No zopfli / mozjpeg / libimagequant. The landing page pitches the desktop
+  version for exactly that reason.
+
+Deploys from `web/` as the Vercel project root (`vercel.json` holds the strict
+CSP and cache headers — no third-party requests of any kind). Tests live
+outside the repo in the session scratchpad: a Node suite for the pure functions
+and a puppeteer E2E that runs the fixture set against production.

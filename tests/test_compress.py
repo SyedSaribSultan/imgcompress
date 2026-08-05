@@ -194,6 +194,19 @@ class CompressTests(unittest.TestCase):
         res = compress_file(path, self.dst, Settings(formats=["jpeg"], **FAST))
         self.assertLessEqual(res.new_bytes, res.original_bytes)
 
+    def test_never_grows_across_containers_either(self):
+        """A tiny GIF whose candidates all come out bigger must pass through
+        unchanged - not be converted into a larger PNG."""
+        path = self.src / "tiny.gif"
+        img = Image.new("P", (200, 150))
+        img.putpalette([255, 0, 0, 0, 255, 0] + [0] * 762)
+        img.save(path)
+        res = compress_file(path, self.dst, Settings(**FAST))
+        self.assertEqual(res.error, "")
+        self.assertLessEqual(res.new_bytes, res.original_bytes)
+        if res.skipped:
+            self.assertEqual(res.output.suffix, ".gif")
+
     def test_forcing_a_format_is_respected(self):
         path = self.src / "a.png"
         sample().save(path)

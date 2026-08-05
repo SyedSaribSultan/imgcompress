@@ -5,7 +5,7 @@ Thanks for taking a look.
 ## Getting set up
 
 ```bash
-git clone https://github.com/USERNAME/imgcompress
+git clone https://github.com/SyedSaribSultan/imgcompress
 cd imgcompress
 python -m pip install -e ".[full,app,dev]"
 imgcompress --check          # confirm every engine is active

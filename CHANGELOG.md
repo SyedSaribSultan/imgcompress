@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-08-05
+
+### Added
+- **Web version** at [imgcompress-app.vercel.app](https://imgcompress-app.vercel.app) —
+  the same encode-several-ways / score-every-candidate / keep-the-smallest engine,
+  ported to run entirely in the browser (`web/`). SSIM at the 5th percentile,
+  dual-backdrop transparency scoring, a palette-PNG encoder with exact-palette
+  detection, per-image overrides, and zip download. Images never leave the
+  device; the page makes no network requests after load.
+
+### Security
+- The desktop server now rejects requests whose `Host` header isn't loopback,
+  closing the DNS-rebinding hole that could have exposed the API token via
+  `GET /`.
+- Request bodies are capped at 512 MB and oversized uploads answer `413`.
+- Uploaded filenames are sanitised for Windows-hostile characters.
+- Responses carry `Referrer-Policy: no-referrer`.
+
 ## [2.1.0] - 2026-08-05
 
 ### Added

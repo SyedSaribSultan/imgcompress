@@ -15,6 +15,7 @@ import json
 import mimetypes
 import os
 import queue
+import re
 import secrets
 import threading
 import time
@@ -40,6 +41,13 @@ from .quality import HAVE_SSIMULACRA2
 
 WEBUI = Path(__file__).resolve().parent / "webui"
 PREVIEW_MAX = 2800
+
+# Uploads land fully in memory before hitting the temp dir; no legitimate
+# design asset justifies more than this.
+MAX_BODY = 512 * 1024 * 1024
+
+# Characters Windows refuses in filenames, plus control characters.
+_BAD_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 # --------------------------------------------------------------------------- #
@@ -418,6 +426,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
         for key, value in (extra or {}).items():
             self.send_header(key, value)
         self.end_headers()
@@ -429,14 +438,35 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, payload, code: int = 200):
         self._send(code, json.dumps(payload).encode("utf-8"), "application/json")
 
+    def _host_ok(self) -> bool:
+        """Refuse requests whose Host isn't loopback.
+
+        This is the DNS-rebinding defence: a hostile page can point its own
+        domain at 127.0.0.1 and drive this server same-origin — and `GET /`
+        would even hand it the token. A browser always sends the Host it
+        connected to, so rejecting foreign names closes the hole.
+        """
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host.startswith("["):  # ipv6 literal, e.g. [::1]:8000
+            host = host.split("]", 1)[0] + "]"
+        else:
+            host = host.split(":", 1)[0]
+        return host in ("127.0.0.1", "localhost", "[::1]")
+
     def _authorised(self, query: dict) -> bool:
         if not self.token:
             return True
         supplied = self.headers.get("X-Token") or (query.get("token") or [""])[0]
         return secrets.compare_digest(supplied, self.token)
 
-    def _body(self) -> bytes:
-        length = int(self.headers.get("Content-Length") or 0)
+    def _body(self) -> bytes | None:
+        """Request body, or None when it is missing a sane length."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        if length < 0 or length > MAX_BODY:
+            return None
         return self.rfile.read(length) if length else b""
 
     def _json_body(self) -> dict:
@@ -451,6 +481,8 @@ class Handler(BaseHTTPRequestHandler):
     # -- routes ------------------------------------------------------------ #
 
     def do_GET(self):  # noqa: N802
+        if not self._host_ok():
+            return self._json({"error": "forbidden host"}, 403)
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         route = parsed.path
@@ -493,6 +525,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"error": "not found"}, 404)
 
     def do_POST(self):  # noqa: N802
+        if not self._host_ok():
+            return self._json({"error": "forbidden host"}, 403)
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         if not self._authorised(query):
@@ -502,8 +536,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/upload":
             name = unquote(self.headers.get("X-Filename", "upload.png"))
-            safe = Path(name).name or "upload.png"
+            safe = _BAD_FILENAME.sub("_", Path(name.replace("\x00", "")).name) or "upload.png"
             data = self._body()
+            if data is None:
+                return self._json({"error": "file too large"}, 413)
+            if not data:
+                return self._json({"error": "empty upload"}, 400)
             self.upload_dir.mkdir(parents=True, exist_ok=True)
             target = self.upload_dir / safe
             stem, suffix, n = target.stem, target.suffix, 1

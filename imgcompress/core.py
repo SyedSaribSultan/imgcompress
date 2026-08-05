@@ -275,8 +275,13 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
             f"could not reach {metric.name} {target:g}; best was {score:.1f}"
         )
 
+    # Never ship a bigger file. The one exception is a caller who *forced* a
+    # format different from the source's - that is an explicit conversion and
+    # may legitimately grow. The engine's own bake-off never may: a 318 B GIF
+    # must not come back as a 344 B PNG just because the container changed.
     same_container = encoder.extension.lower() == source.suffix.lower()
-    if len(data) >= result.original_bytes and resized_to is None and same_container:
+    forced_conversion = bool(settings.formats) and not same_container
+    if len(data) >= result.original_bytes and resized_to is None and not forced_conversion:
         result.data = source.read_bytes()
         result.suffix = source.suffix
         result.new_bytes = result.original_bytes

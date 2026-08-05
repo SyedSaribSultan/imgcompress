@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imgcompress"
-version = "2.1.0"
+version = "2.2.0"
 description = "Quality-targeted image compression. Measures perceptual quality instead of guessing it, and picks the best format per image."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -53,8 +53,10 @@ imgcompress = "imgcompress.cli:main"
 imgcompress-gui = "imgcompress.gui:main"
 
 [project.urls]
-Homepage = "https://github.com/USERNAME/imgcompress"
-Issues = "https://github.com/USERNAME/imgcompress/issues"
+Homepage = "https://github.com/SyedSaribSultan/imgcompress"
+"Web App" = "https://imgcompress-app.vercel.app"
+Issues = "https://github.com/SyedSaribSultan/imgcompress/issues"
+Changelog = "https://github.com/SyedSaribSultan/imgcompress/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["imgcompress"]

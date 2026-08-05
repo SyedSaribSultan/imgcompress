@@ -18,6 +18,10 @@ imgcompress-gui            # the app
 imgcompress photos/        # or the command line
 ```
 
+Or skip the install: **[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app)**
+runs the same bake-off entirely in your browser. Nothing is uploaded — images
+never leave your device.
+
 ---
 
 ## Two ideas, both load-bearing
@@ -198,7 +202,7 @@ survives in most hand-rolled compressors.
 ## Development
 
 ```bash
-git clone https://github.com/USERNAME/imgcompress && cd imgcompress
+git clone https://github.com/SyedSaribSultan/imgcompress && cd imgcompress
 pip install -e ".[full,app,dev]"
 python -m unittest discover -s tests     # 20 tests, ~20s
 python tests/make_fixtures.py            # build the benchmark corpus
