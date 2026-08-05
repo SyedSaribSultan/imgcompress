@@ -65,6 +65,7 @@ let mode = "split";
 let zoom = 0;
 let pan = { x: 0, y: 0 };
 let batchActive = false;
+let ovSyncedFor = null;   // which item the override controls currently reflect
 const BASE_TITLE = document.title;
 
 function uid() {
@@ -705,9 +706,15 @@ function renderInspector(it) {
 
   renderCandidates(it);
 
-  $("ov-format").value = it.override?.formats?.[0] || "";
-  $("ov-quality").value = it.override?.qualityTarget != null
-    ? Math.round(it.override.qualityTarget * 100) : "";
+  // Only seed the override controls when the selection actually changes.
+  // Re-syncing them on every frame would wipe a choice the user is halfway
+  // through making - progress messages re-render several times a second.
+  if (ovSyncedFor !== it.id) {
+    ovSyncedFor = it.id;
+    $("ov-format").value = it.override?.formats?.[0] || "";
+    $("ov-quality").value = it.override?.qualityTarget != null
+      ? Math.round(it.override.qualityTarget * 100) : "";
+  }
   $("ov-reset").hidden = !it.override;
   $("dl-one").disabled = !ready;
   $("retry-btn").hidden = it.status !== "failed" && it.status !== "cancelled";
@@ -727,22 +734,28 @@ function renderCandidates(it) {
   const rows = [...it.candidates].sort((a, b) => a.bytes - b.bytes);
   const winner = rows[0].bytes;
   const max = Math.max(it.originalBytes, ...rows.map((c) => c.bytes));
-  const bar = (bytes) => `--w:${Math.max(2, (bytes / max) * 100).toFixed(1)}%`;
 
   cands.innerHTML = rows.map((c) => `
-    <div class="cand ${c.bytes === winner ? "win" : ""}" style="${bar(c.bytes)}">
+    <div class="cand ${c.bytes === winner ? "win" : ""}" data-bytes="${c.bytes}">
       <span class="bar"></span>
       <span class="f">${escapeHtml(c.format)}</span>
       <span class="b">${human(c.bytes)}</span>
       <span class="${c.bytes === winner ? "badge" : "s"}">${
         c.bytes === winner ? "winner" : (c.lossless ? "lossless" : c.score.toFixed(3))}</span>
     </div>`).join("") + `
-    <div class="cand orig" style="${bar(it.originalBytes)}">
+    <div class="cand orig" data-bytes="${it.originalBytes}">
       <span class="bar"></span>
       <span class="f">original</span>
       <span class="b">${human(it.originalBytes)}</span>
       <span class="s">—</span>
     </div>`;
+
+  // Widths go through the CSSOM: a style="" attribute in markup would (rightly)
+  // be refused by the page's style-src CSP, leaving every bar at zero.
+  for (const el of cands.querySelectorAll(".cand")) {
+    const pct = Math.max(2, (Number(el.dataset.bytes) / max) * 100);
+    el.style.setProperty("--w", `${pct.toFixed(1)}%`);
+  }
 }
 
 /* --------------------------- difference heatmap --------------------------- */
@@ -1419,6 +1432,8 @@ function bind() {
     const it = state.byId.get(selected);
     if (!it) return;
     it.override = null;
+    $("ov-format").value = "";
+    $("ov-quality").value = "";
     requeue([it.id]);
   });
 
