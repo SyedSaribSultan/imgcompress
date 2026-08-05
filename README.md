@@ -1,5 +1,8 @@
 # imgcompress
 
+[![CI](https://github.com/SyedSaribSultan/imgcompress/actions/workflows/ci.yml/badge.svg)](https://github.com/SyedSaribSultan/imgcompress/actions/workflows/ci.yml)
+[![Try it in the browser](https://img.shields.io/badge/try_it-in_the_browser-d29a5e)](https://imgcompress-app.vercel.app)
+
 **Image compression that proves it didn't ruin your image.**
 
 Most compressors ask you to pick a quality number and hope. This one encodes
