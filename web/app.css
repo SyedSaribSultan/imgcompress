@@ -283,20 +283,41 @@ input[type="range"]::-webkit-slider-runnable-track {
 input[type="range"]::-moz-range-track {
   height: 3px; border-radius: var(--oz-radius-full); background: var(--oz-color-fill-tertiary);
 }
+/* Neutral thumb: the accent means "this is the answer", and a settings control
+   is not an answer. */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 14px; height: 14px; border-radius: var(--oz-radius-full);
-  background: var(--oz-color-fill-brand); margin-top: -5.5px;
+  background: var(--oz-color-content-primary); margin-top: -5.5px;
   transition: transform var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast);
 }
 input[type="range"]::-moz-range-thumb {
   width: 14px; height: 14px; border: none;
-  border-radius: var(--oz-radius-full); background: var(--oz-color-fill-brand);
+  border-radius: var(--oz-radius-full); background: var(--oz-color-content-primary);
 }
 input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 
 /* =========================== 1. HERO WORKSPACE =========================== */
-.workspace { min-height: calc(100vh - 56px); display: grid; }
+/* One row, explicitly 1fr, so the row has a definite height for its child to
+   resolve against. Without it the workspace was only min-height-tall and the
+   app's own 1fr row had no definite space to claim, so slack leaked into the
+   auto rows instead - which is what made the results bar 130px tall and left a
+   dead band under the panes. */
+/* A definite height, not a minimum. `height: 100%` on a child cannot resolve
+   against a parent that only has `min-height`, so the app's 1fr body row had
+   no definite space to claim: slack leaked into the auto rows (a 130px results
+   bar) and then into a dead band under the panes. This is an app shell, so a
+   fixed viewport height is the honest description - the panes inside scroll. */
+.workspace {
+  height: calc(100vh - 56px);
+  display: grid;
+  /* Both axes wrapped in minmax(0, …): an implicit grid column is max-content,
+     so without this the widest descendant sets the shell's width and the page
+     scrolls sideways. This is the failure mode the system's layout rules name. */
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+.empty { overflow-y: auto; }
 
 .empty {
   display: grid; place-content: center; justify-items: center;
@@ -371,11 +392,16 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .privacy-line svg { flex: none; color: var(--oz-color-content-success); }
 
 /* ------------------------------- app shell -------------------------------- */
+/* Flex, not grid rows. `.advanced` is toggled with `hidden`, so it generates no
+   box, and grid auto-placement shifted every later child up a track: the body
+   fell into an auto row and the results bar inherited the 1fr, leaving an empty
+   185px of track beneath it. Flex simply ignores absent children. */
 .app {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto; /* bar, advanced, batch, body, summary */
-  min-height: inherit;
+  display: flex; flex-direction: column;
+  height: 100%; min-height: 0; min-width: 0;
 }
+.app > .bar, .app > .advanced, .app > .batch, .app > .summary { flex: none; }
+.app > .body { flex: 1 1 auto; min-height: 0; }
 .bar {
   display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap;
   padding: var(--oz-space-3) var(--oz-space-5); min-height: 52px;
@@ -406,8 +432,10 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   opacity: 0; transition: opacity var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .batch.on { opacity: 1; }
+/* Neutral, not brand. A full-width orange line under the toolbar reads as an
+   alarm; work in progress is not an error, and the accent is reserved. */
 .batch i {
-  display: block; height: 100%; width: 0; background: var(--oz-color-fill-brand);
+  display: block; height: 100%; width: 0; background: var(--oz-color-border-tertiary);
   transition: width var(--oz-spring-effects-slow-ms) var(--oz-spring-effects-slow);
 }
 
@@ -420,10 +448,16 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 /* Each functional group is a card, so the panes read as separate tools rather
    than one continuous sheet. Depth is shadow in light and a lighter surface in
    dark, per the system - never a border. */
+/* Elevation is shadow in light and surface lightness in dark, exactly as the
+   system specifies. That matters here: light mode's page-to-card step is only
+   #FFFFFF → #F7F5F4, far too tight to read a card edge on its own, and a
+   border would be a separation border. The shadow does the work in light; in
+   dark the surface step already does it and the shadow is barely visible. */
 .card {
   background: var(--oz-color-surface-primary);
   border-radius: var(--oz-radius-8);
   overflow: hidden;
+  box-shadow: var(--oz-elevation-x-small);
 }
 
 .queue {
@@ -463,18 +497,22 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .row + .row { margin-top: 2px; }
 .row:hover { background: var(--oz-color-fill-secondary-hover); }
-/* Selected is a state, so it may carry a stroke - drawn as an inset ring so it
-   costs no layout and cannot shift the row. */
+/* Selected is a state, so it may carry a stroke - drawn as an inset rail so it
+   costs no layout and cannot shift the row. The fill stays neutral: brand at
+   15% over a white page renders pink, which reads destructive rather than
+   selected, and the accent has two jobs already. */
 .row[aria-selected="true"] {
-  background: var(--oz-color-fill-selected);
-  box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-border-selected);
+  background: var(--oz-color-fill-secondary-active);
+  box-shadow: inset var(--oz-stroke-6) 0 0 var(--oz-color-border-selected);
 }
 .row .thumb {
   width: 46px; height: 46px; border-radius: var(--oz-radius-3);
   background-color: var(--oz-color-surface-tertiary);
   background-size: cover; background-position: center;
 }
-.row .cell { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+/* One shape at every stage: name, weights, phase. The rows keep the same three
+   lines from queued to saved, so the list never reflows as items finish. */
+.row .cell { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .row .name {
   display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-size: var(--oz-text-body-sm);
@@ -484,6 +522,13 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   color: var(--oz-color-content-secondary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.row .phase {
+  display: block; font-size: var(--oz-text-label-xs);
+  color: var(--oz-color-content-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-height: 1.2em;
+}
+.row .phase:empty { min-height: 0; }
 .row .meta .save { color: var(--oz-color-content-success); }
 .row .meta .err { color: var(--oz-color-content-critical); }
 .row .tail { display: flex; align-items: center; gap: var(--oz-space-2); }
@@ -510,9 +555,11 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   background: var(--oz-color-fill-tertiary); overflow: hidden; margin-top: var(--oz-space-1);
 }
 .row.working .track { display: block; }
+/* Also neutral: three orange hairlines stacked under three filenames looked
+   like three failures. */
 .track i {
   display: block; height: 100%; width: 0;
-  background: var(--oz-color-fill-brand); border-radius: var(--oz-radius-full);
+  background: var(--oz-color-border-tertiary); border-radius: var(--oz-radius-full);
   transition: width var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .row.enter { animation: oz-enter-rise var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default) both; }
@@ -522,6 +569,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0;
   background: var(--oz-color-surface-primary);
   border-radius: var(--oz-radius-8); overflow: hidden;
+  box-shadow: var(--oz-elevation-x-small);
 }
 
 /* Canvas controls docked above the image instead of floating over it. */
@@ -547,7 +595,17 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   padding: 0 var(--oz-space-2); min-width: 3.4em; text-align: center;
 }
 .insp-placeholder { display: grid; place-content: center; color: var(--oz-color-content-tertiary); }
-#inspector-body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; height: 100%; }
+/* Flex for the same reason: the detail panel is collapsible, so a row template
+   would shift under it. The stage is the part that grows. */
+#inspector-body {
+  display: flex; flex-direction: column;
+  min-height: 0; min-width: 0; height: 100%;
+}
+#inspector-body > .insp-head, #inspector-body > .canvas-bar { flex: none; }
+#inspector-body > .stage { flex: 1 1 auto; }
+/* The evidence panel is capped as a share of the pane so the image always
+   keeps the majority of the height. */
+#inspector-body > .details { flex: none; max-height: 38%; }
 .insp-head {
   display: flex; align-items: baseline; gap: var(--oz-space-4); flex-wrap: wrap;
   padding: var(--oz-space-4) var(--oz-space-6);
@@ -562,23 +620,38 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .insp-head .dims { color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs); }
 
+/* A plain ground, not a checkerboard. The checker belongs to the image's own
+   box — spread across the whole pane it made every opaque photograph look like
+   it was floating in a void, and it competed with the picture for attention. */
 .stage {
-  position: relative; overflow: hidden; min-height: 380px;
+  position: relative; overflow: hidden; min-height: 260px;
+  background: var(--oz-color-background);
+  display: grid; place-items: center;
+}
+.viewport {
+  position: relative; line-height: 0; touch-action: none;
   background-color: var(--checker-a);
   background-image:
     linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%),
     linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%);
   background-size: 18px 18px;
   background-position: 0 0, 9px 9px;
-  display: grid; place-items: center;
+  box-shadow: var(--oz-elevation-small);
 }
-.viewport { position: relative; line-height: 0; touch-action: none; }
 .viewport img, .viewport canvas {
   display: block; width: 100%; height: 100%; object-fit: contain;
   user-select: none; -webkit-user-drag: none;
 }
 .viewport .after { position: absolute; inset: 0; overflow: hidden; clip-path: inset(0 0 0 var(--split)); }
 .viewport .after img { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* The one orchestrated moment in the app: when a result lands, the compressed
+   half sweeps in from the right so you see it arrive over the original. Spatial,
+   so reduced motion drops the travel and leaves the result in place. */
+.viewport .after.wipe { animation: wipe-in var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow) both; }
+@keyframes wipe-in {
+  from { clip-path: inset(0 0 0 calc(100% - (100% - var(--split)) * var(--oz-motion-spatial-scale))); }
+  to   { clip-path: inset(0 0 0 var(--split)); }
+}
 .viewport.solo .after { clip-path: none; }
 .viewport.peek .after { clip-path: inset(0 0 0 100%) !important; }
 .viewport.peek .divider { opacity: 0; }
@@ -592,14 +665,27 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   width: var(--oz-stroke-2); background: var(--oz-color-border-inverse);
   box-shadow: var(--oz-elevation-x-small); pointer-events: none;
 }
+/* The handle is a caliper thumb: tick-marked, so it reads as an instrument for
+   measuring rather than a generic drag dot. */
 .divider::after {
   content: ""; position: absolute; top: 50%; left: 50%;
-  width: 28px; height: 28px; margin: -14px 0 0 -14px;
+  width: 30px; height: 30px; margin: -15px 0 0 -15px;
   border-radius: var(--oz-radius-full);
   background: var(--oz-color-border-inverse);
   box-shadow: var(--oz-elevation-small);
   transition: transform var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast);
 }
+.divider::before {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  width: 14px; height: 10px; margin: -5px 0 0 -7px; z-index: 1;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--oz-color-content-inverse-primary) 0 1px,
+    transparent 1px 4px);
+  opacity: .55; pointer-events: none;
+  transition: transform var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast);
+}
+.split-input:hover ~ .divider::before { transform: scale(1.15); }
 .split-input {
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: col-resize; margin: 0;
@@ -624,7 +710,16 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   pointer-events: none;
   transition: opacity var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
-.tag.l { left: var(--oz-space-4); } .tag.r { right: var(--oz-space-4); }
+/* Riding the caliper: each weight sits against the line it belongs to, so the
+   numbers travel with the comparison instead of being parked in the corners. */
+.divider .tag {
+  top: 50%; white-space: nowrap;
+  transform: translateY(-50%);
+}
+.divider .tag.l { right: var(--oz-space-6); left: auto; }
+.divider .tag.r { left: var(--oz-space-6); right: auto; }
+/* Used in After and Diff, where there is no divider to hang a label on. */
+.tag.corner { top: var(--oz-space-4); right: var(--oz-space-4); }
 
 .hint {
   position: absolute; left: 50%; bottom: var(--oz-space-6);
@@ -673,6 +768,17 @@ kbd {
 /* The format is a name, not a measurement - it does not earn headline size
    next to two numbers that do. */
 .stat-big.name .v { font-size: var(--oz-text-body-md); padding-top: var(--oz-space-1); }
+/* A pending value is a shape, not a dash. Three em-dashes read as "nothing
+   here"; a skeleton reads as "not yet". `.oz-ambient` is the system's opt-in
+   marker for a decorative loop, so reduced motion switches the pulse off. */
+.skel {
+  display: inline-block; width: 3.6em; height: .78em;
+  border-radius: var(--oz-radius-2);
+  background: var(--oz-color-fill-tertiary);
+  vertical-align: baseline;
+}
+.skel.w-sm { width: 2.4em; }
+.stat-big .v .skel { height: .68em; }
 
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--oz-space-4) var(--oz-space-6); }
 .stat .k {
@@ -746,7 +852,9 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
   transition: width var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
 }
 .cand.win .bar { background: var(--oz-color-fill-brand-secondary); }
-.cand.orig .bar { background: var(--oz-color-fill-critical-secondary); }
+/* The original is the yardstick, not a failure. A critical tint here rendered
+   pink over the light page and read as an error state. */
+.cand.orig .bar { background: var(--oz-color-fill-tertiary); }
 .cand > span { position: relative; }
 .cand .f { font-weight: var(--oz-weight-medium); }
 .cand .b, .cand .s {
@@ -769,13 +877,19 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
 .ov-floor label { color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm); }
 
 /* ========================= 4. RESULTS SUMMARY ============================ */
+/* Two slots and a fixed height. Left to wrap, this bar grew to 130px and ate
+   the pane above it. */
 .summary {
-  display: flex; align-items: center; gap: var(--oz-space-5); flex-wrap: wrap;
-  padding: var(--oz-space-3) var(--oz-space-6); min-height: 60px;
+  display: flex; align-items: center; gap: var(--oz-space-5); flex-wrap: nowrap;
+  padding: var(--oz-space-3) var(--oz-space-6); height: 64px;
   background: var(--oz-color-surface-secondary);
   position: sticky; bottom: 0; z-index: var(--oz-layer-sticky);
 }
-.totals { display: flex; align-items: baseline; gap: var(--oz-space-4); flex-wrap: wrap; }
+.totals {
+  display: flex; align-items: baseline; gap: var(--oz-space-4);
+  flex-wrap: nowrap; min-width: 0; overflow: hidden;
+}
+.totals > * { white-space: nowrap; }
 .totals .big { font-size: var(--oz-text-body-sm); }
 .totals .save { color: var(--oz-color-content-success); font-size: var(--oz-text-body-sm); }
 /* Bandwidth at scale as a badge with the arithmetic in its tooltip, rather
@@ -833,11 +947,13 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
 }
 .veil .box p { margin: 0; color: var(--oz-color-content-secondary); }
 
-/* Clear of the results bar and of the detail pane's own controls: a toast that
-   covers the thing you just acted on is worse than no toast. */
+/* Anchored to the top of the shell. At the bottom it sat exactly over the
+   controls in the evidence pane - a toast that covers the thing you just used
+   is worse than no toast - and briefly overlaying the settings row costs
+   nothing, because nobody reads it while a confirmation is up. */
 .toast {
-  position: fixed; left: 50%; bottom: 76px;
-  transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
+  position: fixed; left: 50%; top: 68px; bottom: auto;
+  transform: translate(-50%, calc(-8px * var(--oz-motion-spatial-scale)));
   z-index: var(--oz-layer-toast);
   padding: var(--oz-space-4) var(--oz-space-5); border-radius: var(--oz-radius-full);
   background: var(--oz-color-surface-overlay);
@@ -995,12 +1111,24 @@ html.theming body, html.theming body * {
   .site-head { gap: var(--oz-space-4); height: 52px; padding: 0 var(--oz-space-5); }
   .site-head nav a:not(:last-child) { display: none; }
   .lifetime { display: none; }
-  .workspace { min-height: auto; }
+  /* On a phone the workspace stacks and the page scrolls, so the shell stops
+     being viewport-bound. */
+  .workspace { height: auto; min-height: auto; }
+  .app { height: auto; }
   .body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .queue-list { max-height: 168px; }
-  .insp-head { padding: var(--oz-space-3) var(--oz-space-4); gap: var(--oz-space-3); flex-wrap: nowrap; align-items: center; }
-  .insp-head h2 { font-size: var(--oz-text-body-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Filename on its own line, actions beneath it. Forced onto one line the four
+     controls overflowed the pane and Details became unreachable. */
+  .insp-head {
+    padding: var(--oz-space-3) var(--oz-space-4); gap: var(--oz-space-2);
+    flex-wrap: wrap; align-items: center;
+  }
+  .insp-head h2 {
+    flex: 1 1 100%; font-size: var(--oz-text-body-md);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .insp-head .dims { display: none; }
+  .insp-head .spacer { display: none; }
   .insp-head .btn { padding: 0 var(--oz-space-3); font-size: var(--oz-text-body-sm); }
   .stage { min-height: 320px; }
   .body { gap: var(--oz-space-2); padding: var(--oz-space-2); }
@@ -1009,13 +1137,21 @@ html.theming body, html.theming body * {
   .segmented kbd, .btn kbd { display: none; }
   .stats, .stats-lead { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .stat-big .v { font-size: var(--oz-text-body-md); }
-  .summary { padding: var(--oz-space-3) var(--oz-space-4); gap: var(--oz-space-3); }
-  .totals { width: 100%; }
+  /* On a phone the bar earns a second line rather than forcing the shell wide. */
+  .summary {
+    padding: var(--oz-space-3) var(--oz-space-4); gap: var(--oz-space-3);
+    flex-wrap: wrap; height: auto; min-height: 64px;
+  }
+  .totals { width: 100%; flex-wrap: wrap; }
+  .export { margin-left: auto; }
   .bandwidth { display: none; }
   .empty { padding: var(--oz-space-7) var(--oz-space-4); }
   .empty .drop-target { padding: var(--oz-space-9) var(--oz-space-5); }
   .learn { padding: var(--oz-space-12) var(--oz-space-5); }
-  .toast { bottom: 78px; left: var(--oz-space-4); right: var(--oz-space-4); transform: translateY(calc(8px * var(--oz-motion-spatial-scale))); text-align: center; }
+  .toast {
+    top: 60px; bottom: auto; left: var(--oz-space-4); right: var(--oz-space-4);
+    transform: translateY(calc(-8px * var(--oz-motion-spatial-scale))); text-align: center;
+  }
   .toast.on { transform: translateY(0); }
   .hint { display: none; }
 }

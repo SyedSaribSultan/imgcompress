@@ -24,6 +24,14 @@ function escapeHtml(s) {
 
 const SUPPORTED = /\.(png|jpe?g|webp|bmp|tiff?|gif)$/i;
 
+/* Format names as a person writes them. The engine's keys are lowercase
+   identifiers; showing those raw made the interface read like debug output. */
+const FORMAT_LABEL = {
+  jpeg: "JPEG", png8: "PNG-8", png: "PNG", webp: "WebP",
+  "webp-lossless": "WebP lossless", avif: "AVIF", gif: "GIF",
+};
+const fmtLabel = (f) => FORMAT_LABEL[f] || (f ? f.toUpperCase() : "");
+
 const MIME_OF = {
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
   bmp: "image/bmp", gif: "image/gif", tif: "image/tiff", tiff: "image/tiff",
@@ -135,8 +143,8 @@ function renderLifetime() {
     if (!s.images) return;
     const el = $("lifetime");
     el.hidden = false;
-    el.textContent = `${s.images} image${s.images === 1 ? "" : "s"} · ${human(s.bytes)} saved`;
-    el.title = "Your running total on this device. Nothing leaves your browser.";
+    el.textContent = `All time on this device: ${s.images} image${s.images === 1 ? "" : "s"}, ${human(s.bytes)} saved`;
+    el.title = "Counted locally. Nothing leaves your browser.";
   } catch {}
 }
 
@@ -239,9 +247,9 @@ function cancelAll() {
 }
 
 const STAGE_TEXT = {
-  codec: (d) => `loading ${d} engine…`,
-  decoding: () => "decoding…",
-  encoding: (d, pct) => `testing ${d} · ${pct}%`,
+  codec: (d) => `Loading the ${fmtLabel(d)} engine…`,
+  decoding: () => "Reading the image…",
+  encoding: (d, pct) => `Testing ${fmtLabel(d)} · ${pct}%`,
 };
 
 function onWorkerMessage(slot, msg) {
@@ -287,6 +295,7 @@ function onWorkerMessage(slot, msg) {
     const blob = new Blob([r.bytes], { type: r.mime });
     item.status = "done";
     item.justFinished = true;
+    item.wipePending = true;
     item.result = r;
     item.afterBlob = blob;
     item.afterURL = URL.createObjectURL(blob);
@@ -472,16 +481,28 @@ function render() {
 
 const rowEls = new Map();
 
+/** Weights line — the same shape at every stage, so rows never reflow. */
 function statusLine(it) {
-  if (it.status === "cancelled") return "stopped";
-  if (it.status === "failed") return `<span class="err">${escapeHtml(it.error || "failed")}</span>`;
-  if (it.status === "queued") return "waiting…";
-  if (it.status === "working") return escapeHtml(it.progress || "working…");
+  if (it.status === "failed") return `<span class="err">${escapeHtml(it.error || "Failed")}</span>`;
+  const from = human(it.originalBytes);
+  if (!isReady(it)) {
+    return `${from} → <span class="skel w-sm"></span>`;
+  }
   const pct = it.originalBytes && it.newBytes
     ? 100 * (it.originalBytes - it.newBytes) / it.originalBytes : 0;
   const pctText = pct > 0 ? `−${pct.toFixed(0)}%` : "no gain";
   const tail = it.status === "saved" ? ` <span class="save">saved</span>` : "";
-  return `${human(it.originalBytes)} → ${human(it.newBytes)} · ${pctText}${tail}`;
+  return `${from} → ${human(it.newBytes)} · ${pctText}${tail}`;
+}
+
+/** Phase line — what is happening to this file right now. */
+function phaseLine(it) {
+  if (it.status === "cancelled") return "Stopped";
+  if (it.status === "failed") return "";
+  if (it.status === "queued") return "Waiting";
+  if (it.status === "working") return it.progress || "Working";
+  if (it.passthrough) return "Passed through unchanged";
+  return fmtLabel(it.fmt) + (it.level != null ? ` · quality ${it.level}` : "");
 }
 
 function buildRow(it) {
@@ -494,6 +515,7 @@ function buildRow(it) {
     <span class="cell">
       <span class="name"></span>
       <span class="meta"></span>
+      <span class="phase"></span>
       <span class="track"><i></i></span>
     </span>
     <span class="tail">
@@ -535,6 +557,11 @@ function renderQueue() {
     if (el.dataset.meta !== meta) {
       el.dataset.meta = meta;
       el.querySelector(".meta").innerHTML = meta;
+    }
+    const phase = phaseLine(it);
+    if (el.dataset.phase !== phase) {
+      el.dataset.phase = phase;
+      el.querySelector(".phase").textContent = phase;
     }
     const dot = el.querySelector(".dot");
     const dotClass = `dot ${it.status}`;
@@ -625,10 +652,10 @@ function verdictFor(it) {
     ? "and it is <b>pixel-identical</b> to the original"
     : `at SSIM <b>${it.score?.toFixed(4)}</b>, above your ${Number(
         it.override?.qualityTarget ?? state.settings.qualityTarget).toFixed(2)} floor`;
-  let line = `<b>${escapeHtml(it.fmt)}</b> won: <b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
+  let line = `<b>${escapeHtml(fmtLabel(it.fmt))}</b> won: <b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
   if (runner && runner.bytes > it.newBytes) {
     const gap = 100 * (runner.bytes - it.newBytes) / runner.bytes;
-    line += ` It beat ${escapeHtml(runner.format)} by ${gap.toFixed(0)}%.`;
+    line += ` It beat ${escapeHtml(fmtLabel(runner.format))} by ${gap.toFixed(0)}%.`;
   }
   return line;
 }
@@ -647,22 +674,41 @@ function renderInspector(it) {
   if (before.dataset.src !== it.beforeURL) { before.dataset.src = it.beforeURL; before.src = it.beforeURL; }
   const ready = isReady(it);
   const wantAfter = ready ? it.afterURL : "";
-  if (after.dataset.src !== wantAfter) { after.dataset.src = wantAfter; after.src = wantAfter || ""; }
+  if (after.dataset.src !== wantAfter) {
+    after.dataset.src = wantAfter;
+    // An empty src is not "no image" - it resolves against the document URL,
+    // fails, and paints the broken-image icon and alt text over the photograph.
+    if (wantAfter) after.src = wantAfter; else after.removeAttribute("src");
+    // The result arriving is the one moment worth animating.
+    if (wantAfter && it.wipePending) {
+      it.wipePending = false;
+      const panel = document.querySelector(".viewport .after");
+      panel.classList.remove("wipe");
+      void panel.offsetWidth;
+      panel.classList.add("wipe");
+    }
+  }
 
   const diffOn = mode === "diff" && ready;
   $("img-diff").hidden = !diffOn;
   if (diffOn) ensureDiff(it);
+  const splitting = mode === "split" && ready;
   $("viewport").classList.toggle("solo", mode !== "split" || !ready);
-  $("divider").style.display = mode === "split" && ready ? "" : "none";
+  $("divider").style.display = splitting ? "" : "none";
   $("split").disabled = !ready || mode !== "split";
-  $("tag-l").style.opacity = mode === "split" && ready ? "1" : "0";
-  $("tag-r").style.opacity = ready ? "1" : "0";
-  $("tag-l").textContent = ready ? `Original · ${human(it.originalBytes)}` : "Original";
-  $("tag-r").textContent = diffOn
-    ? (it.diffInfo
-        ? `Difference ×${it.diffInfo.gain} · peak ${it.diffInfo.peak}/255 · avg ${it.diffInfo.mean}`
-        : "Difference")
-    : ready ? `Compressed · ${human(it.newBytes)}` : "Compressed";
+  // In Split the two weights ride the caliper; otherwise one corner badge says
+  // what you are looking at.
+  $("tag-l").textContent = `Original · ${human(it.originalBytes)}`;
+  $("tag-r").textContent = `Compressed · ${human(it.newBytes)}`;
+  const badge = $("stage-badge");
+  badge.hidden = splitting || !ready;
+  if (!badge.hidden) {
+    badge.textContent = diffOn
+      ? (it.diffInfo
+          ? `Difference ×${it.diffInfo.gain} · peak ${it.diffInfo.peak}/255 · avg ${it.diffInfo.mean}`
+          : "Difference")
+      : `Compressed · ${human(it.newBytes)}`;
+  }
   $("mode-diff").setAttribute("aria-pressed", String(diffOn));
   $("mode-diff").disabled = !ready;
 
@@ -678,14 +724,19 @@ function renderInspector(it) {
     $("s-saved").classList.add("pop");
     maybeShowHint();
   } else {
+    // A pending value is a shape, not a dash: "not yet" rather than "nothing".
+    const stalled = it.status === "failed" || it.status === "cancelled";
+    const pending = stalled ? "—" : `<span class="skel"></span>`;
     $("s-size").innerHTML = ready
       ? `${human(it.newBytes)} <small>from ${human(it.originalBytes)}</small>`
-      : (it.status === "failed" || it.status === "cancelled" ? "—" : "working…");
+      : `${pending}${stalled ? "" : `<small>from ${human(it.originalBytes)}</small>`}`;
     $("s-saved").innerHTML = ready
       ? (pct > 0 ? `${human(saved)} <small>−${pct.toFixed(0)}%</small>` : "none")
-      : "—";
+      : pending;
   }
-  $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
+  $("s-format").innerHTML = ready
+    ? `${fmtLabel(it.fmt)}${it.level != null ? ` <small>quality ${it.level}</small>` : ""}`
+    : (it.status === "failed" || it.status === "cancelled" ? "—" : `<span class="skel w-sm"></span>`);
   $("s-score").textContent = ready ? fmtScore(it.score, it.lossless || it.passthrough) : "—";
   $("s-dims").innerHTML = !it.width ? "—"
     : (it.outW && it.outW !== it.width
@@ -750,9 +801,9 @@ function renderCandidates(it) {
     return `
     <button class="cand ${isWinner ? "win" : ""} ${forced === c.format ? "forced" : ""}"
             data-bytes="${c.bytes}" data-format="${escapeHtml(c.format)}"
-            title="Keep this ${escapeHtml(c.format)} version for this image">
+            title="Keep the ${escapeHtml(fmtLabel(c.format))} version for this image">
       <span class="bar"></span>
-      <span class="f">${escapeHtml(c.format)}</span>
+      <span class="f">${escapeHtml(fmtLabel(c.format))}</span>
       <span class="b">${human(c.bytes)}</span>
       <span class="p">${saving > 0 ? `−${saving}%` : "—"}</span>
       <span class="${isWinner ? "badge" : "s"}">${
@@ -761,7 +812,7 @@ function renderCandidates(it) {
   }).join("") + `
     <div class="cand orig" data-bytes="${it.originalBytes}">
       <span class="bar"></span>
-      <span class="f">original</span>
+      <span class="f">Original</span>
       <span class="b">${human(it.originalBytes)}</span>
       <span class="p"></span>
       <span class="s">—</span>
@@ -784,7 +835,7 @@ function chooseCandidate(format) {
   if (already) delete override.formats; else override.formats = [format];
   it.override = Object.keys(override).length ? override : null;
   $("ov-format").value = it.override?.formats?.[0] || "";
-  toast(already ? `Back to the best of all candidates` : `Keeping ${format} for this image`);
+  toast(already ? "Back to the best of all candidates" : `Keeping ${fmtLabel(format)} for this image`);
   requeue([it.id]);
 }
 
@@ -921,7 +972,9 @@ const ZOOMS = [0, 0.5, 1, 2, 4, 8];
 function applyZoom() {
   const stage = $("stage"), img = $("img-before"), vp = $("viewport");
   if (!img.naturalWidth) return;
-  const pad = 24;
+  // Tight margin: the image is the subject, so it should own the pane. Fit is
+  // still capped at 1 - upscaling a compressed file would misrepresent it.
+  const pad = 14;
   const fit = Math.min(
     (stage.clientWidth - pad * 2) / img.naturalWidth,
     (stage.clientHeight - pad * 2) / img.naturalHeight,

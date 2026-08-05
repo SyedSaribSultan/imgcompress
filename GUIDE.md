@@ -297,6 +297,25 @@ because there are three ways to break it:
   still gets 700. This is the one that actually bit — it is invisible to source
   grepping and was caught only by measuring computed styles in the browser.
 
+### The app shell is flex, deliberately
+
+`.app` and `#inspector-body` are flex columns, not grid row templates, and that
+is load-bearing. Both contain children toggled with `hidden` — the advanced tray
+and the detail panel — and a hidden element generates no grid box, so
+auto-placement silently shifts every later child up a track. That bug shipped:
+the body fell into an `auto` row while the results bar inherited the `1fr`,
+leaving ~185px of empty track under the panes and a 130px-tall results bar. Flex
+ignores absent children, so the growing region stays the growing region.
+
+Two related rules, both straight out of the system's layout primitives:
+
+* `.workspace` needs a **definite** `height`, not a `min-height`. `height: 100%`
+  on a child cannot resolve against a parent that only has a minimum, so the
+  `1fr` had no definite space to claim.
+* Its `grid-template-columns` is wrapped in `minmax(0, 1fr)`. An implicit grid
+  column is `max-content`, so without it the widest descendant sets the shell's
+  width and the whole page scrolls sideways on a phone.
+
 ### Gates
 
 Both live in the session scratchpad and are worth keeping with the repo:
