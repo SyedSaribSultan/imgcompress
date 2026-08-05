@@ -50,9 +50,9 @@
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "featureList": [
         "Runs entirely in the browser — images are never uploaded",
-        "Encodes each image as JPEG, palette PNG, lossless PNG and WebP, and keeps the smallest that passes",
-        "Perceptual quality is measured with SSIM at the 5th percentile, never guessed",
-        "Before/after split comparison with zoom",
+        "Encodes each image with mozjpeg, palette PNG, lossless PNG (oxipng), WebP and AVIF, and keeps the smallest that passes",
+        "Perceptual quality is measured with SSIM at the 5th percentile and verified per colour channel, never guessed",
+        "Before/after split comparison with zoom and a hold-to-flicker test",
         "Figma-safe defaults: JPEG and PNG only, capped at 4096px"
       ]
     },
@@ -235,6 +235,7 @@
                       <option value="png8">png8 (palette)</option>
                       <option value="png">png (lossless)</option>
                       <option value="webp">webp</option>
+                      <option value="avif">avif</option>
                     </select>
                     <label for="ov-quality">Floor</label>
                     <input class="num-input" type="number" id="ov-quality" min="80" max="100" placeholder="—">
@@ -271,9 +272,10 @@
       <div class="step">
         <span class="step-n num">1</span>
         <h3>Encode it several ways</h3>
-        <p>JPEG, palette PNG, lossless PNG — plus WebP if you allow it. Each
-           format is searched independently for the lowest setting that still
-           clears your floor.</p>
+        <p>JPEG (mozjpeg, compiled to WebAssembly), palette PNG, lossless PNG —
+           plus WebP and AVIF if you allow them. Each format is searched
+           independently for the lowest setting that still clears your floor,
+           and every PNG gets a lossless oxipng squeeze.</p>
       </div>
       <div class="step">
         <span class="step-n num">2</span>
@@ -332,20 +334,21 @@
 
   <!-- ============================== desktop ============================== -->
   <section class="section" id="desktop">
-    <h2>Want smaller still? The desktop version goes further</h2>
-    <p class="lede">This page uses your browser's encoders and an SSIM metric,
-       and it's honest about that. The Python version uses the industrial
-       tooling browsers don't ship:</p>
+    <h2>Want more? The desktop version goes further</h2>
+    <p class="lede">This page ships mozjpeg, oxipng and AVIF compiled to
+       WebAssembly — the same class of encoders the professionals use, running
+       locally in your browser. The Python version still has a few things a
+       browser can't offer:</p>
     <ul class="checks">
       <li><b>SSIMULACRA&nbsp;2</b> — the metric the image-compression community
-          converged on (r≈0.88 against human judgement, and it can see chroma
-          damage that SSIM is structurally blind to)</li>
-      <li><b>libimagequant</b> — the engine inside pngquant, far ahead of any
-          in-browser quantizer</li>
-      <li><b>zopfli</b> — another ~10% off every PNG, losslessly</li>
-      <li><b>mozjpeg</b> — a free lossless pass over every JPEG</li>
+          converged on (r≈0.88 against human judgement; the web version uses
+          per-channel SSIM at the 5th percentile)</li>
+      <li><b>libimagequant</b> — the engine inside pngquant, still ahead of any
+          in-browser quantizer on photographic palettes</li>
+      <li><b>zopfli</b> — a slower, slightly deeper cousin of oxipng</li>
       <li><b>Folder watching</b> — point it at your Figma export folder and new
           arrivals are compressed as they land</li>
+      <li><b>Batch saves to disk</b> — no downloads folder, no zips</li>
     </ul>
     <pre class="code"><code>pip install "imgcompress[full,app]"
 imgcompress-gui            # the app
@@ -381,17 +384,18 @@ imgcompress photos/        # or the command line</code></pre>
     </details>
     <details>
       <summary>What is the difference between this and the desktop version?</summary>
-      <p>The web version uses your browser's encoders and an SSIM metric. The
-         desktop version (<code>pip install imgcompress</code>) adds
-         SSIMULACRA&nbsp;2, mozjpeg, zopfli and libimagequant — it typically
-         produces smaller files at the same measured quality, can watch folders,
-         and saves batches straight to disk.</p>
+      <p>The web version runs mozjpeg, oxipng and AVIF as WebAssembly and scores
+         with per-channel SSIM. The desktop version
+         (<code>pip install imgcompress</code>) adds SSIMULACRA&nbsp;2 — the
+         stronger perceptual metric — plus libimagequant and zopfli, can watch
+         folders, and saves batches straight to disk.</p>
     </details>
     <details>
       <summary>Which formats can it read and write?</summary>
       <p>It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF
          where the browser can decode it. Animated GIFs are passed through
-         untouched. Output is JPEG, palette PNG, lossless PNG or WebP.</p>
+         untouched. Output is JPEG, palette PNG, lossless PNG, WebP or AVIF
+         (AVIF on the Web target, where the browser supports it).</p>
     </details>
     <details>
       <summary>Is it free?</summary>

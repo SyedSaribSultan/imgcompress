@@ -25,8 +25,11 @@
  * ------------------------------------------------------------------------- */
 
 const PNG8_COLORS = [16, 24, 32, 48, 64, 96, 128, 192, 256];
-const JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96];
+// Tops out at 98: mozjpeg's quality scale runs tighter than the canvas
+// encoder's, and high floors legitimately need the extra headroom.
+const JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96, 97, 98];
 const WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96];
+const AVIF_QUALITY = [30, 38, 45, 52, 58, 64, 70, 76, 82, 88, 93];
 
 const FIGMA_MAX_DIMENSION = 4096;
 
@@ -45,7 +48,7 @@ const BACKDROPS = [[26, 26, 26], [230, 230, 230]];
 
 const TARGETS = {
   figma: ["jpeg", "png8", "png"],
-  web: ["jpeg", "png8", "png", "webp"],
+  web: ["jpeg", "png8", "png", "webp", "avif"],
   lossless: ["png", "png8x"], // png8x = palette PNG only when it is pixel-exact
 };
 
@@ -67,6 +70,44 @@ async function probeWebp() {
     CAN_WEBP = false;
   }
   return CAN_WEBP;
+}
+
+/* ------------------------------------------------------------------------- *
+ * WASM codecs — mozjpeg, oxipng, libaom (AVIF), self-hosted under /vendor/,
+ * loaded lazily the first time an encode needs them. Every one of them has a
+ * graceful fallback: mozjpeg/oxipng fall back to the canvas encoder or plain
+ * output, AVIF simply doesn't enter the bake-off.
+ * ------------------------------------------------------------------------- */
+
+const CODECS = { mozjpeg: null, oxipng: null, avif: null };
+
+async function loadCodec(name, script, globalName, wasmFile) {
+  if (CODECS[name] !== null) return CODECS[name];
+  try {
+    importScripts(`vendor/${script}`);
+    const bytes = await (await fetch(`vendor/${wasmFile}`)).arrayBuffer();
+    const module = await WebAssembly.compile(bytes);
+    await self[globalName].init(module);
+    CODECS[name] = self[globalName];
+  } catch (e) {
+    console.warn(`codec ${name} unavailable:`, e && e.message ? e.message : e);
+    CODECS[name] = false;
+  }
+  return CODECS[name];
+}
+const loadMozjpeg = () => loadCodec("mozjpeg", "mozjpeg.js", "__mozjpeg", "mozjpeg_enc.wasm");
+const loadOxipng = () => loadCodec("oxipng", "oxipng.js", "__oxipng", "squoosh_oxipng_bg.wasm");
+const loadAvif = () => loadCodec("avif", "avif.js", "__avif", "avif_enc.wasm");
+
+/** Lossless oxipng pass over any finished PNG - the browser-tier zopfli. */
+async function oxiPass(pngBytes, fast) {
+  if (fast || !CODECS.oxipng) return pngBytes;
+  try {
+    const out = new Uint8Array(await CODECS.oxipng.optimise(pngBytes.buffer, { level: 2 }));
+    return out.length < pngBytes.length ? out : pngBytes;
+  } catch {
+    return pngBytes;
+  }
 }
 
 /* ------------------------------------------------------------------------- *
@@ -548,8 +589,16 @@ function makeEncoders(job) {
   }
 
   async function jpegEncode(level) {
-    // Flatten onto white first (JpegEncoder does the same). The flattened
-    // frame is static per job, so draw it once and only re-encode.
+    // mozjpeg when it loads: trellis-tuned, always 4:4:4 like the desktop
+    // JpegEncoder. jpeg only runs on alpha-free images, so rgba is opaque.
+    const moz = await loadMozjpeg();
+    if (moz) {
+      const buf = await moz.encode({ data: rgba, width, height }, {
+        quality: level, auto_subsample: false, chroma_subsample: 1,
+      });
+      return new Uint8Array(buf);
+    }
+    // Canvas fallback - flattened once, re-encoded per level.
     if (!flat) {
       flat = new OffscreenCanvas(width, height);
       const ctx = flat.getContext("2d");
@@ -566,12 +615,14 @@ function makeEncoders(job) {
     return exactQ && exactQ.palette.length <= level ? exactQ : null;
   }
 
-  async function encodePng8(level) {
+  async function encodePng8(level, fast) {
     const hit = exactFor(level);
     if (hit) {
-      // Identical output at every level the palette fits - encode once.
+      // Identical pixels at every level the palette fits - build the final
+      // (oxipng-squeezed) version once and reuse it everywhere.
       if (!exactPng) {
-        const data = await writeIndexedPng(hit.indices, width, height, hit.palette);
+        let data = await writeIndexedPng(hit.indices, width, height, hit.palette);
+        data = await oxiPass(data, false);
         exactPng = Object.assign(data, {
           _rgba: indexedToRgba(hit.indices, hit.palette, width, height),
           _exact: true,
@@ -580,7 +631,8 @@ function makeEncoders(job) {
       return exactPng;
     }
     const q = quantize(rgba, width, height, level);
-    const data = await writeIndexedPng(q.indices, width, height, q.palette);
+    let data = await writeIndexedPng(q.indices, width, height, q.palette);
+    data = await oxiPass(data, fast);
     return Object.assign(data, {
       _rgba: indexedToRgba(q.indices, q.palette, width, height),
       _exact: false,
@@ -597,18 +649,31 @@ function makeEncoders(job) {
       name: "png8", ext: ".png", mime: "image/png",
       supportsAlpha: true, lossless: false, levels: PNG8_COLORS,
       available: () => CAN_DEFLATE,
-      encode: (level) => encodePng8(level),
+      encode: (level, fast) => encodePng8(level, fast),
     },
     png: {
       name: "png", ext: ".png", mime: "image/png",
       supportsAlpha: true, lossless: true, levels: [100],
-      encode: () => canvasEncode("image/png"),
+      encode: async (level, fast) => oxiPass(await canvasEncode("image/png"), fast),
     },
     webp: {
       name: "webp", ext: ".webp", mime: "image/webp",
       supportsAlpha: true, lossless: false, levels: WEBP_QUALITY,
       available: () => CAN_WEBP,
       encode: (level) => canvasEncode("image/webp", level / 100),
+    },
+    avif: {
+      name: "avif", ext: ".avif", mime: "image/avif",
+      supportsAlpha: true, lossless: false, levels: AVIF_QUALITY,
+      available: () => !!CODECS.avif,
+      encode: async (level, fast) => {
+        const av = await loadAvif();
+        if (!av) throw new Error("avif encoder unavailable");
+        const buf = await av.encode({ data: rgba, width, height }, {
+          quality: level, speed: fast ? 8 : 6, subsample: 1,
+        });
+        return new Uint8Array(buf);
+      },
     },
     // Palette PNG admitted to the lossless target only when pixel-exact.
     png8x: {
@@ -647,14 +712,14 @@ async function searchOne(job, encoder, target, report) {
 
   if (encoder.lossless || levels.length === 1) {
     report(1);
-    const data = await encoder.encode(levels[levels.length - 1]);
+    const data = await encoder.encode(levels[levels.length - 1], false);
     return { data, level: null, score: 1.0 };
   }
 
   let probes = 0;
   const probe = async (index) => {
     report(++probes);
-    const data = await encoder.encode(levels[index]);
+    const data = await encoder.encode(levels[index], true); // fast: search pass
     if (data._exact) return { data, score: 1.0 }; // pixel-identical by construction
     const cand = await decodeToRgba(data, encoder.mime, width, height, job.scratch);
     return { data, score: ssimSampled(rgba, cand, width, height) };
@@ -690,7 +755,8 @@ async function searchOne(job, encoder, target, report) {
     }
   }
 
-  let data = chosen === top ? first.data : await encoder.encode(levels[chosen]);
+  // Always re-encode the winner at full effort - probes ran in fast mode.
+  let data = await encoder.encode(levels[chosen], false);
   let { score, chromaOk } = await finalScore(data);
 
   // The sampled search can be marginally optimistic, and the channel check is
@@ -699,7 +765,7 @@ async function searchOne(job, encoder, target, report) {
   while ((score < target || !chromaOk) && chosen < top) {
     report(++probes);
     chosen++;
-    data = await encoder.encode(levels[chosen]);
+    data = await encoder.encode(levels[chosen], false);
     ({ score, chromaOk } = await finalScore(data));
   }
 
@@ -842,6 +908,10 @@ async function runJob(msg) {
   let names = settings.formats && settings.formats.length
     ? settings.formats
     : TARGETS[settings.target] || TARGETS.figma;
+  // Codecs load lazily, but availability gating needs them resolved first.
+  if (names.includes("avif")) await loadAvif();
+  if (names.includes("jpeg")) await loadMozjpeg();
+  if (names.includes("png") || names.includes("png8") || names.includes("png8x")) await loadOxipng();
   names = names.filter((n) => {
     const e = encoders[n];
     if (!e) return false;
@@ -890,7 +960,7 @@ async function runJob(msg) {
 
   const best = bestPassing || bestFailing;
   if (best === null) {
-    post({ type: "failed", error: "no candidate produced usable output", warnings });
+    post({ type: "failed", error: "no candidate produced usable output", warnings, engines: engineFlags() });
     return;
   }
 
@@ -921,6 +991,7 @@ async function runJob(msg) {
   const isLossless = !!(best.encoder.lossless || best.data._exact);
   post({
     type: "done",
+    engines: engineFlags(),
     result: {
       passthrough: false, skipped: false, note: "",
       fmt: best.encoder.name, ext: best.encoder.ext, mime: best.encoder.mime,
@@ -933,6 +1004,13 @@ async function runJob(msg) {
       candidates, warnings,
     },
   }, [payload.buffer]);
+}
+
+function engineFlags() {
+  return {
+    webp: !!CAN_WEBP, png8: CAN_DEFLATE,
+    mozjpeg: !!CODECS.mozjpeg, oxipng: !!CODECS.oxipng, avif: !!CODECS.avif,
+  };
 }
 
 onmessage = (e) => {

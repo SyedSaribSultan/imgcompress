@@ -204,6 +204,7 @@ function onWorkerMessage(slot, msg) {
 
   slot.busy = false;
   slot.itemId = null;
+  if (msg.engines) state.caps = { ...state.caps, ...msg.engines };
 
   if (msg.rev !== state.settingsRev && !item.override) {
     // Settings changed while this ran; the result is stale. Run it again.
@@ -494,9 +495,11 @@ function renderQueue() {
 
 function capsLine() {
   if (state.caps.webp === null) return "Drop images anywhere on this page";
-  const parts = ["jpeg", "png"];
+  const parts = [state.caps.mozjpeg ? "mozjpeg" : "jpeg", "png"];
   if (state.caps.png8) parts.push("png8");
+  if (state.caps.oxipng) parts.push("oxipng");
   if (state.caps.webp) parts.push("webp");
+  if (state.caps.avif) parts.push("avif");
   return `Engines ready: ${parts.join(", ")} · runs entirely in your browser`;
 }
 
