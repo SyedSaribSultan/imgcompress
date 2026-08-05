@@ -365,10 +365,18 @@ function toLuma(rgba, n, backdrop) {
   return out;
 }
 
+/* Reusable scratch buffers. Each worker runs one job at a time, so a single
+ * grow-only allocation serves every call without GC churn. */
+let INTEGRAL = new Float64Array(0);
+const HIST = new Uint32Array(65536);
+
 /** Box mean over win×win windows via an integral image. */
 function boxMean(src, W, H, win, product) {
   const iw = W + 1;
-  const integral = new Float64Array(iw * (H + 1));
+  const need = iw * (H + 1);
+  if (INTEGRAL.length < need) INTEGRAL = new Float64Array(need);
+  const integral = INTEGRAL;
+  integral.fill(0, 0, need);
   for (let y = 0; y < H; y++) {
     let rowSum = 0;
     const srow = y * W, irow = (y + 1) * iw;
@@ -420,7 +428,8 @@ function ssimLuma(a, b, W, H, percentile) {
 
   // Histogram percentile over [-1, 1]: resolution ~3e-5, O(n), no giant sort.
   const BINS = 65536;
-  const hist = new Uint32Array(BINS);
+  const hist = HIST;
+  hist.fill(0);
   for (let i = 0; i < n; i++) {
     let v = (smap[i] + 1) * 0.5;
     if (v < 0) v = 0; else if (v > 1) v = 1;
@@ -446,6 +455,42 @@ function ssimRgba(refRgba, candRgba, W, H) {
   for (const backdrop of BACKDROPS) {
     const s = ssimLuma(toLuma(refRgba, n, backdrop), toLuma(candRgba, n, backdrop), W, H, 5);
     if (s < worst) worst = s;
+  }
+  return worst;
+}
+
+/** One colour channel as a plane, composited when alpha is present. */
+function toChannel(rgba, n, ch, backdrop) {
+  const out = new Float32Array(n);
+  if (!backdrop) {
+    for (let i = 0; i < n; i++) out[i] = rgba[i * 4 + ch];
+    return out;
+  }
+  const bg = backdrop[ch];
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    const a = rgba[o + 3] / 255;
+    out[i] = rgba[o + ch] * a + bg * (1 - a);
+  }
+  return out;
+}
+
+/** Strict final check: worst per-channel SSIM p5. Luma SSIM is structurally
+ *  blind to chroma damage — the README's own criticism of hand-rolled
+ *  compressors — so the encode that actually ships must also survive each
+ *  colour channel on its own. Search stays on cheap luma; this runs once per
+ *  candidate at the end. */
+function ssimRgbaStrict(refRgba, candRgba, W, H) {
+  const n = W * H;
+  const alpha = hasAlphaPixels(refRgba) || hasAlphaPixels(candRgba);
+  const drops = alpha ? BACKDROPS : [null];
+  let worst = Infinity;
+  for (const backdrop of drops) {
+    for (let ch = 0; ch < 3; ch++) {
+      const s = ssimLuma(toChannel(refRgba, n, ch, backdrop),
+                         toChannel(candRgba, n, ch, backdrop), W, H, 5);
+      if (s < worst) worst = s;
+    }
   }
   return worst;
 }
@@ -491,6 +536,9 @@ function ssimSampled(refRgba, candRgba, W, H) {
 
 function makeEncoders(job) {
   const { width, height, rgba, refCanvas } = job;
+  let flat = null;        // white-flattened copy, drawn once, reused per level
+  let exactQ;             // exact palette (or null), computed once per job
+  let exactPng = null;    // its encode: identical bytes at every level that fits
 
   async function canvasEncode(type, quality) {
     const blob = await refCanvas.convertToBlob(
@@ -500,14 +548,43 @@ function makeEncoders(job) {
   }
 
   async function jpegEncode(level) {
-    // Flatten onto white first (JpegEncoder does the same).
-    const c = new OffscreenCanvas(width, height);
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(refCanvas, 0, 0);
-    const blob = await c.convertToBlob({ type: "image/jpeg", quality: level / 100 });
+    // Flatten onto white first (JpegEncoder does the same). The flattened
+    // frame is static per job, so draw it once and only re-encode.
+    if (!flat) {
+      flat = new OffscreenCanvas(width, height);
+      const ctx = flat.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(refCanvas, 0, 0);
+    }
+    const blob = await flat.convertToBlob({ type: "image/jpeg", quality: level / 100 });
     return new Uint8Array(await blob.arrayBuffer());
+  }
+
+  function exactFor(level) {
+    if (exactQ === undefined) exactQ = exactPalette(rgba, 256);
+    return exactQ && exactQ.palette.length <= level ? exactQ : null;
+  }
+
+  async function encodePng8(level) {
+    const hit = exactFor(level);
+    if (hit) {
+      // Identical output at every level the palette fits - encode once.
+      if (!exactPng) {
+        const data = await writeIndexedPng(hit.indices, width, height, hit.palette);
+        exactPng = Object.assign(data, {
+          _rgba: indexedToRgba(hit.indices, hit.palette, width, height),
+          _exact: true,
+        });
+      }
+      return exactPng;
+    }
+    const q = quantize(rgba, width, height, level);
+    const data = await writeIndexedPng(q.indices, width, height, q.palette);
+    return Object.assign(data, {
+      _rgba: indexedToRgba(q.indices, q.palette, width, height),
+      _exact: false,
+    });
   }
 
   const encoders = {
@@ -520,14 +597,7 @@ function makeEncoders(job) {
       name: "png8", ext: ".png", mime: "image/png",
       supportsAlpha: true, lossless: false, levels: PNG8_COLORS,
       available: () => CAN_DEFLATE,
-      encode: async (level) => {
-        const q = quantize(rgba, width, height, level);
-        const data = await writeIndexedPng(q.indices, width, height, q.palette);
-        return Object.assign(data, {
-          _rgba: indexedToRgba(q.indices, q.palette, width, height),
-          _exact: q.exact,
-        });
-      },
+      encode: (level) => encodePng8(level),
     },
     png: {
       name: "png", ext: ".png", mime: "image/png",
@@ -546,16 +616,13 @@ function makeEncoders(job) {
       supportsAlpha: true, lossless: true, levels: [256], exactOnly: true,
       available: () => CAN_DEFLATE,
       encode: async () => {
-        const q = exactPalette(rgba, 256);
-        if (!q) throw new Error("more than 256 colours");
-        const data = await writeIndexedPng(q.indices, width, height, q.palette);
-        return Object.assign(data, {
-          _rgba: indexedToRgba(q.indices, q.palette, width, height),
-          _exact: true,
-        });
+        const hit = exactFor(256);
+        if (!hit) throw new Error("more than 256 colours");
+        return encodePng8(256);
       },
     },
   };
+  encoders._hasExact = () => !!exactFor(256);
   return encoders;
 }
 
@@ -579,16 +646,34 @@ async function searchOne(job, encoder, target, report) {
   const levels = encoder.levels;
 
   if (encoder.lossless || levels.length === 1) {
+    report(1);
     const data = await encoder.encode(levels[levels.length - 1]);
     return { data, level: null, score: 1.0 };
   }
 
+  let probes = 0;
   const probe = async (index) => {
-    report();
+    report(++probes);
     const data = await encoder.encode(levels[index]);
     if (data._exact) return { data, score: 1.0 }; // pixel-identical by construction
     const cand = await decodeToRgba(data, encoder.mime, width, height, job.scratch);
     return { data, score: ssimSampled(rgba, cand, width, height) };
+  };
+
+  // The shipped encode is verified at full frame AND per colour channel -
+  // luma-only scoring cannot see chroma damage, and the browser's JPEG
+  // encoder subsamples chroma with no way to turn that off. Channels get
+  // twice the luma's distortion allowance: eyes tolerate chroma error far
+  // better than luma error (that asymmetry is why 4:2:0 exists), so this
+  // catches catastrophic chroma damage without outlawing ordinary JPEG.
+  const chromaFloor = 1 - 2 * (1 - target);
+  const finalScore = async (data) => {
+    if (data._exact) return { score: 1.0, chromaOk: true };
+    const cand = await decodeToRgba(data, encoder.mime, width, height, job.scratch);
+    return {
+      score: ssimRgba(rgba, cand, width, height),
+      chromaOk: ssimRgbaStrict(rgba, cand, width, height) >= chromaFloor,
+    };
   };
 
   const top = levels.length - 1;
@@ -606,20 +691,19 @@ async function searchOne(job, encoder, target, report) {
   }
 
   let data = chosen === top ? first.data : await encoder.encode(levels[chosen]);
-  let cand = await decodeToRgba(data, encoder.mime, width, height, job.scratch);
-  let score = data._exact ? 1.0 : ssimRgba(rgba, cand, width, height);
+  let { score, chromaOk } = await finalScore(data);
 
-  // The sampled search can be marginally optimistic. If the full-frame check
-  // misses, step up until it clears rather than shipping something that fails
-  // the promise we just made.
-  while (score < target && chosen < top) {
+  // The sampled search can be marginally optimistic, and the channel check is
+  // stricter than the search metric. If the honest check misses, step up until
+  // it clears rather than shipping something that fails the promise we made.
+  while ((score < target || !chromaOk) && chosen < top) {
+    report(++probes);
     chosen++;
     data = await encoder.encode(levels[chosen]);
-    cand = await decodeToRgba(data, encoder.mime, width, height, job.scratch);
-    score = data._exact ? 1.0 : ssimRgba(rgba, cand, width, height);
+    ({ score, chromaOk } = await finalScore(data));
   }
 
-  return { data, level: levels[chosen], score };
+  return { data, level: levels[chosen], score, chromaOk };
 }
 
 /* ------------------------------------------------------------------------- *
@@ -683,6 +767,20 @@ async function decodeNormalised(blob, settings) {
 
 const EXT_OF = { jpeg: ".jpg", png8: ".png", png: ".png", webp: ".webp" };
 
+/* One-slot decode cache. When only the quality floor changes, re-running an
+ * item skips the read-decode-resize phase entirely - which is what makes
+ * playing with the slider feel instant. The UI routes an item back to the
+ * worker that last handled it, so one slot per worker is enough. */
+let DCACHE = null;
+
+function limitFor(settings) {
+  let limit = settings.maxDimension || 0;
+  if (settings.target === "figma") {
+    limit = limit ? Math.min(limit, FIGMA_MAX_DIMENSION) : FIGMA_MAX_DIMENSION;
+  }
+  return limit;
+}
+
 function sameContainer(ext, name) {
   const src = (name.match(/\.[a-z0-9]+$/i) || [""])[0].toLowerCase();
   if (ext === ".jpg") return src === ".jpg" || src === ".jpeg";
@@ -713,22 +811,28 @@ async function runJob(msg) {
     }
   }
 
-  post({ type: "progress", stage: "decoding" });
+  post({ type: "progress", stage: "decoding", frac: 0 });
 
+  const cacheKey = `${id}|${limitFor(settings)}`;
   let job;
-  try {
-    job = await decodeNormalised(new Blob([buffer], { type: mime }), settings);
-  } catch {
-    post({
-      type: "failed",
-      error: "could not decode — the file is corrupt or this browser cannot read it",
-    });
-    return;
+  if (DCACHE && DCACHE.key === cacheKey) {
+    job = DCACHE.job;
+  } else {
+    try {
+      job = await decodeNormalised(new Blob([buffer], { type: mime }), settings);
+    } catch {
+      post({
+        type: "failed",
+        error: "could not decode — the file is corrupt or this browser cannot read it",
+      });
+      return;
+    }
+    job.scratch = (() => {
+      const c = new OffscreenCanvas(job.width, job.height);
+      return { canvas: c, ctx: c.getContext("2d", { willReadFrequently: true }) };
+    })();
+    DCACHE = { key: cacheKey, job };
   }
-  job.scratch = (() => {
-    const c = new OffscreenCanvas(job.width, job.height);
-    return { canvas: c, ctx: c.getContext("2d", { willReadFrequently: true }) };
-  })();
 
   const alpha = hasAlphaPixels(job.rgba);
   const target = settings.qualityTarget;
@@ -758,15 +862,21 @@ async function runJob(msg) {
 
   for (const nameKey of names) {
     const encoder = encoders[nameKey];
-    const report = () => post({ type: "progress", stage: "encoding", detail: `${encoder.name}`, done, total: names.length });
+    // ~log2(ladder) probes plus the final verify; close enough for a live bar.
+    const expected = Math.ceil(Math.log2(encoder.levels.length || 2)) + 3;
+    const report = (probes = 0) => post({
+      type: "progress", stage: "encoding", detail: `${encoder.name}`,
+      done, total: names.length,
+      frac: (done + Math.min(probes / expected, 0.95)) / names.length,
+    });
     try {
       // png8x only exists where it is pixel-exact; skip silently elsewhere.
-      if (encoder.exactOnly && !exactPalette(job.rgba, 256)) { done++; continue; }
+      if (encoder.exactOnly && !encoders._hasExact()) { done++; continue; }
       const found = await searchOne(job, encoder, target, report);
       const { data, level, score } = found;
       candidates.push({ format: encoder.name, bytes: data.length, score, lossless: !!(encoder.lossless || data._exact) });
       const entry = { data, level, score, encoder };
-      if (score >= target) {
+      if (score >= target && found.chromaOk !== false) {
         if (!bestPassing || data.length < bestPassing.data.length) bestPassing = entry;
       } else if (!bestFailing || score > bestFailing.score ||
                  (score === bestFailing.score && data.length < bestFailing.data.length)) {

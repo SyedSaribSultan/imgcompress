@@ -5,6 +5,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ------------------------------- helpers --------------------------------- */
 
@@ -33,6 +34,22 @@ function mimeFor(file) {
   return MIME_OF[ext] || "application/octet-stream";
 }
 
+/** Count-up for byte values: the number rolls to its destination. */
+function rollNumber(el, toBytes, suffixHtml) {
+  if (REDUCED || toBytes < 1024) {
+    el.innerHTML = human(toBytes) + (suffixHtml || "");
+    return;
+  }
+  const t0 = performance.now(), dur = 300;
+  const tick = (t) => {
+    const p = Math.min(1, (t - t0) / dur);
+    const eased = 1 - (1 - p) * (1 - p) * (1 - p);
+    el.innerHTML = human(toBytes * eased) + (suffixHtml || "");
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 /* -------------------------------- state ---------------------------------- */
 
 const state = {
@@ -46,6 +63,8 @@ let selected = null;
 let mode = "split";
 let zoom = 0;
 let pan = { x: 0, y: 0 };
+let batchActive = false;   // true while at least one item is queued/working
+const BASE_TITLE = document.title;
 
 function uid() {
   const a = new Uint8Array(8);
@@ -53,14 +72,51 @@ function uid() {
   return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/* ------------------------- settings persistence -------------------------- */
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("imgc-settings") || "{}");
+    if (saved.target) state.settings.target = saved.target;
+    if (saved.qualityTarget >= 0.8 && saved.qualityTarget <= 1) {
+      state.settings.qualityTarget = saved.qualityTarget;
+    }
+    if (Number.isFinite(saved.maxDimension)) state.settings.maxDimension = saved.maxDimension;
+  } catch {}
+  $("target").value = state.settings.target;
+  $("quality").value = Math.round(state.settings.qualityTarget * 100);
+  $("quality-out").textContent = $("quality").value;
+  $("maxdim").value = state.settings.maxDimension;
+  reflectQualityHint();
+}
+
+function saveSettings() {
+  try { localStorage.setItem("imgc-settings", JSON.stringify(state.settings)); } catch {}
+}
+
+function hintForQuality(q) {
+  if (q >= 100) return "pixel-perfect — only lossless candidates can win";
+  if (q >= 98) return "overkill for most things — masters you'll re-edit";
+  if (q >= 97) return "default — imperceptible side by side";
+  if (q >= 94) return "safe for A/B toggling";
+  if (q >= 90) return "fine for busy photos";
+  return "visible if you go looking — thumbnails";
+}
+function reflectQualityHint() {
+  const q = Number($("quality").value);
+  const hint = hintForQuality(q);
+  $("quality").title = hint;
+  $("quality-out").title = hint;
+}
+
 /* ----------------------------- worker pool ------------------------------- */
 
-const POOL_SIZE = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 4) - 1));
+const POOL_MAX = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 4) - 1));
 const pool = [];
 
 function makeWorker() {
   const w = new Worker("worker.js");
-  const slot = { w, busy: false, itemId: null };
+  const slot = { w, busy: false, itemId: null, index: pool.length };
   w.onmessage = (e) => onWorkerMessage(slot, e.data);
   w.onerror = () => {
     if (slot.itemId) {
@@ -68,10 +124,15 @@ function makeWorker() {
       if (item) { item.status = "failed"; item.error = "the compression worker crashed"; }
     }
     slot.busy = false; slot.itemId = null;
-    render(); dispatch();
+    scheduleRender(); dispatch();
   };
   pool.push(slot);
   return slot;
+}
+
+/** Spawn workers as demand appears instead of all four at page load. */
+function ensurePool(want) {
+  while (pool.length < Math.min(POOL_MAX, Math.max(1, want))) makeWorker();
 }
 
 function effectiveSettings(item) {
@@ -84,15 +145,24 @@ function effectiveSettings(item) {
 }
 
 async function dispatch() {
-  for (const slot of pool) {
-    if (slot.busy) continue;
-    const item = state.items.find((i) => i.status === "queued");
-    if (!item) return;
+  const queued = state.items.filter((i) => i.status === "queued");
+  if (!queued.length) return;
+  ensurePool(queued.length);
+
+  for (const item of queued) {
+    // Prefer the worker that last handled this item - its decode cache makes
+    // a quality-only re-run start instantly.
+    let slot = item.slot != null && !pool[item.slot].busy ? pool[item.slot] : null;
+    if (!slot) slot = pool.find((s) => !s.busy);
+    if (!slot) return;
+
     slot.busy = true;
     slot.itemId = item.id;
+    item.slot = slot.index;
     item.status = "working";
     item.progress = "reading…";
-    render();
+    item.frac = 0;
+    scheduleRender("queue");
     let buffer;
     try {
       buffer = await item.file.arrayBuffer();
@@ -100,7 +170,7 @@ async function dispatch() {
       item.status = "failed";
       item.error = "could not read the file";
       slot.busy = false; slot.itemId = null;
-      render();
+      scheduleRender();
       continue;
     }
     slot.w.postMessage({
@@ -114,7 +184,7 @@ async function dispatch() {
 function onWorkerMessage(slot, msg) {
   if (msg.type === "caps") {
     state.caps = msg.caps;
-    render();
+    scheduleRender("queue");
     return;
   }
   const item = state.byId.get(msg.id);
@@ -124,8 +194,11 @@ function onWorkerMessage(slot, msg) {
   }
 
   if (msg.type === "progress") {
-    item.progress = msg.stage === "decoding" ? "decoding…" : `encoding ${msg.detail || ""}…`;
-    renderQueue();
+    item.frac = msg.frac ?? item.frac ?? 0;
+    item.progress = msg.stage === "decoding"
+      ? "decoding…"
+      : `${msg.detail || "encoding"} · ${Math.round((item.frac || 0) * 100)}%`;
+    scheduleRender("queue");
     return;
   }
 
@@ -135,7 +208,7 @@ function onWorkerMessage(slot, msg) {
   if (msg.rev !== state.settingsRev && !item.override) {
     // Settings changed while this ran; the result is stale. Run it again.
     item.status = "queued";
-    render(); dispatch();
+    scheduleRender(); dispatch();
     return;
   }
 
@@ -148,6 +221,7 @@ function onWorkerMessage(slot, msg) {
     if (item.afterURL) URL.revokeObjectURL(item.afterURL);
     const blob = new Blob([r.bytes], { type: r.mime });
     item.status = "done";
+    item.justFinished = true;   // one render's worth of celebration
     item.result = r;
     item.afterBlob = blob;
     item.afterURL = URL.createObjectURL(blob);
@@ -164,23 +238,62 @@ function onWorkerMessage(slot, msg) {
     item.outW = r.outW || item.width;
     item.outH = r.outH || item.height;
   }
-  render();
+  scheduleRender();
   dispatch();
+  maybeCelebrate();
 }
 
 function startEngine() {
-  if (!pool.length) {
-    for (let i = 0; i < POOL_SIZE; i++) makeWorker();
-    pool[0].w.postMessage({ type: "probe" });
+  ensurePool(1);
+  pool[0].w.postMessage({ type: "probe" });
+}
+
+/** The app should acknowledge the moment the whole batch lands. */
+function maybeCelebrate() {
+  const busy = state.items.some((i) => i.status === "queued" || i.status === "working");
+  if (busy || !batchActive) return;
+  batchActive = false;
+  const done = state.items.filter((i) => i.status === "done" || i.status === "saved");
+  if (!done.length) return;
+  const before = done.reduce((s, i) => s + i.originalBytes, 0);
+  const after = done.reduce((s, i) => s + i.newBytes, 0);
+  const saved = before - after;
+  if (saved > 0) {
+    toast(`All done — saved ${human(saved)} (${Math.round(saved / before * 100)}%) across ${done.length} image${done.length === 1 ? "" : "s"}`);
+  } else {
+    toast("All done — these were already well compressed");
   }
 }
 
 /* ------------------------------ add files -------------------------------- */
 
+async function makeThumb(item) {
+  try {
+    const bmp = await createImageBitmap(item.file);
+    const side = 68;
+    const scale = Math.max(side / bmp.width, side / bmp.height);
+    const c = document.createElement("canvas");
+    c.width = side; c.height = side;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "medium";
+    ctx.drawImage(bmp,
+      (side - bmp.width * scale) / 2, (side - bmp.height * scale) / 2,
+      bmp.width * scale, bmp.height * scale);
+    bmp.close();
+    const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+    if (blob && state.byId.has(item.id)) {
+      item.thumbURL = URL.createObjectURL(blob);
+      const row = rowEls.get(item.id);
+      if (row) row.querySelector(".thumb").style.backgroundImage = `url("${item.thumbURL}")`;
+    }
+  } catch { /* corrupt files simply keep a blank thumb */ }
+}
+
 function addFiles(files) {
   const usable = [...files].filter((f) => SUPPORTED.test(f.name) || /^image\//.test(f.type));
   if (!usable.length) { toast("No supported images in that drop"); return; }
   startEngine();
+  batchActive = true;
   for (const file of usable) {
     const item = {
       id: uid(),
@@ -195,10 +308,37 @@ function addFiles(files) {
     state.items.push(item);
     state.byId.set(item.id, item);
     if (!selected) selected = item.id;
+    makeThumb(item);
   }
   toast(`Added ${usable.length} image${usable.length === 1 ? "" : "s"}`);
-  render();
+  scheduleRender();
   dispatch();
+}
+
+/** Drops can contain folders - designers drop whole export directories. */
+async function filesFromDataTransfer(dt) {
+  const entries = [...(dt.items || [])]
+    .map((i) => i.webkitGetAsEntry?.())
+    .filter(Boolean);
+  if (!entries.some((e) => e.isDirectory)) return dt.files;
+
+  const out = [];
+  async function walk(entry) {
+    if (entry.isFile) {
+      const f = await new Promise((res, rej) => entry.file(res, rej)).catch(() => null);
+      if (f) out.push(f);
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) {
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej))
+          .catch(() => []);
+        if (!batch.length) break;
+        for (const e of batch) await walk(e);
+      }
+    }
+  }
+  for (const e of entries) await walk(e);
+  return out;
 }
 
 function removeItems(ids) {
@@ -207,16 +347,20 @@ function removeItems(ids) {
     if (!item) continue;
     URL.revokeObjectURL(item.beforeURL);
     if (item.afterURL) URL.revokeObjectURL(item.afterURL);
+    if (item.thumbURL) URL.revokeObjectURL(item.thumbURL);
     state.byId.delete(id);
     const i = state.items.indexOf(item);
     if (i >= 0) state.items.splice(i, 1);
+    const row = rowEls.get(id);
+    if (row) { row.remove(); rowEls.delete(id); }
     if (selected === id) selected = null;
   }
   if (!selected && state.items.length) selected = state.items[0].id;
-  render();
+  scheduleRender();
 }
 
 function requeue(ids) {
+  let any = false;
   for (const id of ids) {
     const item = state.byId.get(id);
     if (!item || item.status === "working") continue;
@@ -225,26 +369,52 @@ function requeue(ids) {
     item.warnings = [];
     item.note = "";
     item.candidates = [];
+    item.frac = 0;
+    any = true;
   }
-  render();
+  if (any) batchActive = true;
+  scheduleRender();
   dispatch();
 }
 
-/* ------------------------------- rendering ------------------------------- */
+/* --------------------------- render scheduling ---------------------------- */
+
+const dirty = { queue: false, inspector: false, summary: false };
+let renderQueued = false;
+function scheduleRender(part) {
+  if (part) dirty[part] = true;
+  else dirty.queue = dirty.inspector = dirty.summary = true;
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    render();
+  });
+}
 
 function render() {
-  renderQueue();
-  renderSummary();
-  const still = state.byId.get(selected);
-  if (!still && state.items.length) { selected = state.items[0].id; }
-  renderInspector(state.byId.get(selected));
+  const wantAll = dirty.inspector || dirty.summary;
+  if (dirty.queue || wantAll) { renderQueue(); dirty.queue = false; }
+  if (wantAll) {
+    renderSummary(); dirty.summary = false;
+    const still = state.byId.get(selected);
+    if (!still && state.items.length) selected = state.items[0].id;
+    renderInspector(state.byId.get(selected));
+    dirty.inspector = false;
+  }
   $("app-empty").hidden = state.items.length > 0;
   $("app-full").hidden = state.items.length === 0;
+  renderBatchProgress();
+  renderTitle();
 }
+
+/* -------------------------------- queue ---------------------------------- */
+
+const rowEls = new Map();
 
 function statusLine(it) {
   if (it.status === "failed") return `<span class="err">${escapeHtml(it.error || "failed")}</span>`;
-  if (it.status === "queued") return "waiting";
+  if (it.status === "queued") return "waiting…";
   if (it.status === "working") return escapeHtml(it.progress || "encoding…");
   const pct = it.originalBytes && it.newBytes
     ? 100 * (it.originalBytes - it.newBytes) / it.originalBytes : 0;
@@ -253,38 +423,73 @@ function statusLine(it) {
   return `${human(it.originalBytes)} → ${human(it.newBytes)} · ${pctText}${tail}`;
 }
 
+function buildRow(it) {
+  const el = document.createElement("button");
+  el.className = "row enter";
+  el.dataset.id = it.id;
+  el.setAttribute("role", "option");
+  el.innerHTML = `
+    <span class="thumb"></span>
+    <span class="cell">
+      <span class="name"></span>
+      <span class="meta"></span>
+      <span class="track"><i></i></span>
+    </span>
+    <span class="tail">
+      <span class="micro ov" title="This image has its own settings" hidden>OV</span>
+      <span class="dot"></span>
+    </span>`;
+  el.querySelector(".name").textContent = it.name;
+  if (it.thumbURL) el.querySelector(".thumb").style.backgroundImage = `url("${it.thumbURL}")`;
+  el.addEventListener("animationend", () => el.classList.remove("enter"), { once: true });
+  return el;
+}
+
 function renderQueue() {
   const list = $("queue-list");
   $("queue-count").textContent = state.items.length;
   if (!state.items.length) {
-    list.innerHTML = `<div class="queue-empty">Nothing queued yet.<br>Drop images anywhere on this page.</div>`;
+    for (const el of rowEls.values()) el.remove();
+    rowEls.clear();
+    if (!list.querySelector(".queue-empty")) {
+      list.innerHTML = `<div class="queue-empty">Nothing queued yet.<br>Drop images anywhere on this page.</div>`;
+    }
     $("queue-foot").textContent = capsLine();
     return;
   }
-  list.innerHTML = state.items.map((it) => `
-    <button class="row" role="option" data-id="${it.id}" aria-selected="${it.id === selected}">
-      <span class="thumb"></span>
-      <span class="cell">
-        <span class="name">${escapeHtml(it.name)}</span>
-        <span class="meta">${statusLine(it)}</span>
-        ${it.status === "working" ? '<span class="track"><i></i></span>' : ""}
-      </span>
-      <span class="tail">
-        ${it.override ? '<span class="micro" title="This image has its own settings">OV</span>' : ""}
-        <span class="dot ${it.status}"></span>
-      </span>
-    </button>`).join("");
-  // Thumbnails go through the CSSOM: a style="" attribute in the markup would
-  // (rightly) be refused by the page's style-src CSP.
-  for (const row of list.querySelectorAll(".row")) {
-    const it = state.byId.get(row.dataset.id);
-    if (it && it.status !== "failed") {
-      row.querySelector(".thumb").style.backgroundImage = `url("${it.beforeURL}")`;
+  list.querySelector(".queue-empty")?.remove();
+
+  let prev = null;
+  for (const it of state.items) {
+    let el = rowEls.get(it.id);
+    if (!el) {
+      el = buildRow(it);
+      rowEls.set(it.id, el);
+      if (prev) prev.after(el); else list.prepend(el);
     }
+    // update in place - no innerHTML churn, no lost hover states
+    el.setAttribute("aria-selected", String(it.id === selected));
+    el.classList.toggle("working", it.status === "working");
+    const meta = statusLine(it);
+    if (el.dataset.meta !== meta) {
+      el.dataset.meta = meta;
+      el.querySelector(".meta").innerHTML = meta;
+    }
+    const dot = el.querySelector(".dot");
+    const dotClass = `dot ${it.status}`;
+    if (dot.className !== dotClass) dot.className = dotClass;
+    el.querySelector(".ov").hidden = !it.override;
+    if (it.status === "working") {
+      el.querySelector(".track i").style.width = `${Math.max(4, (it.frac || 0) * 100)}%`;
+    }
+    prev = el;
   }
+
   const done = state.items.filter((i) => i.status === "done" || i.status === "saved").length;
-  const busy = state.items.filter((i) => i.status === "queued" || i.status === "working").length;
-  $("queue-foot").textContent = busy ? `${busy} to go · ${done} ready` : `${done} ready to download`;
+  const busyItems = state.items.filter((i) => i.status === "queued" || i.status === "working").length;
+  $("queue-foot").textContent = busyItems
+    ? `${busyItems} to go · ${done} ready`
+    : `${done} ready · Ctrl+S downloads everything · ? for shortcuts`;
 }
 
 function capsLine() {
@@ -295,6 +500,30 @@ function capsLine() {
   return `Engines ready: ${parts.join(", ")} · runs entirely in your browser`;
 }
 
+function renderBatchProgress() {
+  const bar = $("batch-bar");
+  const items = state.items;
+  const busy = items.some((i) => i.status === "queued" || i.status === "working");
+  $("batch").classList.toggle("on", busy);
+  if (!busy) { bar.style.width = "0%"; return; }
+  let sum = 0;
+  for (const i of items) {
+    sum += (i.status === "done" || i.status === "saved" || i.status === "failed") ? 1
+      : i.status === "working" ? Math.min(0.95, i.frac || 0) : 0;
+  }
+  bar.style.width = `${(sum / items.length) * 100}%`;
+}
+
+function renderTitle() {
+  const busyItems = state.items.filter((i) => i.status === "queued" || i.status === "working").length;
+  const settled = state.items.length - busyItems;
+  document.title = busyItems
+    ? `▸ ${settled}/${state.items.length} — imgcompress`
+    : BASE_TITLE;
+}
+
+/* ------------------------------ inspector -------------------------------- */
+
 function showInspector(on) {
   $("inspector-empty").hidden = on;
   $("inspector-body").hidden = !on;
@@ -303,9 +532,8 @@ function showInspector(on) {
 function selectItem(id, quiet) {
   selected = id;
   zoom = 0; pan = { x: 0, y: 0 };
-  renderQueue();
-  renderInspector(state.byId.get(id));
-  if (!quiet) $("queue-list").querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
+  scheduleRender();
+  if (!quiet) rowEls.get(id)?.scrollIntoView({ block: "nearest" });
 }
 
 function fmtScore(it, score, lossless) {
@@ -334,15 +562,28 @@ function renderInspector(it) {
   $("split").disabled = !ready;
   $("tag-l").style.opacity = mode === "split" && ready ? "1" : "0";
   $("tag-r").style.opacity = ready ? "1" : "0";
+  $("tag-l").textContent = ready ? `Original · ${human(it.originalBytes)}` : "Original";
+  $("tag-r").textContent = ready ? `Compressed · ${human(it.newBytes)}` : "Compressed";
 
-  $("s-size").innerHTML = ready
-    ? `${human(it.newBytes)} <small>from ${human(it.originalBytes)}</small>`
-    : (it.status === "failed" ? "—" : "working…");
   const saved = it.originalBytes - it.newBytes;
   const pct = it.originalBytes && it.newBytes ? 100 * saved / it.originalBytes : 0;
-  $("s-saved").innerHTML = ready
-    ? (pct > 0 ? `−${pct.toFixed(0)}% <small>${human(saved)}</small>` : "none")
-    : "—";
+  if (ready && it.justFinished) {
+    it.justFinished = false;
+    rollNumber($("s-size"), it.newBytes, ` <small>from ${human(it.originalBytes)}</small>`);
+    if (pct > 0) rollNumber($("s-saved"), saved, ` <small>−${pct.toFixed(0)}%</small>`);
+    else $("s-saved").textContent = "none";
+    $("s-saved").classList.remove("pop");
+    void $("s-saved").offsetWidth;   // restart the animation
+    $("s-saved").classList.add("pop");
+    maybeShowHint();
+  } else {
+    $("s-size").innerHTML = ready
+      ? `${human(it.newBytes)} <small>from ${human(it.originalBytes)}</small>`
+      : (it.status === "failed" ? "—" : "working…");
+    $("s-saved").innerHTML = ready
+      ? (pct > 0 ? `${human(saved)} <small>−${pct.toFixed(0)}%</small>` : "none")
+      : "—";
+  }
   $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
   $("s-score").textContent = ready ? fmtScore(it, it.score, it.lossless || it.passthrough) : "—";
   $("s-dims").innerHTML = !it.width ? "—"
@@ -367,8 +608,8 @@ function renderInspector(it) {
       it.passthrough ? "Passed through unchanged." : "Encoding…"}</div>`;
   } else {
     const winner = Math.min(...it.candidates.map((c) => c.bytes));
-    cands.innerHTML = [...it.candidates].sort((a, b) => a.bytes - b.bytes).map((c) => `
-      <div class="cand ${c.bytes === winner ? "win" : ""}">
+    cands.innerHTML = [...it.candidates].sort((a, b) => a.bytes - b.bytes).map((c, i) => `
+      <div class="cand ${c.bytes === winner ? "win" : ""}" data-cand-index="${i}">
         <span class="f">${escapeHtml(c.format)}</span>
         <span class="b">${human(c.bytes)}</span>
         <span class="${c.bytes === winner ? "badge" : "s"}">${
@@ -378,9 +619,32 @@ function renderInspector(it) {
   $("ov-format").value = it.override?.formats?.[0] || "";
   $("ov-quality").value = it.override?.qualityTarget != null
     ? Math.round(it.override.qualityTarget * 100) : "";
+  $("ov-reset").hidden = !it.override;
   $("dl-one").disabled = !ready;
+  $("retry-btn").hidden = it.status !== "failed";
   applyZoom();
 }
+
+/* ------------------------- first-result hint ------------------------------ */
+
+function maybeShowHint() {
+  try {
+    if (localStorage.getItem("imgc-hint")) return;
+  } catch {}
+  const hint = $("hint");
+  hint.hidden = false;
+  hint.classList.add("on");
+  const dismiss = () => {
+    hint.classList.remove("on");
+    setTimeout(() => { hint.hidden = true; }, 300);
+    try { localStorage.setItem("imgc-hint", "1"); } catch {}
+    $("stage").removeEventListener("pointerdown", dismiss);
+  };
+  $("stage").addEventListener("pointerdown", dismiss);
+  setTimeout(dismiss, 9000);
+}
+
+/* ------------------------------- summary --------------------------------- */
 
 function renderSummary() {
   const done = state.items.filter((i) => i.status === "done" || i.status === "saved");
@@ -390,11 +654,11 @@ function renderSummary() {
   $("t-sizes").textContent = done.length ? `${human(before)} → ${human(after)}` : "";
   $("t-saved").textContent = done.length && saved > 0
     ? `saved ${human(saved)} (${((saved / before) * 100).toFixed(0)}%)` : "";
-  const n = state.items.filter((i) => i.status === "done").length;
   const btn = $("save-btn");
-  btn.disabled = done.length === 0;
-  btn.textContent = done.length <= 1 ? "Download" : `Download all (${done.length})`;
-  if (n === 0 && done.length === 0) btn.textContent = "Download";
+  if (!btn.dataset.busy) {
+    btn.disabled = done.length === 0;
+    btn.textContent = done.length <= 1 ? "Download" : `Download all (${done.length})`;
+  }
 }
 
 /* -------------------------------- zoom ------------------------------------ */
@@ -475,17 +739,18 @@ async function zipStore(entries) { // [{name, blob}]
   const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xffff;
   const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
 
-  for (const { name, blob } of entries) {
-    const data = new Uint8Array(await blob.arrayBuffer());
-    const nameBytes = encoder.encode(name);
+  const datas = await Promise.all(entries.map((e) => e.blob.arrayBuffer()));
+  entries.forEach((entry, i) => {
+    const data = new Uint8Array(datas[i]);
+    const nameBytes = encoder.encode(entry.name);
     const crc = zcrc32(data);
 
     const local = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true);
-    lv.setUint16(4, 20, true);          // version needed
-    lv.setUint16(6, 0x0800, true);      // UTF-8 names
-    lv.setUint16(8, 0, true);           // method: store
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
     lv.setUint16(10, dosTime, true);
     lv.setUint16(12, dosDate, true);
     lv.setUint32(14, crc, true);
@@ -513,7 +778,7 @@ async function zipStore(entries) { // [{name, blob}]
     chunks.push(local, data);
     central.push(cdir);
     offset += local.length + data.length;
-  }
+  });
 
   let centralSize = 0;
   for (const c of central) centralSize += c.length;
@@ -531,20 +796,32 @@ async function zipStore(entries) { // [{name, blob}]
 async function downloadAll() {
   const done = state.items.filter((i) => i.status === "done" || i.status === "saved");
   if (!done.length) return;
+  const btn = $("save-btn");
   if (done.length === 1) {
     const it = done[0];
     downloadBlob(it.afterBlob, outputName(it));
+    toast(`Downloaded ${outputName(it)}`);
     it.status = "saved";
-    render();
+    scheduleRender();
     return;
   }
-  const used = new Set();
-  const entries = done.map((it) => ({ name: outputName(it, used), blob: it.afterBlob }));
-  toast("Building zip…");
-  const zip = await zipStore(entries);
-  downloadBlob(zip, "imgcompress.zip");
-  for (const it of done) it.status = "saved";
-  render();
+  btn.dataset.busy = "1";
+  btn.textContent = "Zipping…";
+  try {
+    const used = new Set();
+    const entries = done.map((it) => ({ name: outputName(it, used), blob: it.afterBlob }));
+    const zip = await zipStore(entries);
+    downloadBlob(zip, "imgcompress.zip");
+    const saved = done.reduce((s, i) => s + (i.originalBytes - i.newBytes), 0);
+    toast(`Zipped ${done.length} images — ${human(saved)} lighter than they arrived`);
+    for (const it of done) it.status = "saved";
+    btn.textContent = "Saved ✓";
+    setTimeout(() => { delete btn.dataset.busy; scheduleRender(); }, 1600);
+  } catch (e) {
+    delete btn.dataset.busy;
+    toast("Could not build the zip — try downloading images individually");
+  }
+  scheduleRender();
 }
 
 /* -------------------------------- toast ----------------------------------- */
@@ -555,7 +832,7 @@ function toast(message) {
   el.textContent = message;
   el.classList.add("on");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("on"), 3200);
+  toastTimer = setTimeout(() => el.classList.remove("on"), 3600);
 }
 
 /* ------------------------------- settings --------------------------------- */
@@ -573,21 +850,79 @@ function pushSettings() {
   pushTimer = setTimeout(() => {
     state.settings = currentSettings();
     state.settingsRev++;
+    saveSettings();
     requeue(state.items.filter((i) => i.status !== "working").map((i) => i.id));
   }, 350);
 }
 
+/* ----------------------------- sample images ------------------------------ */
+
+/** No images handy? Generate two on the spot - one photographic, one flat -
+ *  so the bake-off's whole point (different winners) shows immediately. */
+async function addSamples() {
+  const photo = document.createElement("canvas");
+  photo.width = 1280; photo.height = 840;
+  {
+    const ctx = photo.getContext("2d");
+    const g = ctx.createLinearGradient(0, 0, 1280, 840);
+    g.addColorStop(0, "#e8927c"); g.addColorStop(.5, "#c56a8b"); g.addColorStop(1, "#4a3f6b");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 1280, 840);
+    ctx.fillStyle = "#f7d9a0";
+    ctx.beginPath(); ctx.arc(950, 260, 130, 0, 7); ctx.fill();
+    const id = ctx.getImageData(0, 0, 1280, 840);
+    for (let i = 0; i < id.data.length; i += 4) {
+      const n = (Math.random() - 0.5) * 22;
+      id.data[i] += n; id.data[i + 1] += n; id.data[i + 2] += n;
+    }
+    ctx.putImageData(id, 0, 0);
+  }
+  const ui = document.createElement("canvas");
+  ui.width = 1280; ui.height = 840;
+  {
+    const ctx = ui.getContext("2d");
+    ctx.fillStyle = "#f4f5f7"; ctx.fillRect(0, 0, 1280, 840);
+    ctx.fillStyle = "#191c22"; ctx.fillRect(0, 0, 1280, 64);
+    for (let i = 0; i < 9; i++) {
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(48, 96 + i * 80, 1184, 64);
+      ctx.fillStyle = ["#4471e0", "#3d9e6d", "#c2542e"][i % 3];
+      ctx.fillRect(64, 112 + i * 80, 32, 32);
+      ctx.fillStyle = "#2a2e36"; ctx.fillRect(116, 118 + i * 80, 300 + (i * 83) % 400, 9);
+      ctx.fillStyle = "#9aa1ad"; ctx.fillRect(116, 136 + i * 80, 220 + (i * 131) % 500, 7);
+    }
+  }
+  const blobs = await Promise.all([photo, ui].map(
+    (c) => new Promise((r) => c.toBlob(r, "image/png"))));
+  addFiles([
+    new File([blobs[0]], "sample-photo.png", { type: "image/png" }),
+    new File([blobs[1]], "sample-ui.png", { type: "image/png" }),
+  ]);
+}
+
 /* -------------------------------- events ---------------------------------- */
+
+function setMode(m) {
+  mode = m;
+  $("mode-split").setAttribute("aria-pressed", String(m === "split"));
+  $("mode-after").setAttribute("aria-pressed", String(m === "after"));
+  scheduleRender("inspector");
+  dirty.inspector = true;
+  scheduleRender();
+}
 
 function bind() {
   $("target").addEventListener("change", pushSettings);
   $("maxdim").addEventListener("change", pushSettings);
-  $("quality").addEventListener("input", () => { $("quality-out").textContent = $("quality").value; });
+  $("quality").addEventListener("input", () => {
+    $("quality-out").textContent = $("quality").value;
+    reflectQualityHint();
+  });
   $("quality").addEventListener("change", pushSettings);
 
   $("theme-btn").addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.classList.add("theming");
     document.documentElement.dataset.theme = next;
+    setTimeout(() => document.documentElement.classList.remove("theming"), 260);
     $("theme-btn").textContent = next === "dark" ? "Light" : "Dark";
     try { localStorage.setItem("imgc-theme", next); } catch {}
   });
@@ -598,19 +933,17 @@ function bind() {
     const row = e.target.closest(".row");
     if (row) selectItem(row.dataset.id);
   });
-  $("queue-list").addEventListener("keydown", (e) => {
-    if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
-    e.preventDefault();
-    const i = state.items.findIndex((x) => x.id === selected);
-    const next = state.items[Math.max(0, Math.min(state.items.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
-    if (next) selectItem(next.id);
-  });
 
   $("split").addEventListener("input", (e) => {
     $("viewport").style.setProperty("--split", `${100 - e.target.value}%`);
     $("divider").style.left = `${e.target.value}%`;
   });
   $("viewport").style.setProperty("--split", "50%");
+  $("divider").addEventListener("dblclick", () => {
+    $("split").value = 50;
+    $("viewport").style.setProperty("--split", "50%");
+    $("divider").style.left = "50%";
+  });
 
   $("mode-split").addEventListener("click", () => setMode("split"));
   $("mode-after").addEventListener("click", () => setMode("after"));
@@ -620,28 +953,47 @@ function bind() {
   $("img-before").addEventListener("load", applyZoom);
   new ResizeObserver(() => applyZoom()).observe($("stage"));
 
+  // wheel zooms; double-click toggles fit <-> 100%
+  $("stage").addEventListener("wheel", (e) => {
+    e.preventDefault();
+    stepZoom(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
+  $("stage").addEventListener("dblclick", (e) => {
+    if (e.target.closest(".stage-bar")) return;
+    zoom = zoom ? 0 : 1; pan = { x: 0, y: 0 }; applyZoom();
+  });
+
   let dragging = null;
   $("stage").addEventListener("pointerdown", (e) => {
     if (zoom === 0 || e.target.id === "split") return;
     dragging = { x: e.clientX - pan.x, y: e.clientY - pan.y };
     $("stage").setPointerCapture(e.pointerId);
+    $("stage").style.cursor = "grabbing";
   });
   $("stage").addEventListener("pointermove", (e) => {
     if (!dragging) return;
     pan = { x: e.clientX - dragging.x, y: e.clientY - dragging.y };
     applyZoom();
   });
-  $("stage").addEventListener("pointerup", () => { dragging = null; });
+  $("stage").addEventListener("pointerup", () => {
+    dragging = null;
+    $("stage").style.cursor = zoom ? "grab" : "";
+  });
 
   let dragDepth = 0;
   window.addEventListener("dragenter", (e) => {
-    e.preventDefault(); dragDepth++; $("veil").classList.add("on");
+    e.preventDefault(); dragDepth++;
+    const n = e.dataTransfer?.items?.length || 0;
+    $("veil-count").textContent = n > 1 ? `${n} items` : "PNG, JPEG, WebP, BMP or GIF";
+    $("veil").classList.add("on");
   });
   window.addEventListener("dragover", (e) => e.preventDefault());
   window.addEventListener("dragleave", () => { if (--dragDepth <= 0) $("veil").classList.remove("on"); });
-  window.addEventListener("drop", (e) => {
+  window.addEventListener("drop", async (e) => {
     e.preventDefault(); dragDepth = 0; $("veil").classList.remove("on");
-    if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+    if (!e.dataTransfer) return;
+    const files = await filesFromDataTransfer(e.dataTransfer);
+    if (files.length) addFiles(files);
   });
   window.addEventListener("paste", (e) => {
     const files = [...(e.clipboardData?.files || [])];
@@ -654,6 +1006,7 @@ function bind() {
   });
   $("add-btn").addEventListener("click", () => $("file-input").click());
   $("empty-add").addEventListener("click", () => $("file-input").click());
+  $("sample-btn").addEventListener("click", addSamples);
 
   $("clear-btn").addEventListener("click", () => {
     if (!state.items.length) return;
@@ -663,12 +1016,16 @@ function bind() {
   $("remove-btn").addEventListener("click", () => {
     if (selected) removeItems([selected]);
   });
+  $("retry-btn").addEventListener("click", () => {
+    if (selected) requeue([selected]);
+  });
   $("dl-one").addEventListener("click", () => {
     const it = state.byId.get(selected);
     if (!it || !(it.status === "done" || it.status === "saved")) return;
     downloadBlob(it.afterBlob, outputName(it));
+    toast(`Downloaded ${outputName(it)}`);
     it.status = "saved";
-    render();
+    scheduleRender();
   });
 
   $("ov-apply").addEventListener("click", () => {
@@ -682,33 +1039,58 @@ function bind() {
     it.override = Object.keys(override).length ? override : null;
     requeue([it.id]);
   });
+  $("ov-reset").addEventListener("click", () => {
+    const it = state.byId.get(selected);
+    if (!it) return;
+    it.override = null;
+    requeue([it.id]);
+  });
 
   $("save-btn").addEventListener("click", downloadAll);
 
+  // hold Space = flicker-test against the original; tap Space = toggle view
+  let spaceHeldAt = 0;
   document.addEventListener("keydown", (e) => {
     if (e.target.matches("input, select, textarea")) return;
     if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); downloadAll(); }
     else if (e.key === "Delete" || e.key === "Backspace") {
       if (selected) { e.preventDefault(); removeItems([selected]); }
-    } else if (e.key === " " && state.items.length) {
-      e.preventDefault(); setMode(mode === "split" ? "after" : "split");
+    } else if (e.key === " ") {
+      e.preventDefault();
+      if (e.repeat) return;
+      spaceHeldAt = performance.now();
+      $("viewport").classList.add("peek");
+      $("tag-r").textContent = "Showing original — release to compare";
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!state.items.length) return;
+      e.preventDefault();
+      const i = state.items.findIndex((x) => x.id === selected);
+      const next = state.items[Math.max(0, Math.min(state.items.length - 1,
+        i + (e.key === "ArrowDown" ? 1 : -1)))];
+      if (next) selectItem(next.id);
+    } else if (e.key === "?") {
+      $("keys").showModal();
     }
   });
+  document.addEventListener("keyup", (e) => {
+    if (e.key !== " " || e.target.matches("input, select, textarea")) return;
+    $("viewport").classList.remove("peek");
+    if (performance.now() - spaceHeldAt < 250 && state.items.length) {
+      setMode(mode === "split" ? "after" : "split");
+    } else {
+      scheduleRender("inspector"); dirty.inspector = true; scheduleRender();
+    }
+  });
+  $("keys-close").addEventListener("click", () => $("keys").close());
 
   window.addEventListener("beforeunload", (e) => {
     if (state.items.some((i) => i.status === "done")) e.preventDefault();
   });
 }
 
-function setMode(m) {
-  mode = m;
-  $("mode-split").setAttribute("aria-pressed", String(m === "split"));
-  $("mode-after").setAttribute("aria-pressed", String(m === "after"));
-  renderInspector(state.byId.get(selected));
-}
-
 /* --------------------------------- boot ----------------------------------- */
 
+loadSettings();
 bind();
 render();
 startEngine();

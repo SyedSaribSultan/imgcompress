@@ -512,6 +512,103 @@ td.win::before { content: "●"; color: var(--accent); font-size: 8px; margin-ri
   .stage-bar { right: 8px; bottom: 8px; }
 }
 
+/* ------------------------- aliveness / feedback -------------------------- */
+
+/* New rows slide in instead of popping into existence. */
+.row.enter { animation: row-in .28s cubic-bezier(.2,.7,.4,1) both; }
+@keyframes row-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The selected row gets an accent rail, not just a tint. */
+.row[aria-selected="true"] { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Determinate per-item progress: the bar tracks the actual encode. */
+.row .track { display: none; }
+.row.working .track { display: block; }
+.track i { width: 0; animation: none; transition: width .25s ease; }
+
+/* The moment a result lands. */
+.dot.done, .dot.saved { animation: dot-pop .5s cubic-bezier(.2,.7,.4,1.4); }
+@keyframes dot-pop {
+  from { transform: scale(.3); }
+  55% { transform: scale(1.7); }
+  to { transform: scale(1); }
+}
+#s-saved.pop { animation: stat-pop .45s cubic-bezier(.2,.7,.4,1.3); }
+@keyframes stat-pop {
+  0% { transform: scale(.94); }
+  55% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+.stat .v { transform-origin: left center; }
+
+/* Whole-batch progress, a hairline under the toolbar. */
+.batch { height: 2px; background: var(--line-soft); opacity: 0; transition: opacity var(--t-mid); }
+.batch.on { opacity: 1; }
+.batch i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .35s ease; }
+
+/* Split divider invites the hand. */
+.divider::after { transition: transform var(--t-fast); }
+.split-input:hover + .divider::after { transform: scale(1.15); }
+.split-input { cursor: col-resize; }
+
+/* Hold-Space flicker test: show the untouched original. */
+.viewport.solo .after { clip-path: none; }
+.viewport.peek .after { clip-path: inset(0 0 0 100%) !important; }
+.viewport.peek .divider { opacity: 0; }
+
+/* One-time coaching chip over the stage. */
+.hint {
+  position: absolute; left: 50%; bottom: 64px; transform: translate(-50%, 8px);
+  padding: 8px 14px; border-radius: 20px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line); box-shadow: var(--shadow);
+  font-size: 13px; color: var(--ink-2);
+  opacity: 0; pointer-events: none; transition: opacity var(--t-mid), transform var(--t-mid);
+}
+.hint.on { opacity: 1; transform: translate(-50%, 0); }
+
+kbd {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--raised); border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px;
+}
+
+/* Keyboard shortcuts sheet. */
+dialog#keys {
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  box-shadow: var(--shadow); padding: 18px 20px; min-width: 320px;
+}
+dialog#keys::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px); }
+dialog#keys table { margin: 10px 0 14px; font-size: 13px; }
+dialog#keys td { padding: 5px 14px 5px 0; border: none; white-space: normal; }
+dialog#keys td:first-child { color: var(--ink-2); white-space: nowrap; }
+
+.empty-actions { display: flex; gap: 10px; }
+
+/* Theme switches crossfade instead of hard-cutting. */
+html.theming body, html.theming body * {
+  transition: background-color .24s ease, color .24s ease, border-color .24s ease !important;
+}
+
+/* Landing sections render lazily - they're below the app. */
+.section { content-visibility: auto; contain-intrinsic-size: auto 620px; }
+
+/* Light theme's checkerboard needs more contrast under near-white images. */
+[data-theme="light"] { --checker-a: #e6e6e0; --checker-b: #f6f6f2; }
+
+/* Fingers need bigger targets than cursors. */
+@media (pointer: coarse) {
+  .btn, select, .num-input { min-height: 40px; }
+  .stage-bar button { padding: 9px 14px; }
+  input[type="range"] { height: 30px; }
+  input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -8.5px; }
+  input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
   html { scroll-behavior: auto; }

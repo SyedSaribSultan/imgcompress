@@ -128,8 +128,11 @@
         <p>Every image is encoded several ways, scored against the original with
            a perceptual metric, and only the smallest version that still looks
            right survives. Typical result on design assets: <b>70–90% smaller</b>.</p>
-        <button class="btn primary" id="empty-add">Choose images</button>
-        <p class="micro-hint">or drop them anywhere on this page · or paste a screenshot</p>
+        <div class="empty-actions">
+          <button class="btn primary" id="empty-add">Choose images</button>
+          <button class="btn" id="sample-btn">Try a sample</button>
+        </div>
+        <p class="micro-hint">or drop files or folders anywhere on this page · or paste a screenshot</p>
         <p class="privacy-line">Runs entirely in your browser — nothing is ever uploaded.</p>
       </div>
     </div>
@@ -160,6 +163,7 @@
         <button class="btn ghost" id="add-btn">Add images</button>
         <button class="btn ghost" id="clear-btn" title="Remove everything from the queue">Clear</button>
       </div>
+      <div class="batch" id="batch" role="progressbar" aria-label="Batch progress"><i id="batch-bar"></i></div>
 
       <div class="body">
         <aside class="queue">
@@ -178,14 +182,15 @@
               <h2 id="insp-name">—</h2>
               <span class="dims num" id="insp-dims"></span>
               <div class="spacer"></div>
+              <button class="btn" id="retry-btn" hidden>Try again</button>
               <button class="btn ghost" id="dl-one">Download</button>
               <button class="btn ghost" id="remove-btn">Remove</button>
             </div>
 
             <div class="stage" id="stage">
               <div class="viewport" id="viewport">
-                <img id="img-before" alt="Original image">
-                <div class="after"><img id="img-after" alt="Compressed image"></div>
+                <img id="img-before" alt="Original image" decoding="async">
+                <div class="after"><img id="img-after" alt="Compressed image" decoding="async"></div>
                 <input class="split-input" type="range" id="split" min="0" max="100" value="50"
                        aria-label="Comparison split position">
                 <div class="divider" id="divider"></div>
@@ -193,14 +198,15 @@
                 <span class="tag r" id="tag-r">Compressed</span>
               </div>
               <div class="stage-bar">
-                <button id="mode-split" aria-pressed="true" title="Split view (Space to toggle)">Split</button>
-                <button id="mode-after" aria-pressed="false" title="Compressed only (Space to toggle)">After</button>
+                <button id="mode-split" aria-pressed="true" title="Split view (tap Space)">Split</button>
+                <button id="mode-after" aria-pressed="false" title="Compressed only (tap Space) · hold Space to flicker-test">After</button>
                 <span class="vsep"></span>
-                <button id="zoom-out" aria-label="Zoom out">−</button>
+                <button id="zoom-out" aria-label="Zoom out" title="Zoom out (scroll wheel works too)">−</button>
                 <span class="z num" id="zoom-label">Fit</span>
-                <button id="zoom-in" aria-label="Zoom in">+</button>
-                <button id="zoom-reset">Reset</button>
+                <button id="zoom-in" aria-label="Zoom in" title="Zoom in (scroll wheel works too)">+</button>
+                <button id="zoom-reset" title="Back to fit (or double-click the image)">Reset</button>
               </div>
+              <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test</div>
             </div>
 
             <div class="details">
@@ -233,6 +239,7 @@
                     <label for="ov-quality">Floor</label>
                     <input class="num-input" type="number" id="ov-quality" min="80" max="100" placeholder="—">
                     <button class="btn" id="ov-apply">Apply to this image</button>
+                    <button class="btn ghost" id="ov-reset" hidden>Reset</button>
                   </div>
                 </div>
               </div>
@@ -274,7 +281,9 @@
         <p>Each encode is decoded back and compared to the original with SSIM at
            the 5th percentile, so a big flat background can't hide a damaged
            subject. Transparency is scored on dark <i>and</i> light backdrops —
-           the worse score wins.</p>
+           the worse score wins. And the encode that ships is verified per
+           colour channel, because luma-only metrics are blind to chroma
+           damage.</p>
       </div>
       <div class="step">
         <span class="step-n num">3</span>
@@ -401,8 +410,22 @@ imgcompress photos/        # or the command line</code></pre>
 </footer>
 
 <div class="veil" id="veil" aria-hidden="true">
-  <div class="box"><strong>Drop to add</strong><p>PNG, JPEG, WebP, BMP or GIF</p></div>
+  <div class="box"><strong>Drop to add</strong><p id="veil-count">PNG, JPEG, WebP, BMP or GIF</p></div>
 </div>
+
+<dialog id="keys" aria-label="Keyboard shortcuts">
+  <h3 class="micro">Keyboard</h3>
+  <table>
+    <tr><td><kbd>Space</kbd> tap</td><td>flip split / compressed</td></tr>
+    <tr><td><kbd>Space</kbd> hold</td><td>flicker-test against the original</td></tr>
+    <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>walk the queue</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>download everything</td></tr>
+    <tr><td><kbd>Delete</kbd></td><td>remove the selected image</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>paste a screenshot</td></tr>
+    <tr><td>scroll / double-click</td><td>zoom the comparison</td></tr>
+  </table>
+  <button class="btn" id="keys-close">Close</button>
+</dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="file-input" multiple accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,image/tiff,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff" hidden>
 
