@@ -762,6 +762,22 @@ function renderCandidates(it) {
 /* The strongest possible answer to "did this ruin my image?": show exactly
  * where the pixels moved, amplified so you can actually see it. */
 
+/** The brand fill as per-channel multipliers, normalised so the strongest
+ *  channel is 1. Read from the token layer rather than restated here. */
+let heatTint = null;
+function brandHeatTint() {
+  if (heatTint) return heatTint;
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--oz-color-fill-brand").trim();
+  const m = raw.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+  if (!m) return (heatTint = [1, 1, 1]);          // unknown format: plain greyscale
+  const rgb = [1, 2, 3].map((i) => parseInt(m[i], 16));
+  const peak = Math.max(...rgb) || 255;
+  // Lift the floor a little so the darkest channel still carries some signal.
+  heatTint = rgb.map((v) => 0.25 + 0.75 * (v / peak));
+  return heatTint;
+}
+
 function ensureDiff(it) {
   const canvas = $("img-diff");
   if (it.diffFor === it.afterURL) return;   // already computed for this result
@@ -800,12 +816,14 @@ function ensureDiff(it) {
     total += v;
   }
   const gain = peak > 0 ? Math.min(64, Math.max(1, 235 / peak)) : 1;
+  // Heat is tinted with the live brand fill, read from the token layer, so the
+  // map cannot drift from the interface if the palette is ever regenerated.
+  const [hr, hg, hb] = brandHeatTint();
   for (let p = 0, i = 0; p < mag.length; p++, i += 4) {
     const v = Math.min(255, mag[p] * gain);
-    // brass-tinted heat so it matches the rest of the interface
-    d[i] = Math.min(255, v * 1.25);
-    d[i + 1] = Math.min(255, v * 0.85);
-    d[i + 2] = Math.min(255, v * 0.5);
+    d[i] = Math.min(255, v * hr);
+    d[i + 1] = Math.min(255, v * hg);
+    d[i + 2] = Math.min(255, v * hb);
     d[i + 3] = 255;
   }
   ctx.putImageData(out, 0, 0);

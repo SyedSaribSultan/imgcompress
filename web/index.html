@@ -6,8 +6,10 @@
 <title>imgcompress — image compression that proves it didn't ruin your image</title>
 <meta name="description" content="Compress images 70–90% smaller with no visible quality loss. Every image is encoded several ways, scored against the original, and the smallest passing file wins. Runs entirely in your browser — nothing is uploaded.">
 <link rel="canonical" href="https://imgcompress-app.vercel.app/">
-<meta name="theme-color" content="#141518" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f2f2ef" media="(prefers-color-scheme: light)">
+<!-- Literal by necessity: a meta content attribute cannot read a CSS variable.
+     These two are color/background from the token layer, dark and light. -->
+<meta name="theme-color" content="#070605" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="color-scheme" content="dark light">
 
 <meta property="og:type" content="website">
@@ -28,6 +30,8 @@
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+<!-- HeyOz design tokens first: app.css consumes them and hand-types nothing. -->
+<link rel="stylesheet" href="/heyoz-tokens.css">
 <link rel="stylesheet" href="/app.css">
 
 <script type="application/ld+json">
@@ -102,9 +106,9 @@
 <header class="site-head">
   <a class="brand" href="/" aria-label="imgcompress home">
     <svg width="20" height="20" viewBox="0 0 17 17" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="var(--ink-3)"/>
-      <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="var(--accent)"/>
-      <circle cx="6.2" cy="5.6" r="1.25" fill="var(--ink-2)"/>
+      <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="var(--oz-color-border-secondary)"/>
+      <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="var(--oz-color-fill-brand)"/>
+      <circle cx="6.2" cy="5.6" r="1.25" fill="var(--oz-color-content-secondary)"/>
     </svg>
     <b>imgcompress</b>
   </a>
@@ -235,9 +239,13 @@
                 <canvas id="img-diff" hidden aria-label="Difference heatmap"></canvas>
                 <input class="split-input" type="range" id="split" min="0" max="100" value="50"
                        aria-label="Comparison split position">
-                <div class="divider" id="divider"></div>
-                <span class="tag l" id="tag-l">Original</span>
-                <span class="tag r" id="tag-r">Compressed</span>
+                <!-- also a dark island: the divider sits on a photograph, where
+                     it has to stay light whatever the page theme is. -->
+                <div class="divider dark" id="divider"></div>
+                <!-- `dark` makes each tag a scoped dark island: its scrim is dark
+                     in both themes, so its label must be too. -->
+                <span class="tag l dark" id="tag-l">Original</span>
+                <span class="tag r dark" id="tag-r">Compressed</span>
               </div>
               <div class="stage-bar">
                 <button id="mode-split" aria-pressed="true" title="Split view (tap Space)">Split</button>
