@@ -22,8 +22,12 @@ imgcompress photos/        # or the command line
 ```
 
 Or skip the install: **[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app)**
-runs the same bake-off entirely in your browser. Nothing is uploaded — images
-never leave your device.
+runs the same bake-off entirely in your browser — including SSIMULACRA 2
+itself, ported to JavaScript and validated against the reference
+implementation. Nothing is uploaded; images never leave your device.
+[tests/BENCHMARK.md](tests/BENCHMARK.md) holds a reproducible head-to-head
+against single-format pipelines and fixed-quality defaults at a matched
+perceptual floor.
 
 ---
 

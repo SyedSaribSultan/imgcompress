@@ -10,4 +10,4 @@ __all__ = [
     "compress_tree",
     "write_result",
 ]
-__version__ = "2.2.0"
+__version__ = "2.3.0"

@@ -194,6 +194,26 @@ class CompressTests(unittest.TestCase):
         res = compress_file(path, self.dst, Settings(formats=["jpeg"], **FAST))
         self.assertLessEqual(res.new_bytes, res.original_bytes)
 
+    def test_passing_candidate_beats_smaller_failing_one(self):
+        """A candidate below the floor must not ship while another candidate
+        cleared it - however small the failing one is. This shipped once: an
+        early failing JPEG held the winner's spot against a passing lossless
+        PNG purely on byte count."""
+        path = self.src / "hard.png"
+        img = sample((420, 300))
+        d = ImageDraw.Draw(img)
+        for i in range(0, 420, 2):  # fine detail no jpeg rung can carry at .999
+            d.line([(i, 0), (i, 300)], fill=(i % 255, 255 - i % 255, 40), width=1)
+        img.save(path)
+        res = compress_file(path, self.dst, Settings(
+            metric="ssim", quality_target=0.999, zopfli=False, fast=True,
+            formats=["jpeg", "png"], target="web",
+        ))
+        self.assertEqual(res.error, "")
+        self.assertEqual(res.fmt, "png")          # the one that actually passed
+        self.assertGreaterEqual(res.score, 0.999)
+        self.assertEqual(res.warnings, [])
+
     def test_never_grows_across_containers_either(self):
         """A tiny GIF whose candidates all come out bigger must pass through
         unchanged - not be converted into a larger PNG."""

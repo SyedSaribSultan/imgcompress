@@ -249,7 +249,14 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
         result.error = "no candidate format can carry this image"
         return result
 
-    best = None
+    # The smallest candidate that clears the floor wins. A candidate that
+    # failed the floor may only ship when *nothing* cleared it - the old
+    # single-`best` bookkeeping let an early failing JPEG hold the spot against
+    # a later, passing lossless PNG purely because it was smaller, which is how
+    # a file below the promised floor once shipped without even a warning that
+    # anything better existed.
+    best_passing = None
+    best_failing = None
     for encoder in enc.build(names, zopfli=settings.zopfli, background=settings.jpeg_background):
         try:
             found = _search_one(img, encoder, metric, target, settings.fast)
@@ -260,11 +267,14 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
             continue
         data, level, score = found
         result.candidates.append((encoder.name, len(data), score))
-        if score < target and best is not None:
-            continue  # a failing candidate never displaces a passing one
-        if best is None or len(data) < len(best[0]):
-            best = (data, level, score, encoder)
+        if score >= target:
+            if best_passing is None or len(data) < len(best_passing[0]):
+                best_passing = (data, level, score, encoder)
+        elif (best_failing is None or score > best_failing[2]
+              or (score == best_failing[2] and len(data) < len(best_failing[0]))):
+            best_failing = (data, level, score, encoder)
 
+    best = best_passing or best_failing
     if best is None:
         result.error = "no candidate produced usable output"
         return result

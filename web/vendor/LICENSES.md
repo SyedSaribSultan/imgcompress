@@ -10,6 +10,7 @@ codecs (Apache-2.0, Google LLC):
 | `mozjpeg.js`, `mozjpeg_enc.wasm` | @jsquash/jpeg → [mozjpeg](https://github.com/mozilla/mozjpeg) | Apache-2.0 glue; mozjpeg is BSD-3-Clause/IJG |
 | `oxipng.js`, `squoosh_oxipng_bg.wasm` | @jsquash/oxipng → [oxipng](https://github.com/shssoichiro/oxipng) | Apache-2.0 glue; oxipng is MIT |
 | `avif.js`, `avif_enc.wasm` | @jsquash/avif → [libaom](https://aomedia.googlesource.com/aom/) | Apache-2.0 glue; libaom is BSD-2-Clause + AOM Patent License 1.0 |
+| `webp.js`, `webp_enc_simd.wasm` | @jsquash/webp → [libwebp](https://chromium.googlesource.com/webm/libwebp) | Apache-2.0 glue; libwebp is BSD-3-Clause |
 
 No modifications were made to the codecs; the `.js` glue files are esbuild
 IIFE bundles of the packages' published ES modules.

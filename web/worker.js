@@ -20,6 +20,11 @@
 
 "use strict";
 
+/* The metric itself. ss2.js is the validated JavaScript port of SSIMULACRA 2 -
+ * the same metric the desktop app scores with, matching its Python reference
+ * to four decimal places across the validation corpus. */
+if (typeof importScripts === "function") importScripts("ss2.js");
+
 /* ------------------------------------------------------------------------- *
  * constants — ladders mirror encoders.py
  * ------------------------------------------------------------------------- */
@@ -27,9 +32,14 @@
 const PNG8_COLORS = [16, 24, 32, 48, 64, 96, 128, 192, 256];
 // Tops out at 98: mozjpeg's quality scale runs tighter than the canvas
 // encoder's, and high floors legitimately need the extra headroom.
-const JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96, 97, 98];
-const WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96];
-const AVIF_QUALITY = [30, 38, 45, 52, 58, 64, 70, 76, 82, 88, 93];
+/* Every lossy ladder reaches into the high 90s. The head-to-head found the old
+ * ceilings costing real bytes: on a hard photograph no lossy rung could clear
+ * a strict floor, so a multi-megabyte lossless PNG won by forfeit while a
+ * higher AVIF rung would have passed at an eighth of the size. Bisection means
+ * the extra rungs cost at most one additional probe. */
+const JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96, 97, 98, 99];
+const WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96, 98];
+const AVIF_QUALITY = [30, 38, 45, 52, 58, 64, 70, 76, 82, 88, 93, 96];
 
 const FIGMA_MAX_DIMENSION = 4096;
 
@@ -48,8 +58,8 @@ const BACKDROPS = [[26, 26, 26], [230, 230, 230]];
 
 const TARGETS = {
   figma: ["jpeg", "png8", "png"],
-  web: ["jpeg", "png8", "png", "webp", "avif"],
-  lossless: ["png", "png8x"], // png8x = palette PNG only when it is pixel-exact
+  web: ["jpeg", "png8", "png", "webp", "webp-lossless", "avif"],
+  lossless: ["png", "png8x", "webp-lossless"], // png8x = palette PNG only when pixel-exact
 };
 
 /* ------------------------------------------------------------------------- *
@@ -79,7 +89,7 @@ async function probeWebp() {
  * output, AVIF simply doesn't enter the bake-off.
  * ------------------------------------------------------------------------- */
 
-const CODECS = { mozjpeg: null, oxipng: null, avif: null };
+const CODECS = { mozjpeg: null, oxipng: null, avif: null, webp: null };
 
 /* ------------------------------------------------------------------------- *
  * timing. Cheap accumulators so the cost of every phase is a measurement
@@ -134,6 +144,9 @@ async function loadCodec(name, script, globalName, wasmFile) {
 const loadMozjpeg = () => loadCodec("mozjpeg", "mozjpeg.js", "__mozjpeg", "mozjpeg_enc.wasm");
 const loadOxipng = () => loadCodec("oxipng", "oxipng.js", "__oxipng", "squoosh_oxipng_bg.wasm");
 const loadAvif = () => loadCodec("avif", "avif.js", "__avif", "avif_enc.wasm");
+// The SIMD build: the glue selects it wherever wasm SIMD exists, which is every
+// current browser. Engines without SIMD skip the candidate gracefully.
+const loadWebp = () => loadCodec("webp", "webp.js", "__webp", "webp_enc_simd.wasm");
 
 /** Lossless oxipng pass over a finished PNG - the browser-tier zopfli.
  *
@@ -142,10 +155,10 @@ const loadAvif = () => loadCodec("avif", "avif.js", "__avif", "avif_enc.wasm");
  * eagerly), and on a photograph it was being spent compressing a 25 MB
  * lossless PNG that loses to JPEG by 34x. It now runs only where it could
  * change which candidate wins - see `oxiCompetitive`. */
-async function oxiPass(pngBytes) {
+async function oxiPass(pngBytes, level = 2) {
   if (!CODECS.oxipng) return pngBytes;
   try {
-    const out = new Uint8Array(await CODECS.oxipng.optimise(pngBytes.buffer, { level: 2 }));
+    const out = new Uint8Array(await CODECS.oxipng.optimise(pngBytes.buffer, { level }));
     if (out.length >= pngBytes.length) return pngBytes;
     // Carry the reconstruction helpers across: oxipng is lossless, so the
     // decoded pixels - and therefore every score already measured - are
@@ -382,7 +395,7 @@ function medianCutPalette(rgba, maxColors) {
       { lo: mid, hi: box.hi, ch: chB, width: wB });
   }
 
-  return boxes.filter((b) => b.hi > b.lo).map((b) => {
+  const palette = boxes.filter((b) => b.hi > b.lo).map((b) => {
     let r = 0, g = 0, bl = 0, a = 0;
     for (let i = b.lo; i < b.hi; i++) {
       const o = i * 4;
@@ -391,6 +404,44 @@ function medianCutPalette(rgba, maxColors) {
     const k = b.hi - b.lo;
     return [Math.round(r / k), Math.round(g / k), Math.round(bl / k), Math.round(a / k)];
   });
+
+  /* Lloyd refinement: reassign the samples to their nearest palette entry and
+     move each entry to its cluster's mean, twice. Median cut alone picks the
+     boxes; this settles the colours inside them, which is a large part of
+     what puts libimagequant ahead of naive median cut. Two iterations recover
+     most of that gap at a fraction of the search cost. */
+  for (let iter = 0; iter < 2; iter++) {
+    const K = palette.length;
+    const sums = new Float64Array(K * 4);
+    const counts = new Uint32Array(K);
+    const flat = new Int16Array(K * 4);
+    for (let i = 0; i < K; i++) {
+      flat[i * 4] = palette[i][0]; flat[i * 4 + 1] = palette[i][1];
+      flat[i * 4 + 2] = palette[i][2]; flat[i * 4 + 3] = palette[i][3];
+    }
+    for (let s = 0; s < count; s++) {
+      const o = s * 4;
+      const r = samples[o], g = samples[o + 1], b = samples[o + 2], a = samples[o + 3];
+      let best = 0, bd = Infinity;
+      for (let i = 0, q = 0; i < K; i++, q += 4) {
+        const dr = r - flat[q], dg = g - flat[q + 1], db = b - flat[q + 2], da = a - flat[q + 3];
+        const d = dr * dr + dg * dg + db * db + 2 * da * da;
+        if (d < bd) { bd = d; best = i; }
+      }
+      const bo = best * 4;
+      sums[bo] += r; sums[bo + 1] += g; sums[bo + 2] += b; sums[bo + 3] += a;
+      counts[best]++;
+    }
+    for (let i = 0; i < K; i++) {
+      if (!counts[i]) continue;      // empty cluster keeps its colour
+      const o = i * 4;
+      palette[i] = [
+        Math.round(sums[o] / counts[i]), Math.round(sums[o + 1] / counts[i]),
+        Math.round(sums[o + 2] / counts[i]), Math.round(sums[o + 3] / counts[i]),
+      ];
+    }
+  }
+  return palette;
 }
 
 /* Reused across calls: a 2MB allocation per quantisation would be pure GC
@@ -651,10 +702,10 @@ function cropRgba(rgba, W, box) {
 }
 
 /** Sampled score for the search loop — native-resolution tiles, never a
- *  downscaled copy (quality.py Metric.score_sampled). */
-function ssimSampled(refRgba, candRgba, W, H) {
+ *  downscaled copy (quality.py Metric.score_sampled), for any metric. */
+function sampledScore(scoreFn, refRgba, candRgba, W, H) {
   if (W * H <= TILE_BUDGET || Math.min(W, H) < TILE) {
-    return ssimRgba(refRgba, candRgba, W, H);
+    return scoreFn(refRgba, candRgba, W, H);
   }
   const wanted = Math.max(2, Math.floor(TILE_BUDGET / (TILE * TILE)));
   const cols = Math.max(1, Math.min(3, Math.floor(W / TILE), wanted));
@@ -667,11 +718,36 @@ function ssimSampled(refRgba, candRgba, W, H) {
       const left = cols > 1 ? Math.floor((W - TILE) * col / (cols - 1)) : (W - TILE) >> 1;
       const top = rows > 1 ? Math.floor((H - TILE) * row / (rows - 1)) : (H - TILE) >> 1;
       const box = [left, top, left + TILE, top + TILE];
-      sum += ssimRgba(cropRgba(refRgba, W, box), cropRgba(candRgba, W, box), TILE, TILE);
+      sum += scoreFn(cropRgba(refRgba, W, box), cropRgba(candRgba, W, box), TILE, TILE);
       count++;
     }
   }
   return sum / count;
+}
+const ssimSampled = (r, c, W, H) => sampledScore(ssimRgba, r, c, W, H);
+
+/* ------------------------------------------------------------------------- *
+ * the metric layer. SSIMULACRA 2 is the default - the metric the desktop app
+ * and the image-compression community use, colour-aware by construction.
+ * SSIM p5 remains as the explicit fallback.
+ * ------------------------------------------------------------------------- */
+
+/** Full-frame SSIMULACRA 2, dual-backdrop for transparency like quality.py. */
+function ss2Rgba(refRgba, candRgba, W, H) {
+  const alpha = hasAlphaPixels(refRgba) || hasAlphaPixels(candRgba);
+  if (!alpha) return ss2Score(refRgba, candRgba, W, H, null);
+  let worst = Infinity;
+  for (const backdrop of BACKDROPS) {
+    const s = ss2Score(refRgba, candRgba, W, H, backdrop);
+    if (s < worst) worst = s;
+  }
+  return worst;
+}
+
+function metricFor(name) {
+  return name === "ssim"
+    ? { name: "ssim", full: ssimRgba, perfect: 1.0 }
+    : { name: "ssimulacra2", full: ss2Rgba, perfect: 100.0 };
 }
 
 /* ------------------------------------------------------------------------- *
@@ -782,6 +858,24 @@ function makeEncoders(job) {
         return new Uint8Array(buf);
       },
     },
+    // Real lossless WebP (libwebp in wasm) - the candidate that wins on flat
+    // artwork, and the one the head-to-head showed the desktop taking whole
+    // categories with while the web tier forfeited. Pixel-exact for visible
+    // pixels, same as the desktop's Pillow path (invisible RGB under alpha 0
+    // may be rewritten; that is libwebp's default and carries no visual bits).
+    "webp-lossless": {
+      name: "webp-lossless", ext: ".webp", mime: "image/webp",
+      supportsAlpha: true, lossless: true, levels: [100],
+      available: () => !!CODECS.webp,
+      encode: async () => {
+        const wp = await loadWebp();
+        if (!wp) throw new Error("webp encoder unavailable");
+        const buf = await wp.encode({ data: rgba, width, height }, {
+          lossless: 1, quality: 100, method: 6,
+        });
+        return new Uint8Array(buf);
+      },
+    },
     // Palette PNG admitted to the lossless target only when pixel-exact.
     png8x: {
       name: "png8", ext: ".png", mime: "image/png",
@@ -815,7 +909,7 @@ async function decodeToRgba(data, mime, width, height, scratch) {
  * ------------------------------------------------------------------------- */
 
 async function searchOne(job, encoder, target, report) {
-  const { width, height, rgba } = job;
+  const { width, height, rgba, metric } = job;
   const levels = encoder.levels;
 
   /* Encodes are memoised per (level, effort). Only AVIF's output depends on the
@@ -838,7 +932,7 @@ async function searchOne(job, encoder, target, report) {
     report(1);
     if (PERF) PERF.encodes++;
     const data = await encodeAt(levels.length - 1, false);
-    return { data, level: null, score: 1.0, index: levels.length - 1, encoder };
+    return { data, level: null, score: metric.perfect, index: levels.length - 1, encoder };
   }
 
   let probes = 0;
@@ -846,19 +940,16 @@ async function searchOne(job, encoder, target, report) {
     report(++probes);
     if (PERF) PERF.probes++;
     const data = await encodeAt(index, true);
-    if (data._exact) return { data, score: 1.0 }; // pixel-identical by construction
+    if (data._exact) return { data, score: metric.perfect }; // pixel-identical by construction
     const cand = await timedAsync("back", () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
-    return { data, score: timed("ssimTiled", () => ssimSampled(rgba, cand, width, height)) };
+    return { data, score: timed("ssimTiled", () => sampledScore(metric.full, rgba, cand, width, height)) };
   };
 
-  /* Full-frame luma check on the level the search landed on. The per-channel
-     chroma check is deliberately NOT here: it costs three to six more
-     full-frame passes and only the candidate that actually ships needs it, so
-     it runs once on the winner instead of once per candidate. */
+  /* Full-frame verification on the level the search landed on. */
   const finalScore = async (data) => {
-    if (data._exact) return { score: 1.0 };
+    if (data._exact) return { score: metric.perfect };
     const cand = await timedAsync("back", () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
-    return { score: timed("ssimFull", () => ssimRgba(rgba, cand, width, height)) };
+    return { score: timed("ssimFull", () => metric.full(rgba, cand, width, height)) };
   };
 
   /* Straight bisection over the whole ladder. The old version probed the top
@@ -984,6 +1075,7 @@ async function runJob(msg) {
   const originalBytes = buffer.byteLength;
   const post = (extra, transfer) => postMessage({ id, rev: msg.rev, ...extra }, transfer || []);
   const warnings = [];
+  const metric = metricFor(settings.metric);   // ss2 unless the caller opts out
 
   // Animated GIFs pass through untouched, like the desktop version.
   if (/image\/gif/i.test(mime) || /\.gif$/i.test(name)) {
@@ -995,7 +1087,7 @@ async function runJob(msg) {
           note: "animated — passed through unchanged",
           fmt: "gif", ext: ".gif", mime: "image/gif",
           bytes: buffer, originalBytes, newBytes: originalBytes,
-          level: null, score: null, metric: "ssim",
+          level: null, score: null, metric: metric.name,
           candidates: [], warnings: [],
         },
       }, [buffer]);
@@ -1029,6 +1121,7 @@ async function runJob(msg) {
 
   const alpha = hasAlphaPixels(job.rgba);
   const target = settings.qualityTarget;
+  job.metric = metric;
   await probeWebp();
 
   const encoders = makeEncoders(job);
@@ -1040,6 +1133,7 @@ async function runJob(msg) {
   onCodecStatus = (codec) => post({ type: "progress", stage: "codec", detail: codec, frac: 0 });
   if (names.includes("avif")) await loadAvif();
   if (names.includes("jpeg")) await loadMozjpeg();
+  if (names.includes("webp-lossless")) await loadWebp();
   if (names.includes("png") || names.includes("png8") || names.includes("png8x")) await loadOxipng();
   onCodecStatus = null;
   names = names.filter((n) => {
@@ -1101,8 +1195,13 @@ async function runJob(msg) {
    * each. Only one candidate ships, so only that one is checked - and if it
    * fails, it is escalated or dropped and the next best is checked instead.
    * Bounded by the number of candidates. */
+  /* SSIMULACRA 2 works in XYB and weighs chroma natively - the guard would be
+     redundant there, and the reference implementation has no such extra pass.
+     Under the SSIM fallback the guard stays, because luma-p5 cannot see
+     chroma at all. */
   const chromaFloor = 1 - 2 * (1 - target);
   const chromaOk = async (entry) => {
+    if (metric.name !== "ssim") return true;
     if (entry.data._exact || entry.encoder.lossless) return true;
     const cand = await timedAsync("back",
       () => decodeToRgba(entry.data, entry.encoder.mime, job.width, job.height, job.scratch));
@@ -1164,10 +1263,18 @@ async function runJob(msg) {
       else if (cand === best) bestSize = Math.min(bestSize, cand.data.length);
       if (PERF && before === cand.data.length) PERF.oxiNoGain = (PERF.oxiNoGain || 0) + 1;
     }
+    // One deeper pass on the file that actually ships. Lossless, winner-only,
+    // so it costs one compression and cannot move any score.
+    if (best.encoder.pngFamily) {
+      best.data = await timedAsync("oxipng", () => oxiPass(best.data, 4));
+      const row = candidates.find((c) => c.format === best.encoder.name);
+      if (row) row.bytes = best.data.length;
+    }
   }
 
   if (best.score < target) {
-    warnings.push(`could not reach ssim ${target}; best was ${best.score.toFixed(4)}`);
+    warnings.push(`could not reach ${metric.name} ${target}; best was ${
+      best.score.toFixed(metric.name === "ssim" ? 4 : 1)}`);
   }
 
   // Never ship a bigger file. (Stricter than the desktop rule: any regrowth
@@ -1180,7 +1287,7 @@ async function runJob(msg) {
         note: "already well compressed — passed through unchanged",
         fmt: best.encoder.name, ext: null, mime,
         bytes: buffer, originalBytes, newBytes: originalBytes,
-        level: null, score: null, metric: "ssim",
+        level: null, score: null, metric: metric.name,
         width: job.originalW, height: job.originalH,
         outW: job.originalW, outH: job.originalH,
         candidates, warnings,
@@ -1201,7 +1308,7 @@ async function runJob(msg) {
       bytes: payload.buffer, originalBytes, newBytes: payload.length,
       level: isLossless ? null : best.level,
       score: isLossless ? null : best.score,
-      lossless: isLossless, metric: "ssim",
+      lossless: isLossless, metric: metric.name,
       width: job.originalW, height: job.originalH,
       outW: job.width, outH: job.height,
       candidates, warnings,
@@ -1213,6 +1320,7 @@ function engineFlags() {
   return {
     webp: !!CAN_WEBP, png8: CAN_DEFLATE,
     mozjpeg: !!CODECS.mozjpeg, oxipng: !!CODECS.oxipng, avif: !!CODECS.avif,
+    webpLossless: !!CODECS.webp,
   };
 }
 

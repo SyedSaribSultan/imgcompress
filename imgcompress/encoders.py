@@ -46,8 +46,12 @@ except Exception:  # pragma: no cover
 
 
 PNG8_COLORS = [16, 24, 32, 48, 64, 96, 128, 192, 256]
-JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96]
-WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96]
+# The lossy ladders reach into the high 90s deliberately: with a strict floor,
+# a ceiling of 96 meant no lossy rung could pass on hard content and a
+# multi-megabyte lossless PNG won by forfeit. Bisection makes the extra rungs
+# cost at most one more probe.
+JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96, 97, 98, 99]
+WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96, 98]
 
 
 def _zopfli_png(data: bytes, enabled: bool = True) -> bytes:

@@ -63,7 +63,9 @@ function rollNumber(el, toBytes, suffixHtml) {
 const state = {
   items: [],
   byId: new Map(),
-  settings: { target: "figma", qualityTarget: 0.97, maxDimension: 2560 },
+  // qualityTarget is on the SSIMULACRA 2 scale (0-100), the same floor the
+  // desktop app uses. 90 is its published "visually lossless" line.
+  settings: { target: "figma", metric: "ss2", qualityTarget: 90, maxDimension: 2560 },
   settingsRev: 0,
   caps: { webp: null, png8: null },
   suffix: false,
@@ -91,7 +93,9 @@ function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("imgc-settings") || "{}");
     if (saved.target) state.settings.target = saved.target;
-    if (saved.qualityTarget >= 0.8 && saved.qualityTarget <= 1) {
+    // Stored floors from before the metric change were SSIM fractions (<= 1);
+    // they mean nothing on the SSIMULACRA 2 scale, so they reset to default.
+    if (saved.qualityTarget >= 60 && saved.qualityTarget <= 99) {
       state.settings.qualityTarget = saved.qualityTarget;
     }
     if (Number.isFinite(saved.maxDimension)) state.settings.maxDimension = saved.maxDimension;
@@ -112,13 +116,14 @@ function saveSettings() {
   } catch {}
 }
 
+/* SSIMULACRA 2's published scale, the same one the desktop README prints. */
 function hintForQuality(q) {
-  if (q >= 100) return "pixel-perfect — only lossless candidates can win";
-  if (q >= 98) return "overkill for most things — masters you'll re-edit";
-  if (q >= 97) return "default — imperceptible side by side";
-  if (q >= 94) return "safe for A/B toggling";
-  if (q >= 90) return "fine for busy photos";
-  return "visible if you go looking — thumbnails";
+  if (q >= 95) return "overkill for most things — masters you'll re-edit";
+  if (q >= 90) return "default — not noticeable even in a flicker test";
+  if (q >= 85) return "imperceptible when A/B toggling";
+  if (q >= 80) return "imperceptible side by side";
+  if (q >= 70) return "perceptible but not annoying — fine for thumbnails";
+  return "visibly compressed";
 }
 function reflectQualityHint() {
   const q = Number($("quality").value);
@@ -315,6 +320,7 @@ function onWorkerMessage(slot, msg) {
     item.fmt = r.fmt;
     item.level = r.level;
     item.score = r.score;
+    item.metric = r.metric;
     item.lossless = !!r.lossless;
     item.note = r.note || "";
     item.warnings = r.warnings || [];
@@ -617,8 +623,9 @@ function capsLine() {
   if (state.caps.png8) parts.push("png8");
   if (state.caps.oxipng) parts.push("oxipng");
   if (state.caps.webp) parts.push("webp");
+  if (state.caps.webpLossless) parts.push("webp-lossless");
   if (state.caps.avif) parts.push("avif");
-  return `Engines: ${parts.join(", ")} · all running in your browser`;
+  return `Engines: ${parts.join(", ")} · scored with SSIMULACRA 2 · all in your browser`;
 }
 
 function renderBatchProgress() {
@@ -657,10 +664,10 @@ function selectItem(id, quiet) {
   if (!quiet) rowEls.get(id)?.scrollIntoView({ block: "nearest" });
 }
 
-function fmtScore(score, lossless) {
+function fmtScore(score, lossless, metric) {
   if (lossless) return "lossless";
   if (score == null) return "—";
-  return score.toFixed(4);
+  return metric === "ssim" ? score.toFixed(4) : score.toFixed(1);
 }
 
 /** One plain sentence explaining why this candidate won. */
@@ -674,8 +681,8 @@ function verdictFor(it) {
   const runner = sorted[1];
   const quality = it.lossless
     ? "and it is <b>pixel-identical</b> to the original"
-    : `at SSIM <b>${it.score?.toFixed(4)}</b>, above your ${Number(
-        it.override?.qualityTarget ?? state.settings.qualityTarget).toFixed(2)} floor`;
+    : `at SSIMULACRA 2 <b>${it.score?.toFixed(1)}</b>, above your ${Number(
+        it.override?.qualityTarget ?? state.settings.qualityTarget).toFixed(0)} floor`;
   let line = `<b>${escapeHtml(fmtLabel(it.fmt))}</b> won: <b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
   if (runner && runner.bytes > it.newBytes) {
     const gap = 100 * (runner.bytes - it.newBytes) / runner.bytes;
@@ -761,13 +768,13 @@ function renderInspector(it) {
   $("s-format").innerHTML = ready
     ? `${fmtLabel(it.fmt)}${it.level != null ? ` <small>quality ${it.level}</small>` : ""}`
     : (it.status === "failed" || it.status === "cancelled" ? "—" : `<span class="skel w-sm"></span>`);
-  $("s-score").textContent = ready ? fmtScore(it.score, it.lossless || it.passthrough) : "—";
+  $("s-score").textContent = ready ? fmtScore(it.score, it.lossless || it.passthrough, it.metric) : "—";
   $("s-dims").innerHTML = !it.width ? "—"
     : (it.outW && it.outW !== it.width
         ? `${it.outW}×${it.outH} <small>from ${it.width}×${it.height}</small>`
         : `${it.width}×${it.height}`);
   const floor = it.override?.qualityTarget ?? state.settings.qualityTarget;
-  $("s-floor").innerHTML = Number(floor).toFixed(2) + (it.override ? " <small>override</small>" : "");
+  $("s-floor").innerHTML = Number(floor).toFixed(0) + (it.override ? " <small>override</small>" : "");
 
   const verdict = $("s-verdict");
   const vtext = ready ? verdictFor(it) : "";
@@ -791,7 +798,7 @@ function renderInspector(it) {
     ovSyncedFor = it.id;
     $("ov-format").value = it.override?.formats?.[0] || "";
     $("ov-quality").value = it.override?.qualityTarget != null
-      ? Math.round(it.override.qualityTarget * 100) : "";
+      ? Math.round(it.override.qualityTarget) : "";
   }
   $("ov-reset").hidden = !it.override;
   $("dl-one").disabled = !ready;
@@ -1159,7 +1166,8 @@ function reportRows() {
     saved_bytes: it.originalBytes - it.newBytes,
     saved_pct: it.originalBytes
       ? +(100 * (it.originalBytes - it.newBytes) / it.originalBytes).toFixed(1) : 0,
-    ssim_p5: it.lossless ? "lossless" : (it.score != null ? +it.score.toFixed(4) : ""),
+    metric: it.metric || "ssimulacra2",
+    quality_score: it.lossless ? "lossless" : (it.score != null ? +it.score.toFixed(2) : ""),
     width: it.outW, height: it.outH,
   }));
 }
@@ -1191,7 +1199,7 @@ function exportReport(kind) {
       `imgcompress — ${rows.length} image${rows.length === 1 ? "" : "s"}`,
       `${human(before)} → ${human(after)}  (saved ${human(saved)}, ${pct}%)`,
       "",
-      ...rows.map((r) => `${r.file} → ${r.format}  ${human(r.original_bytes)} → ${human(r.new_bytes)}  −${r.saved_pct}%  ssim ${r.ssim_p5}`),
+      ...rows.map((r) => `${r.file} → ${r.format}  ${human(r.original_bytes)} → ${human(r.new_bytes)}  −${r.saved_pct}%  ${r.metric} ${r.quality_score}`),
     ];
     navigator.clipboard?.writeText(lines.join("\n"))
       .then(() => toast("Summary copied to your clipboard"))
@@ -1215,7 +1223,8 @@ function toast(message) {
 function currentSettings() {
   return {
     target: $("target").value,
-    qualityTarget: Number($("quality").value) / 100,
+    metric: "ss2",
+    qualityTarget: Number($("quality").value),
     maxDimension: Number($("maxdim").value) || 0,
   };
 }
@@ -1587,7 +1596,7 @@ function bind() {
     const quality = $("ov-quality").value;
     const override = {};
     if (format) override.formats = [format];
-    if (quality !== "") override.qualityTarget = Number(quality) / 100;
+    if (quality !== "") override.qualityTarget = Number(quality);
     it.override = Object.keys(override).length ? override : null;
     requeue([it.id]);
   });

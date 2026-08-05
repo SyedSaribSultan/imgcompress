@@ -52,15 +52,15 @@
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript and a modern browser",
-      "softwareVersion": "2.2.0",
+      "softwareVersion": "2.3.0",
       "license": "https://github.com/SyedSaribSultan/imgcompress/blob/main/LICENSE",
       "sameAs": ["https://github.com/SyedSaribSultan/imgcompress"],
       "author": { "@type": "Organization", "name": "HeyOz" },
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "featureList": [
         "Runs entirely in the browser — images are never uploaded",
-        "Encodes each image with mozjpeg, palette PNG, lossless PNG (oxipng), WebP and AVIF, and keeps the smallest that passes",
-        "Perceptual quality is measured with SSIM at the 5th percentile and verified per colour channel, never guessed",
+        "Encodes each image with mozjpeg, palette PNG, lossless PNG (oxipng), WebP, lossless WebP and AVIF, and keeps the smallest that passes",
+        "Quality is measured with SSIMULACRA 2 — the community's perceptual metric — running in-browser, validated against the reference implementation",
         "Before/after split comparison with zoom, a difference heatmap and a hold-to-flicker test",
         "Figma-safe defaults: JPEG and PNG only, capped at 4096px"
       ]
@@ -81,17 +81,17 @@
         {
           "@type": "Question",
           "name": "How is quality measured?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Every candidate encode is decoded back and compared to the original with SSIM, aggregated at the 5th percentile so a large flat background cannot hide a damaged region. Transparent images are scored over a dark and a light backdrop, and the worse score wins. The encode that ships is also verified per colour channel." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Every candidate encode is decoded back and scored against the original with SSIMULACRA 2 — the perceptual metric the image-compression community converged on, running entirely in the browser as a port validated against the reference implementation. Transparent images are scored over a dark and a light backdrop, and the worse score wins." }
         },
         {
           "@type": "Question",
           "name": "What is the difference between this and the desktop version?",
-          "acceptedAnswer": { "@type": "Answer", "text": "The web version runs mozjpeg, oxipng and AVIF as WebAssembly and scores with per-channel SSIM. The desktop version (pip install imgcompress) adds SSIMULACRA 2 — the stronger perceptual metric — plus libimagequant and zopfli, can watch folders, and saves batches straight to disk." }
+          "acceptedAnswer": { "@type": "Answer", "text": "They compress to the same measured SSIMULACRA 2 floor with the same class of encoders. The desktop version (pip install imgcompress) adds workflow: folder watching, batch saves straight to disk and a scriptable CLI, plus libimagequant and zopfli, which are still worth a few percent on palette images." }
         },
         {
           "@type": "Question",
           "name": "Which formats can it read and write?",
-          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are passed through untouched. Output is JPEG, palette PNG, lossless PNG, WebP or AVIF." }
+          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are passed through untouched. Output is JPEG, palette PNG, lossless PNG, WebP (lossy or lossless) or AVIF." }
         },
         {
           "@type": "Question",
@@ -197,9 +197,9 @@
       <div class="advanced" id="advanced" hidden>
         <div class="field">
           <label for="quality">Quality floor</label>
-          <input type="range" id="quality" min="80" max="100" step="1" value="97"
+          <input type="range" id="quality" min="60" max="99" step="1" value="90"
                  aria-describedby="quality-note">
-          <output class="num" id="quality-out">97</output>
+          <output class="num" id="quality-out">90</output>
         </div>
         <p class="adv-note" id="quality-note">imperceptible side by side</p>
         <div class="field">
@@ -312,13 +312,15 @@
                 <details class="advanced-info">
                   <summary>How this was measured</summary>
                   <div class="stats">
-                    <div class="stat"><div class="k">SSIM (p5)</div><div class="v" id="s-score">—</div></div>
+                    <div class="stat"><div class="k">SSIMULACRA 2</div><div class="v" id="s-score">—</div></div>
                     <div class="stat"><div class="k">Quality floor</div><div class="v" id="s-floor">—</div></div>
                     <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
                   </div>
-                  <p class="metric-note">Every candidate was decoded back and compared to
-                     your original with SSIM at the 5th percentile, then the winner was
-                     re-checked per colour channel. Higher is closer; 1.0000 is identical.</p>
+                  <p class="metric-note">Every candidate was decoded back and scored
+                     against your original with SSIMULACRA&nbsp;2 — the metric the
+                     image-compression community converged on, colour-aware by
+                     construction. 90 means the difference doesn't survive a flicker
+                     test; 100 is identical.</p>
                 </details>
               </div>
               <div class="pane">
@@ -326,7 +328,7 @@
                 <div class="cands" id="cands"></div>
                 <div class="ov-floor">
                   <label for="ov-quality">Quality floor for this image</label>
-                  <input class="num-input" type="number" id="ov-quality" min="80" max="100" placeholder="—">
+                  <input class="num-input" type="number" id="ov-quality" min="60" max="99" placeholder="—">
                   <button class="btn sm" id="ov-apply">Apply</button>
                   <button class="btn ghost sm" id="ov-reset" hidden>Reset</button>
                 </div>
@@ -390,10 +392,11 @@
       <div class="step">
         <span class="step-n num">2</span>
         <h3>Score every candidate</h3>
-        <p>Each encode is decoded back and compared to the original with SSIM at
-           the 5th percentile, so a big flat background can't hide a damaged
-           subject. Transparency is scored on dark <i>and</i> light backdrops.
-           The shipped file is verified per colour channel too.</p>
+        <p>Each encode is decoded back and scored against the original with
+           <b>SSIMULACRA&nbsp;2</b> — the metric the image-compression community
+           converged on, running right here in your browser and validated
+           against the reference implementation. Transparency is scored on dark
+           <i>and</i> light backdrops; the worse score wins.</p>
       </div>
       <div class="step">
         <span class="step-n num">3</span>
@@ -441,21 +444,19 @@
   </section>
 
   <section class="learn" id="desktop">
-    <h2>Want more? The desktop version goes further</h2>
-    <p class="lede">This page ships mozjpeg, oxipng and AVIF compiled to
-       WebAssembly — the same class of encoders the professionals use, running
-       locally in your browser. The Python version still has a few things a
-       browser can't offer:</p>
+    <h2>Prefer a desktop app? There's one of those too</h2>
+    <p class="lede">This page runs the full pipeline: SSIMULACRA&nbsp;2 as the
+       quality floor, mozjpeg, oxipng, real lossless WebP and AVIF — all
+       compiled to WebAssembly, all local. The Python version compresses to
+       the same measured floor; what it adds is workflow:</p>
     <ul class="checks">
-      <li><b>SSIMULACRA&nbsp;2</b> — the metric the image-compression community
-          converged on (r≈0.88 against human judgement; the web version uses
-          per-channel SSIM at the 5th percentile)</li>
-      <li><b>libimagequant</b> — the engine inside pngquant, still ahead of any
-          in-browser quantizer on photographic palettes</li>
-      <li><b>zopfli</b> — a slower, slightly deeper cousin of oxipng</li>
       <li><b>Folder watching</b> — point it at your Figma export folder and new
           arrivals are compressed as they land</li>
       <li><b>Batch saves to disk</b> — no downloads folder, no zips</li>
+      <li><b>libimagequant</b> — the engine inside pngquant, still a few
+          percent ahead of the in-browser quantizer on photographic palettes</li>
+      <li><b>zopfli</b> — a slower, slightly deeper cousin of oxipng</li>
+      <li><b>Scriptable</b> — a real CLI for CI pipelines and build steps</li>
     </ul>
     <pre class="code"><code>pip install "imgcompress[full,app]"
 imgcompress-gui            # the app
@@ -482,27 +483,29 @@ imgcompress photos/        # or the command line</code></pre>
     </details>
     <details>
       <summary>How is quality measured?</summary>
-      <p>Every candidate encode is decoded back and compared to the original
-         with SSIM, aggregated at the 5th percentile so a large flat background
-         cannot hide a damaged region. Transparent images are scored over a dark
-         and a light backdrop, and the worse score wins. The encode that ships
-         is also verified per colour channel, because luma-only metrics are
-         blind to chroma damage.</p>
+      <p>Every candidate encode is decoded back and scored against the original
+         with SSIMULACRA&nbsp;2 — the perceptual metric the image-compression
+         community converged on, which correlates with human judgement at
+         r≈0.88 and sees chroma damage that luma-only metrics miss. It runs
+         entirely in your browser, as a port validated against the reference
+         implementation. Transparent images are scored over a dark and a light
+         backdrop, and the worse score wins.</p>
     </details>
     <details>
       <summary>What is the difference between this and the desktop version?</summary>
-      <p>The web version runs mozjpeg, oxipng and AVIF as WebAssembly and scores
-         with per-channel SSIM. The desktop version
-         (<code>pip install imgcompress</code>) adds SSIMULACRA&nbsp;2 — the
-         stronger perceptual metric — plus libimagequant and zopfli, can watch
-         folders, and saves batches straight to disk.</p>
+      <p>They compress to the same measured SSIMULACRA&nbsp;2 floor with the
+         same class of encoders. The desktop version
+         (<code>pip install imgcompress</code>) adds workflow: folder watching,
+         batch saves straight to disk, a scriptable CLI — plus libimagequant
+         and zopfli, which are still worth a few percent on palette images.</p>
     </details>
     <details>
       <summary>Which formats can it read and write?</summary>
       <p>It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF
          where the browser can decode it. Animated GIFs are passed through
-         untouched. Output is JPEG, palette PNG, lossless PNG, WebP or AVIF
-         (AVIF on the web target, where the browser supports it).</p>
+         untouched. Output is JPEG, palette PNG, lossless PNG, WebP (lossy or
+         lossless) or AVIF, depending on the target and what your browser
+         supports.</p>
     </details>
     <details>
       <summary>Is it free?</summary>
@@ -515,7 +518,7 @@ imgcompress photos/        # or the command line</code></pre>
 <footer class="site-foot">
   <span>MIT licence</span>
   <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
-  <span class="num">v2.2.0</span>
+  <span class="num">v2.3.0</span>
   <span>by HeyOz</span>
   <!-- Lifetime totals live here, labelled, so they cannot be mistaken for the
        current batch's numbers in the results bar. -->

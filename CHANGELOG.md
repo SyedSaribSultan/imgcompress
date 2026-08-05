@@ -3,6 +3,37 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-08-05
+
+### Added
+- **SSIMULACRA 2 in the browser.** The web app now searches with the same
+  perceptual metric as the desktop version — a JavaScript port
+  (`web/ss2.js`) validated against the Python reference implementation to
+  |Δ| = 0.0000 across a 60-pair corpus of codec-distorted images. The default
+  quality floor is 90, the metric's published "not noticeable in a flicker
+  test" line, and the UI speaks the same scale as the desktop app.
+- **Real lossless WebP** in the web app (libwebp via WASM), competing in the
+  Web and Lossless targets — the candidate that wins on flat artwork.
+- `tests/bench_vs_alternatives.py` + `tests/BENCHMARK.md`: a reproducible
+  head-to-head against single-format strategies and fixed-quality defaults,
+  every strategy searched to the same SSIMULACRA 2 >= 90 floor.
+
+### Changed
+- Lossy ladders reach the high 90s (JPEG to 99, WebP to 98, AVIF to 96) in
+  both engines. With the old ceilings, hard content could fail every lossy
+  rung and a multi-megabyte lossless PNG won by forfeit.
+- The web quantizer adds two Lloyd refinement iterations after median cut,
+  and the shipped PNG gets a deeper oxipng pass — palette outputs now beat
+  the pngquant + zopfli sizes from the previous benchmark.
+- The per-channel chroma guard now applies only under the SSIM fallback
+  metric; SSIMULACRA 2 weighs chroma natively.
+
+### Fixed
+- **Desktop selection bug:** a candidate that failed the quality floor could
+  ship over one that passed, purely because it was smaller — an early failing
+  JPEG would hold the winner's spot against a passing lossless PNG. Passing
+  candidates now always outrank failing ones, matching the web engine.
+
 ## [2.2.0] - 2026-08-05
 
 ### Added

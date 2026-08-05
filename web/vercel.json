@@ -19,7 +19,7 @@
       ]
     },
     {
-      "source": "/(app.css|app.js|worker.js|heyoz-tokens.css|fonts.css)",
+      "source": "/(app.css|app.js|worker.js|ss2.js|heyoz-tokens.css|fonts.css)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" }
       ]
