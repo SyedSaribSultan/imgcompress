@@ -117,15 +117,21 @@
     </svg>
     <b>imgcompress</b>
   </a>
-  <nav aria-label="Site">
-    <a href="#learn">How it works</a>
-    <a href="#desktop">Desktop&nbsp;app</a>
-    <a href="#faq">FAQ</a>
-    <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
-  </nav>
   <div class="head-right">
     <span class="lifetime num" id="lifetime" hidden></span>
     <button class="btn ghost" id="theme-btn" title="Dark, light, or follow your system">Light</button>
+    <!-- Secondary links live in one overflow menu: the header belongs to the app. -->
+    <div class="overflow">
+      <button class="btn ghost" id="more-btn" aria-haspopup="true" aria-expanded="false"
+              aria-label="More links">⋯</button>
+      <nav class="menu" id="more-menu" aria-label="Site" hidden>
+        <a href="#learn">How it works</a>
+        <a href="#desktop">Desktop app</a>
+        <a href="#faq">FAQ</a>
+        <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub ↗</a>
+        <button data-keys>Keyboard shortcuts <kbd>?</kbd></button>
+      </nav>
+    </div>
   </div>
 </header>
 
@@ -187,8 +193,6 @@
         </button>
         <div class="spacer"></div>
         <button class="btn ghost danger" id="stop-btn" hidden>Stop</button>
-        <button class="btn ghost" id="add-btn">Add images</button>
-        <button class="btn ghost" id="clear-btn" title="Remove everything from the queue">Clear</button>
       </div>
 
       <div class="advanced" id="advanced" hidden>
@@ -213,12 +217,17 @@
       <div class="batch" id="batch" role="progressbar" aria-label="Batch progress"><i id="batch-bar"></i></div>
 
       <div class="body">
-        <aside class="queue">
+        <aside class="queue card">
+          <!-- Batch controls and batch numbers in one bar, directly above the list -->
           <div class="queue-head">
-            <span class="micro">Queue</span>
-            <span class="count num" id="queue-count">0</span>
+            <div class="qh-stats">
+              <span class="qh-count num" id="queue-count">0</span>
+              <span class="qh-label micro">images</span>
+              <span class="live-stat num" id="live-stat"></span>
+            </div>
             <div class="spacer"></div>
-            <span class="live-stat num" id="live-stat"></span>
+            <button class="btn ghost sm" id="add-btn">＋ Add</button>
+            <button class="btn ghost sm" id="clear-btn" title="Remove everything from the queue">Clear</button>
           </div>
           <div class="queue-list" id="queue-list" role="listbox" aria-label="Images to compress" tabindex="0"></div>
           <div class="queue-foot" id="queue-foot">Drop images anywhere on this page</div>
@@ -233,8 +242,28 @@
               <span class="dims num" id="insp-dims"></span>
               <div class="spacer"></div>
               <button class="btn" id="retry-btn" hidden>Try again</button>
-              <button class="btn" id="dl-one">Download</button>
+              <!-- Scoped to this image; the batch action lives in the results bar. -->
+              <button class="btn" id="dl-one">Save this one</button>
               <button class="btn ghost" id="remove-btn" title="Remove from the queue (Delete)">Remove</button>
+              <button class="btn ghost" id="insp-toggle" aria-expanded="true" aria-controls="details"
+                      title="Collapse the detail panel to enlarge the preview">Details ▾</button>
+            </div>
+
+            <!-- View modes as one segmented control, docked above the canvas
+                 rather than floating over the photograph. -->
+            <div class="canvas-bar">
+              <div class="segmented" role="group" aria-label="Comparison mode">
+                <button id="mode-split" aria-pressed="true">Split <kbd>Space</kbd></button>
+                <button id="mode-after" aria-pressed="false">After</button>
+                <button id="mode-diff" aria-pressed="false">Diff <kbd>D</kbd></button>
+              </div>
+              <div class="spacer"></div>
+              <div class="zoomer" role="group" aria-label="Zoom">
+                <button id="zoom-out" aria-label="Zoom out" title="Zoom out (scroll wheel works too)">−</button>
+                <span class="z num" id="zoom-label">Fit</span>
+                <button id="zoom-in" aria-label="Zoom in" title="Zoom in (scroll wheel works too)">+</button>
+                <button id="zoom-reset" title="Back to fit (or double-click the image)">Fit</button>
+              </div>
             </div>
 
             <div class="stage" id="stage">
@@ -252,55 +281,64 @@
                 <span class="tag l dark" id="tag-l">Original</span>
                 <span class="tag r dark" id="tag-r">Compressed</span>
               </div>
-              <div class="stage-bar">
-                <button id="mode-split" aria-pressed="true" title="Split view (tap Space)">Split</button>
-                <button id="mode-after" aria-pressed="false" title="Compressed only · hold Space to flicker-test">After</button>
-                <button id="mode-diff" aria-pressed="false" title="Where the pixels actually changed">Diff</button>
-                <span class="vsep"></span>
-                <button id="zoom-out" aria-label="Zoom out" title="Zoom out (scroll wheel works too)">−</button>
-                <span class="z num" id="zoom-label">Fit</span>
-                <button id="zoom-in" aria-label="Zoom in" title="Zoom in (scroll wheel works too)">+</button>
-                <button id="zoom-reset" title="Back to fit (or double-click the image)">Reset</button>
-              </div>
-              <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test · <kbd>Diff</kbd> shows what changed</div>
+              <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test · <kbd>D</kbd> shows what changed</div>
             </div>
 
-            <div class="details">
+            <div class="details" id="details">
               <div class="pane">
-                <h3 class="micro">Result</h3>
-                <div class="stats">
-                  <div class="stat"><div class="k">Size</div><div class="v" id="s-size">—</div></div>
-                  <div class="stat"><div class="k">Saved</div><div class="v" id="s-saved">—</div></div>
-                  <div class="stat"><div class="k">Format</div><div class="v" id="s-format">—</div></div>
-                  <div class="stat"><div class="k">SSIM (p5)</div><div class="v" id="s-score">—</div></div>
-                  <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
-                  <div class="stat"><div class="k">Floor</div><div class="v" id="s-floor">—</div></div>
+                <!-- Headline numbers only. Everything a person needs to decide
+                     whether to keep the file, at a size they can read. -->
+                <div class="stats-lead">
+                  <div class="stat-big">
+                    <div class="k micro">Now</div>
+                    <div class="v" id="s-size">—</div>
+                  </div>
+                  <div class="stat-big accent">
+                    <div class="k micro">Saved</div>
+                    <div class="v" id="s-saved">—</div>
+                  </div>
+                  <div class="stat-big name">
+                    <div class="k micro">Format</div>
+                    <div class="v" id="s-format">—</div>
+                  </div>
                 </div>
                 <p class="verdict" id="s-verdict" hidden></p>
                 <div class="note" id="s-note" hidden></div>
                 <div class="warn" id="s-warn" hidden></div>
+                <!-- The measurement is the product's claim, so it stays one
+                     click away rather than buried: quality first in the drawer. -->
+                <details class="advanced-info">
+                  <summary>How this was measured</summary>
+                  <div class="stats">
+                    <div class="stat"><div class="k">SSIM (p5)</div><div class="v" id="s-score">—</div></div>
+                    <div class="stat"><div class="k">Quality floor</div><div class="v" id="s-floor">—</div></div>
+                    <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
+                  </div>
+                  <p class="metric-note">Every candidate was decoded back and compared to
+                     your original with SSIM at the 5th percentile, then the winner was
+                     re-checked per colour channel. Higher is closer; 1.0000 is identical.</p>
+                </details>
               </div>
               <div class="pane">
-                <h3 class="micro">Every candidate, ranked</h3>
+                <h3 class="micro">Every candidate, ranked <span class="hint-inline">click one to preview or keep it</span></h3>
                 <div class="cands" id="cands"></div>
-                <details class="override">
-                  <summary>Override this image</summary>
-                  <div class="line">
-                    <label for="ov-format">Force</label>
-                    <select id="ov-format">
-                      <option value="">best of all candidates</option>
-                      <option value="jpeg">jpeg</option>
-                      <option value="png8">png8 (palette)</option>
-                      <option value="png">png (lossless)</option>
-                      <option value="webp">webp</option>
-                      <option value="avif">avif</option>
-                    </select>
-                    <label for="ov-quality">Floor</label>
-                    <input class="num-input" type="number" id="ov-quality" min="80" max="100" placeholder="—">
-                    <button class="btn" id="ov-apply">Apply</button>
-                    <button class="btn ghost" id="ov-reset" hidden>Reset</button>
-                  </div>
-                </details>
+                <div class="ov-floor">
+                  <label for="ov-quality">Quality floor for this image</label>
+                  <input class="num-input" type="number" id="ov-quality" min="80" max="100" placeholder="—">
+                  <button class="btn sm" id="ov-apply">Apply</button>
+                  <button class="btn ghost sm" id="ov-reset" hidden>Reset</button>
+                </div>
+                <!-- Kept in the DOM: the candidate cards write to it, and the E2E
+                     drives it directly. Not shown, because clicking a card is the
+                     direct route to the same thing. -->
+                <select id="ov-format" class="sr" aria-hidden="true" tabindex="-1">
+                  <option value="">best of all candidates</option>
+                  <option value="jpeg">jpeg</option>
+                  <option value="png8">png8 (palette)</option>
+                  <option value="png">png (lossless)</option>
+                  <option value="webp">webp</option>
+                  <option value="avif">avif</option>
+                </select>
               </div>
             </div>
           </div>
@@ -312,7 +350,7 @@
         <div class="totals">
           <span class="big num" id="t-sizes"></span>
           <span class="save num" id="t-saved"></span>
-          <span class="bandwidth" id="t-bandwidth"></span>
+          <span class="badge-bw" id="t-bandwidth" hidden></span>
         </div>
         <div class="spacer"></div>
         <div class="export">
@@ -323,7 +361,9 @@
             <button data-export="json">Download JSON</button>
           </div>
         </div>
-        <button class="btn primary" id="save-btn" disabled>Download</button>
+        <button class="btn primary" id="save-btn" disabled>
+          <span id="save-label">Download all</span><kbd>Ctrl S</kbd>
+        </button>
       </footer>
     </div>
   </section>

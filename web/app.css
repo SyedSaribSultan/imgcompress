@@ -202,6 +202,53 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
   color: var(--oz-color-content-on-brand-disabled);
 }
 .btn.big { min-height: var(--oz-target-min); padding: 0 var(--oz-space-7); font-size: var(--oz-text-body-md); }
+.btn.sm { min-height: 28px; padding: 0 var(--oz-space-3); font-size: var(--oz-text-body-xs); }
+/* Shortcut hints ride on the button that performs the action, which is where
+   people actually learn them. */
+.btn kbd, .segmented kbd {
+  background: transparent; padding: 0 0 0 var(--oz-space-2);
+  color: currentColor; opacity: .6; font-size: var(--oz-text-label-xs);
+}
+.btn.primary kbd { opacity: .72; }
+
+/* -------------------------- segmented control ----------------------------- */
+/* One control, not three loose buttons: the options are mutually exclusive, so
+   they read as one thing with a moving selection. */
+.segmented {
+  display: inline-flex; padding: 2px; gap: 2px;
+  background: var(--oz-color-fill-tertiary);
+  border-radius: var(--oz-radius-4);
+}
+.segmented button {
+  display: inline-flex; align-items: center;
+  padding: var(--oz-space-1) var(--oz-space-4); min-height: 28px;
+  border-radius: var(--oz-radius-3);
+  color: var(--oz-color-content-secondary);
+  font-size: var(--oz-text-body-sm); font-weight: var(--oz-weight-medium);
+  white-space: nowrap;
+  transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast),
+              color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
+}
+.segmented button:hover { color: var(--oz-color-content-primary); }
+.segmented button[aria-pressed="true"] {
+  background: var(--oz-color-surface-elevated);
+  color: var(--oz-color-content-primary);
+  box-shadow: var(--oz-elevation-x-small);
+}
+.segmented button[disabled] { color: var(--oz-color-content-secondary-disabled); pointer-events: none; }
+
+/* ----------------------------- overflow menu ------------------------------ */
+.overflow { position: relative; }
+.overflow .menu {
+  position: absolute; right: 0; top: calc(100% + var(--oz-space-2)); bottom: auto;
+}
+.overflow .menu a {
+  text-align: left; padding: var(--oz-space-3) var(--oz-space-4);
+  border-radius: var(--oz-radius-3); text-decoration: none;
+  font-size: var(--oz-text-body-sm); color: var(--oz-color-content-secondary);
+}
+.overflow .menu a:hover { background: var(--oz-color-fill-tertiary-hover); color: var(--oz-color-content-primary); }
+.overflow .menu button { display: flex; justify-content: space-between; gap: var(--oz-space-4); }
 .chev {
   display: inline-block; color: var(--oz-color-content-tertiary);
   transition: transform var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast);
@@ -364,25 +411,38 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   transition: width var(--oz-spring-effects-slow-ms) var(--oz-spring-effects-slow);
 }
 
-.body { display: grid; grid-template-columns: 324px minmax(0, 1fr); min-height: 460px; }
+.body {
+  display: grid; grid-template-columns: 324px minmax(0, 1fr);
+  gap: var(--oz-space-3); padding: var(--oz-space-3);
+  min-height: 460px;
+}
 
-/* Queue and inspector separate by surface step: the queue sits on
-   surface-primary, the stage on the page. No divider needed. */
+/* Each functional group is a card, so the panes read as separate tools rather
+   than one continuous sheet. Depth is shadow in light and a lighter surface in
+   dark, per the system - never a border. */
+.card {
+  background: var(--oz-color-surface-primary);
+  border-radius: var(--oz-radius-8);
+  overflow: hidden;
+}
+
 .queue {
   display: grid; grid-template-rows: auto minmax(0,1fr) auto;
-  background: var(--oz-color-surface-primary); min-height: 0;
+  min-height: 0;
 }
+/* Batch numbers and batch actions in one bar, directly above the list. */
 .queue-head {
   display: flex; align-items: center; gap: var(--oz-space-3);
-  padding: var(--oz-space-4) var(--oz-space-5) var(--oz-space-3);
+  padding: var(--oz-space-3) var(--oz-space-4);
+  background: var(--oz-color-surface-secondary);
 }
-.queue-head .count {
-  font-family: var(--oz-font-mono); font-size: var(--oz-text-label-xs);
-  color: var(--oz-color-content-tertiary);
-  background: var(--oz-color-fill-tertiary);
-  border-radius: var(--oz-radius-full); padding: 1px var(--oz-space-2);
+.qh-stats { display: flex; align-items: baseline; gap: var(--oz-space-2); min-width: 0; }
+.qh-count { font-size: var(--oz-text-body-md); font-weight: var(--oz-weight-semibold); }
+.qh-label { color: var(--oz-color-content-tertiary); }
+.live-stat {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-success);
+  margin-left: var(--oz-space-2);
 }
-.live-stat { font-size: var(--oz-text-body-xs); color: var(--oz-color-content-success); }
 .queue-list { overflow-y: auto; padding: 0 var(--oz-space-3) var(--oz-space-3); min-height: 0; }
 .queue-foot {
   padding: var(--oz-space-3) var(--oz-space-5);
@@ -458,7 +518,34 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .row.enter { animation: oz-enter-rise var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default) both; }
 
 /* ============================ 3. PROOF PANEL ============================= */
-.inspector { display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.inspector {
+  display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0;
+  background: var(--oz-color-surface-primary);
+  border-radius: var(--oz-radius-8); overflow: hidden;
+}
+
+/* Canvas controls docked above the image instead of floating over it. */
+.canvas-bar {
+  display: flex; align-items: center; gap: var(--oz-space-3);
+  padding: var(--oz-space-2) var(--oz-space-4);
+  background: var(--oz-color-surface-secondary);
+}
+.zoomer {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--oz-color-fill-tertiary);
+  border-radius: var(--oz-radius-4); padding: 2px;
+}
+.zoomer button {
+  min-width: 28px; min-height: 28px; padding: 0 var(--oz-space-3);
+  border-radius: var(--oz-radius-3);
+  color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm);
+  transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
+}
+.zoomer button:hover { background: var(--oz-color-fill-tertiary-hover); color: var(--oz-color-content-primary); }
+.zoomer .z {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
+  padding: 0 var(--oz-space-2); min-width: 3.4em; text-align: center;
+}
 .insp-placeholder { display: grid; place-content: center; color: var(--oz-color-content-tertiary); }
 #inspector-body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; height: 100%; }
 .insp-head {
@@ -539,29 +626,8 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .tag.l { left: var(--oz-space-4); } .tag.r { right: var(--oz-space-4); }
 
-.stage-bar {
-  position: absolute; right: var(--oz-space-5); bottom: var(--oz-space-5);
-  display: flex; align-items: center; gap: var(--oz-space-1); padding: var(--oz-space-1);
-  background: var(--oz-color-surface-overlay);
-  border-radius: var(--oz-radius-full);
-  box-shadow: var(--oz-elevation-medium);
-}
-.stage-bar button {
-  padding: var(--oz-space-2) var(--oz-space-4); border-radius: var(--oz-radius-full);
-  color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm);
-  transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast),
-              color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
-}
-.stage-bar button:hover { background: var(--oz-color-fill-tertiary-hover); color: var(--oz-color-content-primary); }
-.stage-bar button[aria-pressed="true"] {
-  background: var(--oz-color-fill-selected); color: var(--oz-color-content-selected);
-}
-.stage-bar button[disabled] { color: var(--oz-color-content-secondary-disabled); pointer-events: none; }
-.stage-bar .z { font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary); padding: 0 var(--oz-space-2); }
-.stage-bar .vsep { width: 1px; height: 16px; background: var(--oz-color-border-primary); }
-
 .hint {
-  position: absolute; left: 50%; bottom: 64px;
+  position: absolute; left: 50%; bottom: var(--oz-space-6);
   transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
   padding: var(--oz-space-3) var(--oz-space-5); border-radius: var(--oz-radius-full);
   background: var(--oz-color-surface-overlay);
@@ -586,6 +652,28 @@ kbd {
 .pane { padding: var(--oz-space-5) var(--oz-space-6); }
 .pane h3 { margin: 0 0 var(--oz-space-4); }
 
+/* The three numbers that decide whether you keep the file, at a size you can
+   read across a desk. Everything else is one click away in the drawer below. */
+.stats-lead {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--oz-space-5);
+}
+.stat-big .k { color: var(--oz-color-content-tertiary); }
+.stat-big .v {
+  font-family: var(--oz-font-mono);
+  font-size: var(--oz-text-heading-sm); line-height: var(--oz-leading-heading-sm);
+  margin-top: var(--oz-space-1); transform-origin: left center;
+  overflow-wrap: anywhere;
+}
+.stat-big .v small {
+  display: block; font-family: var(--oz-font-body);
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
+}
+.stat-big.accent .v { color: var(--oz-color-content-success); }
+/* The format is a name, not a measurement - it does not earn headline size
+   next to two numbers that do. */
+.stat-big.name .v { font-size: var(--oz-text-body-md); padding-top: var(--oz-space-1); }
+
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--oz-space-4) var(--oz-space-6); }
 .stat .k {
   color: var(--oz-color-content-tertiary); font-size: var(--oz-text-label-xs);
@@ -593,10 +681,30 @@ kbd {
 }
 .stat .v {
   font-family: var(--oz-font-mono); font-size: var(--oz-text-body-sm);
-  line-height: var(--oz-leading-body-sm); margin-top: 2px; transform-origin: left center;
+  line-height: var(--oz-leading-body-sm); margin-top: 2px;
 }
 .stat .v small { font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary); }
 #s-saved.pop { animation: stat-pop var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default); }
+
+/* Advanced info: present, one click away, never in the way. */
+.advanced-info { margin-top: var(--oz-space-5); }
+.advanced-info summary {
+  cursor: pointer; list-style: none;
+  color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm);
+}
+.advanced-info summary::-webkit-details-marker { display: none; }
+.advanced-info summary::before { content: "▸ "; color: var(--oz-color-content-tertiary); }
+.advanced-info[open] summary::before { content: "▾ "; }
+.advanced-info .stats { margin-top: var(--oz-space-4); }
+.metric-note {
+  color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
+  margin: var(--oz-space-4) 0 0; max-width: 60ch;
+}
+.hint-inline {
+  font-family: var(--oz-font-body); text-transform: none; letter-spacing: 0;
+  font-weight: var(--oz-weight-regular); color: var(--oz-color-content-tertiary);
+  font-size: var(--oz-text-body-xs); margin-left: var(--oz-space-2);
+}
 @keyframes stat-pop {
   0%   { transform: scale(calc(1 - 0.06 * var(--oz-motion-spatial-scale))); }
   100% { transform: none; }
@@ -611,13 +719,26 @@ kbd {
 .note { color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm); margin-top: var(--oz-space-3); }
 .note.m0 { margin: 0; }
 
-/* candidate leaderboard, with the size as a bar you can read at a glance */
+/* Candidate leaderboard. Each row is a real button: clicking it keeps that
+   format for this image, so choosing a format is one action on the thing you
+   are looking at rather than a trip through a separate control. */
 .cands { display: grid; gap: 3px; }
 .cand {
-  position: relative; overflow: hidden;
-  display: grid; grid-template-columns: 1fr auto auto; gap: var(--oz-space-4); align-items: center;
-  padding: var(--oz-space-2) var(--oz-space-3); border-radius: var(--oz-radius-3);
-  font-size: var(--oz-text-body-sm);
+  position: relative; overflow: hidden; width: 100%; text-align: left;
+  display: grid; grid-template-columns: 1fr auto 4.2em auto;
+  gap: var(--oz-space-3); align-items: center;
+  padding: var(--oz-space-3); border-radius: var(--oz-radius-3);
+  font-size: var(--oz-text-body-sm); color: var(--oz-color-content-primary);
+  transition: box-shadow var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
+}
+button.cand { cursor: pointer; }
+button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-border-secondary); }
+/* Forced is a state, so an inset ring is legal and costs no layout. */
+.cand.forced { box-shadow: inset 0 0 0 var(--oz-stroke-4) var(--oz-color-border-selected); }
+.cand .p {
+  position: relative; font-family: var(--oz-font-mono);
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-success);
+  text-align: right;
 }
 .cand .bar {
   position: absolute; inset: 0 auto 0 0; width: var(--w, 0%);
@@ -640,18 +761,12 @@ kbd {
 }
 .cand.orig .f, .cand.orig .b { color: var(--oz-color-content-tertiary); }
 
-.override { margin-top: var(--oz-space-5); padding-top: var(--oz-space-4); }
-.override summary {
-  cursor: pointer; color: var(--oz-color-content-secondary);
-  font-size: var(--oz-text-body-sm); list-style: none;
-}
-.override summary::-webkit-details-marker { display: none; }
-.override summary::before { content: "⚙ "; color: var(--oz-color-content-tertiary); }
-.override .line {
+/* The one per-image control the candidate cards cannot express. */
+.ov-floor {
   display: flex; align-items: center; gap: var(--oz-space-3); flex-wrap: wrap;
-  margin-top: var(--oz-space-4);
+  margin-top: var(--oz-space-5);
 }
-.override .line > label { color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm); }
+.ov-floor label { color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm); }
 
 /* ========================= 4. RESULTS SUMMARY ============================ */
 .summary {
@@ -663,7 +778,16 @@ kbd {
 .totals { display: flex; align-items: baseline; gap: var(--oz-space-4); flex-wrap: wrap; }
 .totals .big { font-size: var(--oz-text-body-sm); }
 .totals .save { color: var(--oz-color-content-success); font-size: var(--oz-text-body-sm); }
-.bandwidth { color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs); }
+/* Bandwidth at scale as a badge with the arithmetic in its tooltip, rather
+   than a sentence competing with the totals beside it. */
+.badge-bw {
+  font-family: var(--oz-font-mono); font-size: var(--oz-text-label-xs);
+  color: var(--oz-color-content-secondary);
+  background: var(--oz-color-fill-tertiary);
+  border-radius: var(--oz-radius-full);
+  padding: var(--oz-space-1) var(--oz-space-3);
+  cursor: help; white-space: nowrap;
+}
 
 .export { position: relative; }
 .menu {
@@ -709,8 +833,10 @@ kbd {
 }
 .veil .box p { margin: 0; color: var(--oz-color-content-secondary); }
 
+/* Clear of the results bar and of the detail pane's own controls: a toast that
+   covers the thing you just acted on is worse than no toast. */
 .toast {
-  position: fixed; left: 50%; bottom: 88px;
+  position: fixed; left: 50%; bottom: 76px;
   transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
   z-index: var(--oz-layer-toast);
   padding: var(--oz-space-4) var(--oz-space-5); border-radius: var(--oz-radius-full);
@@ -877,10 +1003,12 @@ html.theming body, html.theming body * {
   .insp-head .dims { display: none; }
   .insp-head .btn { padding: 0 var(--oz-space-3); font-size: var(--oz-text-body-sm); }
   .stage { min-height: 320px; }
-  .stage-bar { right: var(--oz-space-3); bottom: var(--oz-space-3); padding: 3px; gap: 2px; }
-  .stage-bar button { padding: var(--oz-space-2) var(--oz-space-3); font-size: var(--oz-text-body-xs); }
-  .stage-bar .z { padding: 0 3px; }
-  .stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .body { gap: var(--oz-space-2); padding: var(--oz-space-2); }
+  .canvas-bar { padding: var(--oz-space-2) var(--oz-space-3); gap: var(--oz-space-2); }
+  .segmented button { padding: var(--oz-space-1) var(--oz-space-3); font-size: var(--oz-text-body-xs); }
+  .segmented kbd, .btn kbd { display: none; }
+  .stats, .stats-lead { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .stat-big .v { font-size: var(--oz-text-body-md); }
   .summary { padding: var(--oz-space-3) var(--oz-space-4); gap: var(--oz-space-3); }
   .totals { width: 100%; }
   .bandwidth { display: none; }
@@ -894,8 +1022,9 @@ html.theming body, html.theming body * {
 /* Fingers need bigger targets than cursors - the system names the floor. */
 @media (pointer: coarse) {
   .btn, select, .num-input { min-height: var(--oz-target-min); }
+  .btn.sm { min-height: 36px; }
   .btn.primary { min-height: var(--oz-target-comfortable); }
-  .stage-bar button { padding: var(--oz-space-3) var(--oz-space-4); }
+  .segmented button, .zoomer button { min-height: 36px; padding: var(--oz-space-2) var(--oz-space-4); }
   input[type="range"] { height: 32px; }
   input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9.5px; }
   input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }

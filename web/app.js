@@ -546,11 +546,14 @@ function renderQueue() {
     prev = el;
   }
 
+  // One short status line. Shortcuts are taught on the buttons themselves and
+  // in the ? sheet, so they no longer need repeating here.
   const done = state.items.filter(isReady);
   const busyItems = state.items.filter(isBusy).length;
+  const failed = state.items.filter((i) => i.status === "failed").length;
   $("queue-foot").textContent = busyItems
-    ? `${busyItems} to go · ${done.length} ready · Esc stops`
-    : `${done.length} ready · Ctrl+S downloads everything · ? for shortcuts`;
+    ? `${busyItems} working · ${done.length} ready${failed ? ` · ${failed} failed` : ""}`
+    : `${done.length} ready${failed ? ` · ${failed} failed` : ""}`;
 
   // live savings while the batch is still running
   const saved = done.reduce((s, i) => s + (i.originalBytes - i.newBytes), 0);
@@ -721,7 +724,9 @@ function renderInspector(it) {
   applyZoom();
 }
 
-/** Leaderboard: every candidate ranked, with the original as the yardstick. */
+/** Leaderboard: every candidate ranked, with the original as the yardstick.
+ *  Each row is a button — clicking it forces that format for this image, which
+ *  is the direct route to what the old "override" drawer did in three steps. */
 function renderCandidates(it) {
   const cands = $("cands");
   if (!it.candidates?.length) {
@@ -734,28 +739,53 @@ function renderCandidates(it) {
   const rows = [...it.candidates].sort((a, b) => a.bytes - b.bytes);
   const winner = rows[0].bytes;
   const max = Math.max(it.originalBytes, ...rows.map((c) => c.bytes));
+  const forced = it.override?.formats?.[0] || "";
 
-  cands.innerHTML = rows.map((c) => `
-    <div class="cand ${c.bytes === winner ? "win" : ""}" data-bytes="${c.bytes}">
+  const pct = (bytes) => it.originalBytes
+    ? Math.round(100 * (it.originalBytes - bytes) / it.originalBytes) : 0;
+
+  cands.innerHTML = rows.map((c) => {
+    const isWinner = c.bytes === winner;
+    const saving = pct(c.bytes);
+    return `
+    <button class="cand ${isWinner ? "win" : ""} ${forced === c.format ? "forced" : ""}"
+            data-bytes="${c.bytes}" data-format="${escapeHtml(c.format)}"
+            title="Keep this ${escapeHtml(c.format)} version for this image">
       <span class="bar"></span>
       <span class="f">${escapeHtml(c.format)}</span>
       <span class="b">${human(c.bytes)}</span>
-      <span class="${c.bytes === winner ? "badge" : "s"}">${
-        c.bytes === winner ? "winner" : (c.lossless ? "lossless" : c.score.toFixed(3))}</span>
-    </div>`).join("") + `
+      <span class="p">${saving > 0 ? `−${saving}%` : "—"}</span>
+      <span class="${isWinner ? "badge" : "s"}">${
+        isWinner ? (forced ? "chosen" : "winner") : (c.lossless ? "lossless" : c.score.toFixed(3))}</span>
+    </button>`;
+  }).join("") + `
     <div class="cand orig" data-bytes="${it.originalBytes}">
       <span class="bar"></span>
       <span class="f">original</span>
       <span class="b">${human(it.originalBytes)}</span>
+      <span class="p"></span>
       <span class="s">—</span>
     </div>`;
 
   // Widths go through the CSSOM: a style="" attribute in markup would (rightly)
   // be refused by the page's style-src CSP, leaving every bar at zero.
   for (const el of cands.querySelectorAll(".cand")) {
-    const pct = Math.max(2, (Number(el.dataset.bytes) / max) * 100);
-    el.style.setProperty("--w", `${pct.toFixed(1)}%`);
+    const w = Math.max(2, (Number(el.dataset.bytes) / max) * 100);
+    el.style.setProperty("--w", `${w.toFixed(1)}%`);
   }
+}
+
+/** Force a format from a candidate card, or unforce it by clicking it again. */
+function chooseCandidate(format) {
+  const it = state.byId.get(selected);
+  if (!it) return;
+  const already = it.override?.formats?.[0] === format;
+  const override = { ...(it.override || {}) };
+  if (already) delete override.formats; else override.formats = [format];
+  it.override = Object.keys(override).length ? override : null;
+  $("ov-format").value = it.override?.formats?.[0] || "";
+  toast(already ? `Back to the best of all candidates` : `Keeping ${format} for this image`);
+  requeue([it.id]);
 }
 
 /* --------------------------- difference heatmap --------------------------- */
@@ -867,16 +897,20 @@ function renderSummary() {
   $("t-saved").textContent = done.length && saved > 0
     ? `saved ${human(saved)} (${((saved / before) * 100).toFixed(0)}%)` : "";
   // Plain arithmetic, no hand-waving: what this weight means at scale.
-  $("t-bandwidth").textContent = saved > 0
-    ? `≈ ${human(saved * 10000)} of bandwidth per 10,000 page views`
-    : "";
+  const bw = $("t-bandwidth");
+  bw.hidden = saved <= 0;
+  if (saved > 0) {
+    bw.textContent = `${human(saved * 10000)} saved per 10k views`;
+    bw.title = `Serving these ${done.length} image${done.length === 1 ? "" : "s"} to 10,000 visitors `
+      + `moves ${human(saved * 10000)} less data than the originals would have.`;
+  }
 
   const btn = $("save-btn");
   if (!btn.dataset.busy) {
     btn.disabled = done.length === 0;
-    btn.textContent = done.length === 0 ? "Download"
-      : done.length === 1 ? "Download"
-      : `Download ${done.length} files · ${human(after)} zip`;
+    $("save-label").textContent = done.length > 1
+      ? `Download all ${done.length} · ${human(after)} zip`
+      : "Download";
   }
   $("export-btn").disabled = done.length === 0;
 }
@@ -1017,7 +1051,7 @@ async function downloadAll() {
     return;
   }
   btn.dataset.busy = "1";
-  btn.textContent = "Zipping…";
+  $("save-label").textContent = "Zipping…";
   try {
     const used = new Set();
     const entries = done.map((it) => ({ name: outputName(it, used), blob: it.afterBlob }));
@@ -1026,7 +1060,7 @@ async function downloadAll() {
     const saved = done.reduce((s, i) => s + (i.originalBytes - i.newBytes), 0);
     toast(`Zipped ${done.length} images — ${human(saved)} lighter than they arrived`);
     for (const it of done) it.status = "saved";
-    btn.textContent = "Saved ✓";
+    $("save-label").textContent = "Saved ✓";
     setTimeout(() => { delete btn.dataset.busy; scheduleRender(); }, 1600);
   } catch {
     delete btn.dataset.busy;
@@ -1327,6 +1361,40 @@ function bind() {
   $("queue-list").addEventListener("click", (e) => {
     const row = e.target.closest(".row");
     if (row) selectItem(row.dataset.id);
+  });
+
+  // A candidate card is the direct way to keep a different format.
+  $("cands").addEventListener("click", (e) => {
+    const card = e.target.closest(".cand[data-format]");
+    if (card) chooseCandidate(card.dataset.format);
+  });
+
+  // Collapse the detail panel to give the comparison the whole pane.
+  $("insp-toggle").addEventListener("click", () => {
+    const open = $("details").hidden;
+    $("details").hidden = !open;
+    $("insp-toggle").setAttribute("aria-expanded", String(open));
+    $("insp-toggle").textContent = open ? "Details ▾" : "Details ▸";
+    requestAnimationFrame(applyZoom);
+  });
+
+  // Header overflow menu.
+  const moreMenu = $("more-menu");
+  $("more-btn").addEventListener("click", () => {
+    const open = moreMenu.hidden;
+    moreMenu.hidden = !open;
+    $("more-btn").setAttribute("aria-expanded", String(open));
+  });
+  moreMenu.addEventListener("click", (e) => {
+    if (e.target.hasAttribute?.("data-keys")) $("keys").showModal();
+    moreMenu.hidden = true;
+    $("more-btn").setAttribute("aria-expanded", "false");
+  });
+  document.addEventListener("click", (e) => {
+    if (!moreMenu.hidden && !e.target.closest(".overflow")) {
+      moreMenu.hidden = true;
+      $("more-btn").setAttribute("aria-expanded", "false");
+    }
   });
 
   $("split").addEventListener("input", (e) => {
