@@ -53,17 +53,18 @@ function rollNumber(el, toBytes, suffixHtml) {
 /* -------------------------------- state ---------------------------------- */
 
 const state = {
-  items: [],            // ordered
+  items: [],
   byId: new Map(),
   settings: { target: "figma", qualityTarget: 0.97, maxDimension: 2560 },
   settingsRev: 0,
   caps: { webp: null, png8: null },
+  suffix: false,
 };
 let selected = null;
 let mode = "split";
 let zoom = 0;
 let pan = { x: 0, y: 0 };
-let batchActive = false;   // true while at least one item is queued/working
+let batchActive = false;
 const BASE_TITLE = document.title;
 
 function uid() {
@@ -71,6 +72,9 @@ function uid() {
   crypto.getRandomValues(a);
   return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+const isReady = (i) => i.status === "done" || i.status === "saved";
+const isBusy = (i) => i.status === "queued" || i.status === "working";
 
 /* ------------------------- settings persistence -------------------------- */
 
@@ -82,16 +86,21 @@ function loadSettings() {
       state.settings.qualityTarget = saved.qualityTarget;
     }
     if (Number.isFinite(saved.maxDimension)) state.settings.maxDimension = saved.maxDimension;
+    state.suffix = !!saved.suffix;
   } catch {}
   $("target").value = state.settings.target;
   $("quality").value = Math.round(state.settings.qualityTarget * 100);
   $("quality-out").textContent = $("quality").value;
   $("maxdim").value = state.settings.maxDimension;
+  $("suffix-toggle").checked = state.suffix;
   reflectQualityHint();
 }
 
 function saveSettings() {
-  try { localStorage.setItem("imgc-settings", JSON.stringify(state.settings)); } catch {}
+  try {
+    localStorage.setItem("imgc-settings",
+      JSON.stringify({ ...state.settings, suffix: state.suffix }));
+  } catch {}
 }
 
 function hintForQuality(q) {
@@ -104,9 +113,30 @@ function hintForQuality(q) {
 }
 function reflectQualityHint() {
   const q = Number($("quality").value);
-  const hint = hintForQuality(q);
-  $("quality").title = hint;
-  $("quality-out").title = hint;
+  $("quality-note").textContent = hintForQuality(q);
+}
+
+/* --------------------------- lifetime statistics -------------------------- */
+/* Numbers only — never filenames, never image data. This is the honest
+ * version of "social proof": your own totals, computed on your machine. */
+
+function bumpLifetime(images, bytes) {
+  try {
+    const s = JSON.parse(localStorage.getItem("imgc-stats") || "{}");
+    const next = { images: (s.images || 0) + images, bytes: (s.bytes || 0) + bytes };
+    localStorage.setItem("imgc-stats", JSON.stringify(next));
+    renderLifetime();
+  } catch {}
+}
+function renderLifetime() {
+  try {
+    const s = JSON.parse(localStorage.getItem("imgc-stats") || "{}");
+    if (!s.images) return;
+    const el = $("lifetime");
+    el.hidden = false;
+    el.textContent = `${s.images} image${s.images === 1 ? "" : "s"} · ${human(s.bytes)} saved`;
+    el.title = "Your running total on this device. Nothing leaves your browser.";
+  } catch {}
 }
 
 /* ----------------------------- worker pool ------------------------------- */
@@ -114,9 +144,9 @@ function reflectQualityHint() {
 const POOL_MAX = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 4) - 1));
 const pool = [];
 
-function makeWorker() {
+function makeWorker(index) {
   const w = new Worker("worker.js");
-  const slot = { w, busy: false, itemId: null, index: pool.length };
+  const slot = { w, busy: false, itemId: null, index };
   w.onmessage = (e) => onWorkerMessage(slot, e.data);
   w.onerror = () => {
     if (slot.itemId) {
@@ -126,13 +156,13 @@ function makeWorker() {
     slot.busy = false; slot.itemId = null;
     scheduleRender(); dispatch();
   };
-  pool.push(slot);
   return slot;
 }
 
-/** Spawn workers as demand appears instead of all four at page load. */
 function ensurePool(want) {
-  while (pool.length < Math.min(POOL_MAX, Math.max(1, want))) makeWorker();
+  while (pool.length < Math.min(POOL_MAX, Math.max(1, want))) {
+    pool.push(makeWorker(pool.length));
+  }
 }
 
 function effectiveSettings(item) {
@@ -152,7 +182,7 @@ async function dispatch() {
   for (const item of queued) {
     // Prefer the worker that last handled this item - its decode cache makes
     // a quality-only re-run start instantly.
-    let slot = item.slot != null && !pool[item.slot].busy ? pool[item.slot] : null;
+    let slot = item.slot != null && pool[item.slot] && !pool[item.slot].busy ? pool[item.slot] : null;
     if (!slot) slot = pool.find((s) => !s.busy);
     if (!slot) return;
 
@@ -160,6 +190,7 @@ async function dispatch() {
     slot.itemId = item.id;
     item.slot = slot.index;
     item.status = "working";
+    item.stage = "reading";
     item.progress = "reading…";
     item.frac = 0;
     scheduleRender("queue");
@@ -173,6 +204,10 @@ async function dispatch() {
       scheduleRender();
       continue;
     }
+    if (!state.byId.has(item.id) || item.status !== "working") { // removed mid-read
+      slot.busy = false; slot.itemId = null;
+      continue;
+    }
     slot.w.postMessage({
       type: "job", id: item.id, rev: state.settingsRev,
       name: item.name, buffer, mime: mimeFor(item.file),
@@ -181,24 +216,52 @@ async function dispatch() {
   }
 }
 
+/** Stop everything in flight. Workers are terminated (the only way to
+ *  interrupt a wasm encode) and replaced, so the pool stays warm. */
+function cancelAll() {
+  const stopping = state.items.filter(isBusy);
+  if (!stopping.length) return;
+  for (const slot of pool) {
+    if (!slot.busy) continue;
+    slot.w.terminate();
+    const fresh = makeWorker(slot.index);
+    pool[slot.index] = fresh;
+  }
+  for (const item of stopping) {
+    item.status = item.candidates?.length ? "failed" : "cancelled";
+    item.error = "stopped";
+    item.frac = 0;
+  }
+  batchActive = false;
+  toast(`Stopped — ${stopping.length} image${stopping.length === 1 ? "" : "s"} left uncompressed`);
+  scheduleRender();
+}
+
+const STAGE_TEXT = {
+  codec: (d) => `loading ${d} engine…`,
+  decoding: () => "decoding…",
+  encoding: (d, pct) => `testing ${d} · ${pct}%`,
+};
+
 function onWorkerMessage(slot, msg) {
   if (msg.type === "caps") {
-    state.caps = msg.caps;
+    state.caps = { ...state.caps, ...msg.caps };
     scheduleRender("queue");
     return;
   }
   const item = state.byId.get(msg.id);
-  if (!item) { // removed while working
+  if (!item) {
     if (msg.type !== "progress") { slot.busy = false; slot.itemId = null; dispatch(); }
     return;
   }
+  if (item.status === "cancelled") return;
 
   if (msg.type === "progress") {
     item.frac = msg.frac ?? item.frac ?? 0;
-    item.progress =
-      msg.stage === "codec" ? `loading ${msg.detail} engine…`
-      : msg.stage === "decoding" ? "decoding…"
-      : `${msg.detail || "encoding"} · ${Math.round((item.frac || 0) * 100)}%`;
+    item.stage = msg.stage;
+    item.formats = msg.total || item.formats;
+    const fn = STAGE_TEXT[msg.stage];
+    item.progress = fn ? fn(msg.detail, Math.round((item.frac || 0) * 100)) : "working…";
     scheduleRender("queue");
     return;
   }
@@ -208,7 +271,6 @@ function onWorkerMessage(slot, msg) {
   if (msg.engines) state.caps = { ...state.caps, ...msg.engines };
 
   if (msg.rev !== state.settingsRev && !item.override) {
-    // Settings changed while this ran; the result is stale. Run it again.
     item.status = "queued";
     scheduleRender(); dispatch();
     return;
@@ -223,7 +285,7 @@ function onWorkerMessage(slot, msg) {
     if (item.afterURL) URL.revokeObjectURL(item.afterURL);
     const blob = new Blob([r.bytes], { type: r.mime });
     item.status = "done";
-    item.justFinished = true;   // one render's worth of celebration
+    item.justFinished = true;
     item.result = r;
     item.afterBlob = blob;
     item.afterURL = URL.createObjectURL(blob);
@@ -236,9 +298,14 @@ function onWorkerMessage(slot, msg) {
     item.warnings = r.warnings || [];
     item.candidates = r.candidates || [];
     item.passthrough = !!r.passthrough;
+    item.diffURL = null;
     if (r.width) { item.width = r.width; item.height = r.height; }
     item.outW = r.outW || item.width;
     item.outH = r.outH || item.height;
+    if (!item.counted) {
+      item.counted = true;
+      bumpLifetime(1, Math.max(0, item.originalBytes - item.newBytes));
+    }
   }
   scheduleRender();
   dispatch();
@@ -250,21 +317,17 @@ function startEngine() {
   pool[0].w.postMessage({ type: "probe" });
 }
 
-/** The app should acknowledge the moment the whole batch lands. */
 function maybeCelebrate() {
-  const busy = state.items.some((i) => i.status === "queued" || i.status === "working");
-  if (busy || !batchActive) return;
+  if (state.items.some(isBusy) || !batchActive) return;
   batchActive = false;
-  const done = state.items.filter((i) => i.status === "done" || i.status === "saved");
+  const done = state.items.filter(isReady);
   if (!done.length) return;
   const before = done.reduce((s, i) => s + i.originalBytes, 0);
   const after = done.reduce((s, i) => s + i.newBytes, 0);
   const saved = before - after;
-  if (saved > 0) {
-    toast(`All done — saved ${human(saved)} (${Math.round(saved / before * 100)}%) across ${done.length} image${done.length === 1 ? "" : "s"}`);
-  } else {
-    toast("All done — these were already well compressed");
-  }
+  toast(saved > 0
+    ? `All done — you just saved ${human(saved)} (${Math.round(saved / before * 100)}%) across ${done.length} image${done.length === 1 ? "" : "s"}`
+    : "All done — these were already well compressed");
 }
 
 /* ------------------------------ add files -------------------------------- */
@@ -272,7 +335,7 @@ function maybeCelebrate() {
 async function makeThumb(item) {
   try {
     const bmp = await createImageBitmap(item.file);
-    const side = 68;
+    const side = 92;
     const scale = Math.max(side / bmp.width, side / bmp.height);
     const c = document.createElement("canvas");
     c.width = side; c.height = side;
@@ -319,11 +382,8 @@ function addFiles(files) {
 
 /** Drops can contain folders - designers drop whole export directories. */
 async function filesFromDataTransfer(dt) {
-  const entries = [...(dt.items || [])]
-    .map((i) => i.webkitGetAsEntry?.())
-    .filter(Boolean);
+  const entries = [...(dt.items || [])].map((i) => i.webkitGetAsEntry?.()).filter(Boolean);
   if (!entries.some((e) => e.isDirectory)) return dt.files;
-
   const out = [];
   async function walk(entry) {
     if (entry.isFile) {
@@ -332,8 +392,7 @@ async function filesFromDataTransfer(dt) {
     } else if (entry.isDirectory) {
       const reader = entry.createReader();
       for (;;) {
-        const batch = await new Promise((res, rej) => reader.readEntries(res, rej))
-          .catch(() => []);
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej)).catch(() => []);
         if (!batch.length) break;
         for (const e of batch) await walk(e);
       }
@@ -372,6 +431,7 @@ function requeue(ids) {
     item.note = "";
     item.candidates = [];
     item.frac = 0;
+    if (item.diffURL) { URL.revokeObjectURL(item.diffURL); item.diffURL = null; }
     any = true;
   }
   if (any) batchActive = true;
@@ -388,10 +448,7 @@ function scheduleRender(part) {
   else dirty.queue = dirty.inspector = dirty.summary = true;
   if (renderQueued) return;
   renderQueued = true;
-  requestAnimationFrame(() => {
-    renderQueued = false;
-    render();
-  });
+  requestAnimationFrame(() => { renderQueued = false; render(); });
 }
 
 function render() {
@@ -415,9 +472,10 @@ function render() {
 const rowEls = new Map();
 
 function statusLine(it) {
+  if (it.status === "cancelled") return "stopped";
   if (it.status === "failed") return `<span class="err">${escapeHtml(it.error || "failed")}</span>`;
   if (it.status === "queued") return "waiting…";
-  if (it.status === "working") return escapeHtml(it.progress || "encoding…");
+  if (it.status === "working") return escapeHtml(it.progress || "working…");
   const pct = it.originalBytes && it.newBytes
     ? 100 * (it.originalBytes - it.newBytes) / it.originalBytes : 0;
   const pctText = pct > 0 ? `−${pct.toFixed(0)}%` : "no gain";
@@ -457,6 +515,7 @@ function renderQueue() {
       list.innerHTML = `<div class="queue-empty">Nothing queued yet.<br>Drop images anywhere on this page.</div>`;
     }
     $("queue-foot").textContent = capsLine();
+    $("live-stat").textContent = "";
     return;
   }
   list.querySelector(".queue-empty")?.remove();
@@ -469,7 +528,6 @@ function renderQueue() {
       rowEls.set(it.id, el);
       if (prev) prev.after(el); else list.prepend(el);
     }
-    // update in place - no innerHTML churn, no lost hover states
     el.setAttribute("aria-selected", String(it.id === selected));
     el.classList.toggle("working", it.status === "working");
     const meta = statusLine(it);
@@ -487,11 +545,15 @@ function renderQueue() {
     prev = el;
   }
 
-  const done = state.items.filter((i) => i.status === "done" || i.status === "saved").length;
-  const busyItems = state.items.filter((i) => i.status === "queued" || i.status === "working").length;
+  const done = state.items.filter(isReady);
+  const busyItems = state.items.filter(isBusy).length;
   $("queue-foot").textContent = busyItems
-    ? `${busyItems} to go · ${done} ready`
-    : `${done} ready · Ctrl+S downloads everything · ? for shortcuts`;
+    ? `${busyItems} to go · ${done.length} ready · Esc stops`
+    : `${done.length} ready · Ctrl+S downloads everything · ? for shortcuts`;
+
+  // live savings while the batch is still running
+  const saved = done.reduce((s, i) => s + (i.originalBytes - i.newBytes), 0);
+  $("live-stat").textContent = busyItems && saved > 0 ? `−${human(saved)} so far` : "";
 }
 
 function capsLine() {
@@ -501,29 +563,28 @@ function capsLine() {
   if (state.caps.oxipng) parts.push("oxipng");
   if (state.caps.webp) parts.push("webp");
   if (state.caps.avif) parts.push("avif");
-  return `Engines ready: ${parts.join(", ")} · runs entirely in your browser`;
+  return `Engines: ${parts.join(", ")} · all running in your browser`;
 }
 
 function renderBatchProgress() {
   const bar = $("batch-bar");
   const items = state.items;
-  const busy = items.some((i) => i.status === "queued" || i.status === "working");
+  const busy = items.some(isBusy);
   $("batch").classList.toggle("on", busy);
+  $("stop-btn").hidden = !busy;
   if (!busy) { bar.style.width = "0%"; return; }
   let sum = 0;
   for (const i of items) {
-    sum += (i.status === "done" || i.status === "saved" || i.status === "failed") ? 1
+    sum += (isReady(i) || i.status === "failed" || i.status === "cancelled") ? 1
       : i.status === "working" ? Math.min(0.95, i.frac || 0) : 0;
   }
   bar.style.width = `${(sum / items.length) * 100}%`;
 }
 
 function renderTitle() {
-  const busyItems = state.items.filter((i) => i.status === "queued" || i.status === "working").length;
+  const busyItems = state.items.filter(isBusy).length;
   const settled = state.items.length - busyItems;
-  document.title = busyItems
-    ? `▸ ${settled}/${state.items.length} — imgcompress`
-    : BASE_TITLE;
+  document.title = busyItems ? `▸ ${settled}/${state.items.length} — imgcompress` : BASE_TITLE;
 }
 
 /* ------------------------------ inspector -------------------------------- */
@@ -536,14 +597,36 @@ function showInspector(on) {
 function selectItem(id, quiet) {
   selected = id;
   zoom = 0; pan = { x: 0, y: 0 };
+  if (mode === "diff") mode = "split";
   scheduleRender();
   if (!quiet) rowEls.get(id)?.scrollIntoView({ block: "nearest" });
 }
 
-function fmtScore(it, score, lossless) {
+function fmtScore(score, lossless) {
   if (lossless) return "lossless";
   if (score == null) return "—";
   return score.toFixed(4);
+}
+
+/** One plain sentence explaining why this candidate won. */
+function verdictFor(it) {
+  if (it.passthrough) {
+    return `This file was already smaller than anything we could produce, so it was <b>passed through untouched</b>.`;
+  }
+  if (!it.candidates?.length) return "";
+  const pct = it.originalBytes ? 100 * (it.originalBytes - it.newBytes) / it.originalBytes : 0;
+  const sorted = [...it.candidates].sort((a, b) => a.bytes - b.bytes);
+  const runner = sorted[1];
+  const quality = it.lossless
+    ? "and it is <b>pixel-identical</b> to the original"
+    : `at SSIM <b>${it.score?.toFixed(4)}</b>, above your ${Number(
+        it.override?.qualityTarget ?? state.settings.qualityTarget).toFixed(2)} floor`;
+  let line = `<b>${escapeHtml(it.fmt)}</b> won: <b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
+  if (runner && runner.bytes > it.newBytes) {
+    const gap = 100 * (runner.bytes - it.newBytes) / runner.bytes;
+    line += ` It beat ${escapeHtml(runner.format)} by ${gap.toFixed(0)}%.`;
+  }
+  return line;
 }
 
 function renderInspector(it) {
@@ -558,16 +641,26 @@ function renderInspector(it) {
 
   const before = $("img-before"), after = $("img-after");
   if (before.dataset.src !== it.beforeURL) { before.dataset.src = it.beforeURL; before.src = it.beforeURL; }
-  const ready = it.status === "done" || it.status === "saved";
+  const ready = isReady(it);
   const wantAfter = ready ? it.afterURL : "";
   if (after.dataset.src !== wantAfter) { after.dataset.src = wantAfter; after.src = wantAfter || ""; }
-  $("viewport").classList.toggle("solo", mode === "after" || !ready);
+
+  const diffOn = mode === "diff" && ready;
+  $("img-diff").hidden = !diffOn;
+  if (diffOn) ensureDiff(it);
+  $("viewport").classList.toggle("solo", mode !== "split" || !ready);
   $("divider").style.display = mode === "split" && ready ? "" : "none";
-  $("split").disabled = !ready;
+  $("split").disabled = !ready || mode !== "split";
   $("tag-l").style.opacity = mode === "split" && ready ? "1" : "0";
   $("tag-r").style.opacity = ready ? "1" : "0";
   $("tag-l").textContent = ready ? `Original · ${human(it.originalBytes)}` : "Original";
-  $("tag-r").textContent = ready ? `Compressed · ${human(it.newBytes)}` : "Compressed";
+  $("tag-r").textContent = diffOn
+    ? (it.diffInfo
+        ? `Difference ×${it.diffInfo.gain} · peak ${it.diffInfo.peak}/255 · avg ${it.diffInfo.mean}`
+        : "Difference")
+    : ready ? `Compressed · ${human(it.newBytes)}` : "Compressed";
+  $("mode-diff").setAttribute("aria-pressed", String(diffOn));
+  $("mode-diff").disabled = !ready;
 
   const saved = it.originalBytes - it.newBytes;
   const pct = it.originalBytes && it.newBytes ? 100 * saved / it.originalBytes : 0;
@@ -577,19 +670,19 @@ function renderInspector(it) {
     if (pct > 0) rollNumber($("s-saved"), saved, ` <small>−${pct.toFixed(0)}%</small>`);
     else $("s-saved").textContent = "none";
     $("s-saved").classList.remove("pop");
-    void $("s-saved").offsetWidth;   // restart the animation
+    void $("s-saved").offsetWidth;
     $("s-saved").classList.add("pop");
     maybeShowHint();
   } else {
     $("s-size").innerHTML = ready
       ? `${human(it.newBytes)} <small>from ${human(it.originalBytes)}</small>`
-      : (it.status === "failed" ? "—" : "working…");
+      : (it.status === "failed" || it.status === "cancelled" ? "—" : "working…");
     $("s-saved").innerHTML = ready
       ? (pct > 0 ? `${human(saved)} <small>−${pct.toFixed(0)}%</small>` : "none")
       : "—";
   }
   $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
-  $("s-score").textContent = ready ? fmtScore(it, it.score, it.lossless || it.passthrough) : "—";
+  $("s-score").textContent = ready ? fmtScore(it.score, it.lossless || it.passthrough) : "—";
   $("s-dims").innerHTML = !it.width ? "—"
     : (it.outW && it.outW !== it.width
         ? `${it.outW}×${it.outH} <small>from ${it.width}×${it.height}</small>`
@@ -597,44 +690,124 @@ function renderInspector(it) {
   const floor = it.override?.qualityTarget ?? state.settings.qualityTarget;
   $("s-floor").innerHTML = Number(floor).toFixed(2) + (it.override ? " <small>override</small>" : "");
 
+  const verdict = $("s-verdict");
+  const vtext = ready ? verdictFor(it) : "";
+  verdict.hidden = !vtext;
+  verdict.innerHTML = vtext;
+
   const note = $("s-note");
   note.hidden = !it.note; note.textContent = it.note || "";
   const warn = $("s-warn");
   const messages = [...(it.warnings || [])];
-  if (it.error) messages.unshift(it.error);
+  if (it.error && it.status !== "cancelled") messages.unshift(it.error);
   warn.hidden = !messages.length;
   warn.textContent = messages.join(" · ");
 
-  const cands = $("cands");
-  if (!it.candidates?.length) {
-    cands.innerHTML = `<div class="note m0">${
-      it.status === "failed" ? "This file could not be read." :
-      it.passthrough ? "Passed through unchanged." : "Encoding…"}</div>`;
-  } else {
-    const winner = Math.min(...it.candidates.map((c) => c.bytes));
-    cands.innerHTML = [...it.candidates].sort((a, b) => a.bytes - b.bytes).map((c, i) => `
-      <div class="cand ${c.bytes === winner ? "win" : ""}" data-cand-index="${i}">
-        <span class="f">${escapeHtml(c.format)}</span>
-        <span class="b">${human(c.bytes)}</span>
-        <span class="${c.bytes === winner ? "badge" : "s"}">${
-          c.bytes === winner ? "winner" : (c.lossless ? "lossless" : c.score.toFixed(3))}</span>
-      </div>`).join("");
-  }
+  renderCandidates(it);
+
   $("ov-format").value = it.override?.formats?.[0] || "";
   $("ov-quality").value = it.override?.qualityTarget != null
     ? Math.round(it.override.qualityTarget * 100) : "";
   $("ov-reset").hidden = !it.override;
   $("dl-one").disabled = !ready;
-  $("retry-btn").hidden = it.status !== "failed";
+  $("retry-btn").hidden = it.status !== "failed" && it.status !== "cancelled";
   applyZoom();
+}
+
+/** Leaderboard: every candidate ranked, with the original as the yardstick. */
+function renderCandidates(it) {
+  const cands = $("cands");
+  if (!it.candidates?.length) {
+    cands.innerHTML = `<div class="note m0">${
+      it.status === "failed" ? "This file could not be read." :
+      it.status === "cancelled" ? "Stopped before this one finished." :
+      it.passthrough ? "Passed through unchanged." : "Testing formats…"}</div>`;
+    return;
+  }
+  const rows = [...it.candidates].sort((a, b) => a.bytes - b.bytes);
+  const winner = rows[0].bytes;
+  const max = Math.max(it.originalBytes, ...rows.map((c) => c.bytes));
+  const bar = (bytes) => `--w:${Math.max(2, (bytes / max) * 100).toFixed(1)}%`;
+
+  cands.innerHTML = rows.map((c) => `
+    <div class="cand ${c.bytes === winner ? "win" : ""}" style="${bar(c.bytes)}">
+      <span class="bar"></span>
+      <span class="f">${escapeHtml(c.format)}</span>
+      <span class="b">${human(c.bytes)}</span>
+      <span class="${c.bytes === winner ? "badge" : "s"}">${
+        c.bytes === winner ? "winner" : (c.lossless ? "lossless" : c.score.toFixed(3))}</span>
+    </div>`).join("") + `
+    <div class="cand orig" style="${bar(it.originalBytes)}">
+      <span class="bar"></span>
+      <span class="f">original</span>
+      <span class="b">${human(it.originalBytes)}</span>
+      <span class="s">—</span>
+    </div>`;
+}
+
+/* --------------------------- difference heatmap --------------------------- */
+/* The strongest possible answer to "did this ruin my image?": show exactly
+ * where the pixels moved, amplified so you can actually see it. */
+
+function ensureDiff(it) {
+  const canvas = $("img-diff");
+  if (it.diffFor === it.afterURL) return;   // already computed for this result
+  const a = $("img-before"), b = $("img-after");
+  if (!a.naturalWidth || !b.naturalWidth) return;
+
+  const W = a.naturalWidth, H = a.naturalHeight;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  const scratch = document.createElement("canvas");
+  scratch.width = W; scratch.height = H;
+  const sctx = scratch.getContext("2d", { willReadFrequently: true });
+
+  sctx.drawImage(a, 0, 0, W, H);
+  const origData = sctx.getImageData(0, 0, W, H);
+  sctx.clearRect(0, 0, W, H);
+  sctx.drawImage(b, 0, 0, W, H);
+  const compData = sctx.getImageData(0, 0, W, H);
+
+  const o = origData.data, c = compData.data;
+  const out = ctx.createImageData(W, H);
+  const d = out.data;
+
+  // Two passes: measure the real error first, then amplify to fill the range.
+  // A fixed gain either clips a damaged image or shows nothing at all on a
+  // good one - and the whole point is to be legible in both cases. The factor
+  // is reported on screen so the amplification is never mistaken for damage.
+  let peak = 0, total = 0;
+  const mag = new Uint8Array(W * H);
+  for (let i = 0, p = 0; i < o.length; i += 4, p++) {
+    const v = (Math.abs(o[i] - c[i]) + Math.abs(o[i + 1] - c[i + 1]) +
+               Math.abs(o[i + 2] - c[i + 2])) / 3;
+    mag[p] = v > 255 ? 255 : v;
+    if (v > peak) peak = v;
+    total += v;
+  }
+  const gain = peak > 0 ? Math.min(64, Math.max(1, 235 / peak)) : 1;
+  for (let p = 0, i = 0; p < mag.length; p++, i += 4) {
+    const v = Math.min(255, mag[p] * gain);
+    // brass-tinted heat so it matches the rest of the interface
+    d[i] = Math.min(255, v * 1.25);
+    d[i + 1] = Math.min(255, v * 0.85);
+    d[i + 2] = Math.min(255, v * 0.5);
+    d[i + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+  it.diffFor = it.afterURL;
+  it.diffInfo = {
+    gain: Math.round(gain),
+    peak: Math.round(peak),
+    mean: (total / mag.length).toFixed(2),
+  };
 }
 
 /* ------------------------- first-result hint ------------------------------ */
 
 function maybeShowHint() {
-  try {
-    if (localStorage.getItem("imgc-hint")) return;
-  } catch {}
+  try { if (localStorage.getItem("imgc-hint")) return; } catch {}
   const hint = $("hint");
   hint.hidden = false;
   hint.classList.add("on");
@@ -650,24 +823,36 @@ function maybeShowHint() {
 
 /* ------------------------------- summary --------------------------------- */
 
-function renderSummary() {
-  const done = state.items.filter((i) => i.status === "done" || i.status === "saved");
+function totals() {
+  const done = state.items.filter(isReady);
   const before = done.reduce((s, i) => s + i.originalBytes, 0);
   const after = done.reduce((s, i) => s + i.newBytes, 0);
-  const saved = before - after;
+  return { done, before, after, saved: before - after };
+}
+
+function renderSummary() {
+  const { done, before, after, saved } = totals();
   $("t-sizes").textContent = done.length ? `${human(before)} → ${human(after)}` : "";
   $("t-saved").textContent = done.length && saved > 0
     ? `saved ${human(saved)} (${((saved / before) * 100).toFixed(0)}%)` : "";
+  // Plain arithmetic, no hand-waving: what this weight means at scale.
+  $("t-bandwidth").textContent = saved > 0
+    ? `≈ ${human(saved * 10000)} of bandwidth per 10,000 page views`
+    : "";
+
   const btn = $("save-btn");
   if (!btn.dataset.busy) {
     btn.disabled = done.length === 0;
-    btn.textContent = done.length <= 1 ? "Download" : `Download all (${done.length})`;
+    btn.textContent = done.length === 0 ? "Download"
+      : done.length === 1 ? "Download"
+      : `Download ${done.length} files · ${human(after)} zip`;
   }
+  $("export-btn").disabled = done.length === 0;
 }
 
 /* -------------------------------- zoom ------------------------------------ */
 
-const ZOOMS = [0, 0.5, 1, 2, 4];
+const ZOOMS = [0, 0.5, 1, 2, 4, 8];
 function applyZoom() {
   const stage = $("stage"), img = $("img-before"), vp = $("viewport");
   if (!img.naturalWidth) return;
@@ -693,13 +878,15 @@ function stepZoom(dir) {
 /* ------------------------------- downloads -------------------------------- */
 
 function outputName(it, used) {
-  let name;
-  if (it.passthrough || !it.result?.ext) name = it.name;
-  else name = it.name.replace(/\.[a-z0-9]+$/i, "") + it.result.ext;
+  let base = it.name.replace(/\.[a-z0-9]+$/i, "");
+  const ext = (it.passthrough || !it.result?.ext)
+    ? (it.name.match(/\.[a-z0-9]+$/i) || [""])[0] : it.result.ext;
+  if (state.suffix) base += "-min";
+  let name = base + ext;
   if (used) {
     let candidate = name, n = 1;
     while (used.has(candidate.toLowerCase())) {
-      candidate = name.replace(/(\.[a-z0-9]+)$/i, ` (${n})$1`);
+      candidate = `${base} (${n})${ext}`;
       n++;
     }
     used.add(candidate.toLowerCase());
@@ -734,7 +921,7 @@ function zcrc32(bytes) {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-async function zipStore(entries) { // [{name, blob}]
+async function zipStore(entries) {
   const encoder = new TextEncoder();
   const chunks = [];
   const central = [];
@@ -752,29 +939,20 @@ async function zipStore(entries) { // [{name, blob}]
     const local = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true);
-    lv.setUint16(4, 20, true);
-    lv.setUint16(6, 0x0800, true);
-    lv.setUint16(8, 0, true);
-    lv.setUint16(10, dosTime, true);
-    lv.setUint16(12, dosDate, true);
+    lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true); lv.setUint16(8, 0, true);
+    lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
     lv.setUint32(14, crc, true);
-    lv.setUint32(18, data.length, true);
-    lv.setUint32(22, data.length, true);
+    lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
     lv.setUint16(26, nameBytes.length, true);
     local.set(nameBytes, 30);
 
     const cdir = new Uint8Array(46 + nameBytes.length);
     const cv = new DataView(cdir.buffer);
     cv.setUint32(0, 0x02014b50, true);
-    cv.setUint16(4, 20, true);
-    cv.setUint16(6, 20, true);
-    cv.setUint16(8, 0x0800, true);
-    cv.setUint16(10, 0, true);
-    cv.setUint16(12, dosTime, true);
-    cv.setUint16(14, dosDate, true);
+    cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true); cv.setUint16(12, dosTime, true); cv.setUint16(14, dosDate, true);
     cv.setUint32(16, crc, true);
-    cv.setUint32(20, data.length, true);
-    cv.setUint32(24, data.length, true);
+    cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
     cv.setUint16(28, nameBytes.length, true);
     cv.setUint32(42, offset, true);
     cdir.set(nameBytes, 46);
@@ -789,16 +967,14 @@ async function zipStore(entries) { // [{name, blob}]
   const eocd = new Uint8Array(22);
   const ev = new DataView(eocd.buffer);
   ev.setUint32(0, 0x06054b50, true);
-  ev.setUint16(8, central.length, true);
-  ev.setUint16(10, central.length, true);
-  ev.setUint32(12, centralSize, true);
-  ev.setUint32(16, offset, true);
+  ev.setUint16(8, central.length, true); ev.setUint16(10, central.length, true);
+  ev.setUint32(12, centralSize, true); ev.setUint32(16, offset, true);
 
   return new Blob([...chunks, ...central, eocd], { type: "application/zip" });
 }
 
 async function downloadAll() {
-  const done = state.items.filter((i) => i.status === "done" || i.status === "saved");
+  const done = state.items.filter(isReady);
   if (!done.length) return;
   const btn = $("save-btn");
   if (done.length === 1) {
@@ -821,11 +997,64 @@ async function downloadAll() {
     for (const it of done) it.status = "saved";
     btn.textContent = "Saved ✓";
     setTimeout(() => { delete btn.dataset.busy; scheduleRender(); }, 1600);
-  } catch (e) {
+  } catch {
     delete btn.dataset.busy;
     toast("Could not build the zip — try downloading images individually");
   }
   scheduleRender();
+}
+
+/* ------------------------------ export report ----------------------------- */
+
+function reportRows() {
+  return state.items.filter(isReady).map((it) => ({
+    file: it.name,
+    output: outputName(it),
+    format: it.fmt,
+    quality: it.level ?? "",
+    original_bytes: it.originalBytes,
+    new_bytes: it.newBytes,
+    saved_bytes: it.originalBytes - it.newBytes,
+    saved_pct: it.originalBytes
+      ? +(100 * (it.originalBytes - it.newBytes) / it.originalBytes).toFixed(1) : 0,
+    ssim_p5: it.lossless ? "lossless" : (it.score != null ? +it.score.toFixed(4) : ""),
+    width: it.outW, height: it.outH,
+  }));
+}
+
+function exportReport(kind) {
+  const rows = reportRows();
+  if (!rows.length) return;
+  const { before, after, saved } = totals();
+
+  if (kind === "csv") {
+    const cols = Object.keys(rows[0]);
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [cols.join(","), ...rows.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\n");
+    downloadBlob(new Blob([csv], { type: "text/csv" }), "imgcompress-report.csv");
+    toast("CSV downloaded");
+  } else if (kind === "json") {
+    const payload = {
+      tool: "imgcompress web", version: "2.2.0",
+      settings: { ...state.settings },
+      totals: { before_bytes: before, after_bytes: after, saved_bytes: saved },
+      images: rows,
+    };
+    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
+                 "imgcompress-report.json");
+    toast("JSON downloaded");
+  } else {
+    const pct = before ? (100 * saved / before).toFixed(0) : 0;
+    const lines = [
+      `imgcompress — ${rows.length} image${rows.length === 1 ? "" : "s"}`,
+      `${human(before)} → ${human(after)}  (saved ${human(saved)}, ${pct}%)`,
+      "",
+      ...rows.map((r) => `${r.file} → ${r.format}  ${human(r.original_bytes)} → ${human(r.new_bytes)}  −${r.saved_pct}%  ssim ${r.ssim_p5}`),
+    ];
+    navigator.clipboard?.writeText(lines.join("\n"))
+      .then(() => toast("Summary copied to your clipboard"))
+      .catch(() => toast("Could not access the clipboard"));
+  }
 }
 
 /* -------------------------------- toast ----------------------------------- */
@@ -859,27 +1088,80 @@ function pushSettings() {
   }, 350);
 }
 
+/* ------------------------------ theme ------------------------------------- */
+
+const THEMES = ["dark", "light", "system"];
+function currentThemePref() {
+  try { return localStorage.getItem("imgc-theme") || "system"; } catch { return "system"; }
+}
+function applyTheme(pref) {
+  const resolved = pref === "system"
+    ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+    : pref;
+  document.documentElement.classList.add("theming");
+  document.documentElement.dataset.theme = resolved;
+  setTimeout(() => document.documentElement.classList.remove("theming"), 260);
+  const next = THEMES[(THEMES.indexOf(pref) + 1) % THEMES.length];
+  const btn = $("theme-btn");
+  btn.textContent = next === "system" ? "Auto" : next === "dark" ? "Dark" : "Light";
+  btn.title = `Theme: ${pref}. Click for ${next}.`;
+  try { localStorage.setItem("imgc-theme", pref); } catch {}
+}
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+  if (currentThemePref() === "system") applyTheme("system");
+});
+
 /* ----------------------------- sample images ------------------------------ */
 
-/** No images handy? Generate two on the spot - one photographic, one flat -
- *  so the bake-off's whole point (different winners) shows immediately.
- *
- *  The grain matters (it is what makes the photo behave like a photo rather
- *  than a gradient), but a per-pixel JS loop over a megapixel froze the main
- *  thread for seconds with no feedback. Instead the noise is built once as a
- *  small tile and stamped by the compositor, which is instant. */
+/* A stand-in photograph. It needs real photographic *structure* — soft
+ * overlapping shapes at many scales — not just a gradient, or JPEG compresses
+ * it to nothing and the demo's numbers look too good to be true. Grain has to
+ * stay light: pure noise cannot clear a 0.97 SSIM p5 floor under any lossy
+ * codec, so a grainy sample would hand the win to lossless PNG and hide the
+ * very thing the demo exists to show. */
 function paintPhoto(ctx, W, H) {
-  const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#e8927c"); g.addColorStop(.5, "#c56a8b"); g.addColorStop(1, "#4a3f6b");
+  const g = ctx.createLinearGradient(0, 0, W * .3, H);
+  g.addColorStop(0, "#f0a184"); g.addColorStop(.45, "#c56a8b"); g.addColorStop(1, "#3c3560");
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
-  const sx = W * 0.74, sy = H * 0.31, sr = Math.min(W, H) * 0.18;
-  const sun = ctx.createRadialGradient(sx, sy, sr * 0.07, sx, sy, sr);
-  sun.addColorStop(0, "#fbe7bd"); sun.addColorStop(1, "rgba(251,231,189,0)");
+  // low sun with haze
+  const sx = W * 0.72, sy = H * 0.28, sr = Math.min(W, H) * 0.22;
+  const sun = ctx.createRadialGradient(sx, sy, sr * 0.05, sx, sy, sr);
+  sun.addColorStop(0, "#fff3d4"); sun.addColorStop(.35, "rgba(251,222,170,.55)");
+  sun.addColorStop(1, "rgba(251,231,189,0)");
   ctx.fillStyle = sun; ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 7); ctx.fill();
 
-  // Light film grain: enough that this behaves like a photograph rather than
-  // a flat gradient, gentle enough that JPEG still wins the bake-off.
+  // bokeh: many soft discs, deterministic-ish but varied, at several scales
+  let seed = 20260805;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  ctx.save();
+  for (let i = 0; i < 90; i++) {
+    const r = (8 + rnd() * 74) * (i % 7 === 0 ? 1.8 : 1);
+    const x = rnd() * W, y = H * 0.28 + rnd() * H * 0.8;
+    const tint = ["255,214,168", "232,150,140", "150,132,196", "255,236,205", "96,86,140"][i % 5];
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(${tint},${0.1 + rnd() * 0.22})`);
+    grad.addColorStop(1, `rgba(${tint},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+
+  // a dark foreground ridge, so there is real contrast and edge detail
+  ctx.save();
+  ctx.fillStyle = "rgba(28,24,44,.88)";
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  ctx.lineTo(0, H * 0.78);
+  for (let x = 0; x <= W; x += W / 18) {
+    ctx.lineTo(x, H * (0.72 + 0.1 * Math.sin(x / W * 7) + 0.03 * Math.sin(x / W * 23)));
+  }
+  ctx.lineTo(W, H);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // light film grain, stamped from one small tile: a per-pixel JS loop over a
+  // megapixel froze the page for seconds.
   const TILE = 128;
   const tile = document.createElement("canvas");
   tile.width = TILE; tile.height = TILE;
@@ -887,13 +1169,12 @@ function paintPhoto(ctx, W, H) {
   const id = tctx.createImageData(TILE, TILE);
   for (let i = 0; i < id.data.length; i += 4) {
     id.data[i] = id.data[i + 1] = id.data[i + 2] = 128;
-    id.data[i + 3] = Math.random() * 40;   // sparse, low-amplitude speckle
+    id.data[i + 3] = Math.random() * 34;
   }
   tctx.putImageData(id, 0, 0);
-
   ctx.save();
   ctx.globalCompositeOperation = "overlay";
-  ctx.globalAlpha = 0.35;
+  ctx.globalAlpha = 0.32;
   ctx.fillStyle = ctx.createPattern(tile, "repeat");
   ctx.fillRect(0, 0, W, H);
   ctx.restore();
@@ -921,8 +1202,7 @@ async function addSamples() {
   const btn = $("sample-btn");
   const label = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Building samples…";
-  // Yield twice so the button actually repaints before any drawing starts.
+  btn.textContent = "Building demo…";
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
     const make = (paint, W, H) => {
@@ -931,8 +1211,6 @@ async function addSamples() {
       paint(c.getContext("2d"), W, H);
       return new Promise((r) => c.toBlob(r, "image/png"));
     };
-    // Deliberately modest: a sample exists to demonstrate the bake-off in a
-    // few seconds, not to benchmark the machine.
     const photo = await make(paintPhoto, 900, 600);
     const ui = await make(paintUi, 1000, 700);
     addFiles([
@@ -940,12 +1218,43 @@ async function addSamples() {
       new File([ui], "sample-ui.png", { type: "image/png" }),
     ]);
   } catch {
-    toast("Could not build the samples — try dropping your own image");
+    toast("Could not build the demo — try dropping your own image");
   } finally {
     btn.disabled = false;
     btn.textContent = label;
     samplesBusy = false;
   }
+}
+
+/* --------------------------- hero size animation --------------------------- */
+
+function animateSizeDemo() {
+  if (REDUCED) return;
+  const pairs = [
+    [5.0 * 1024 * 1024, 812 * 1024, "PNG screenshot"],
+    [2.4 * 1024 * 1024, 214 * 1024, "hero photo"],
+    [860 * 1024, 61 * 1024, "product shot"],
+    [1.6 * 1024 * 1024, 96 * 1024, "Figma export"],
+  ];
+  let i = 0;
+  const from = $("sd-from"), to = $("sd-to"), pct = $("sd-pct");
+  const show = () => {
+    if (!from || $("app-empty").hidden) return;      // stop once work begins
+    const [a, b] = pairs[i % pairs.length];
+    from.textContent = human(a);
+    pct.textContent = `−${Math.round(100 * (a - b) / a)}%`;
+    const t0 = performance.now(), dur = 900;
+    const tick = (t) => {
+      const p = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      to.textContent = human(a + (b - a) * eased);
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    i++;
+  };
+  show();
+  setInterval(show, 3400);
 }
 
 /* -------------------------------- events ---------------------------------- */
@@ -954,7 +1263,7 @@ function setMode(m) {
   mode = m;
   $("mode-split").setAttribute("aria-pressed", String(m === "split"));
   $("mode-after").setAttribute("aria-pressed", String(m === "after"));
-  scheduleRender("inspector");
+  $("mode-diff").setAttribute("aria-pressed", String(m === "diff"));
   dirty.inspector = true;
   scheduleRender();
 }
@@ -967,17 +1276,22 @@ function bind() {
     reflectQualityHint();
   });
   $("quality").addEventListener("change", pushSettings);
+  $("suffix-toggle").addEventListener("change", (e) => {
+    state.suffix = e.target.checked;
+    saveSettings();
+    scheduleRender("summary");
+  });
+
+  $("adv-btn").addEventListener("click", () => {
+    const open = $("advanced").hidden;
+    $("advanced").hidden = !open;
+    $("adv-btn").setAttribute("aria-expanded", String(open));
+  });
 
   $("theme-btn").addEventListener("click", () => {
-    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.classList.add("theming");
-    document.documentElement.dataset.theme = next;
-    setTimeout(() => document.documentElement.classList.remove("theming"), 260);
-    $("theme-btn").textContent = next === "dark" ? "Light" : "Dark";
-    try { localStorage.setItem("imgc-theme", next); } catch {}
+    const pref = currentThemePref();
+    applyTheme(THEMES[(THEMES.indexOf(pref) + 1) % THEMES.length]);
   });
-  $("theme-btn").textContent =
-    document.documentElement.dataset.theme === "dark" ? "Light" : "Dark";
 
   $("queue-list").addEventListener("click", (e) => {
     const row = e.target.closest(".row");
@@ -997,17 +1311,21 @@ function bind() {
 
   $("mode-split").addEventListener("click", () => setMode("split"));
   $("mode-after").addEventListener("click", () => setMode("after"));
+  $("mode-diff").addEventListener("click", () => setMode(mode === "diff" ? "split" : "diff"));
   $("zoom-in").addEventListener("click", () => stepZoom(1));
   $("zoom-out").addEventListener("click", () => stepZoom(-1));
   $("zoom-reset").addEventListener("click", () => { zoom = 0; pan = { x: 0, y: 0 }; applyZoom(); });
   $("img-before").addEventListener("load", applyZoom);
+  // The heatmap needs both frames decoded; recompute once the late one lands.
+  for (const id of ["img-before", "img-after"]) {
+    $(id).addEventListener("load", () => {
+      if (mode === "diff") { dirty.inspector = true; scheduleRender(); }
+    });
+  }
   new ResizeObserver(() => applyZoom()).observe($("stage"));
 
-  // wheel zooms; double-click toggles fit <-> 100%
-  $("stage").addEventListener("wheel", (e) => {
-    e.preventDefault();
-    stepZoom(e.deltaY < 0 ? 1 : -1);
-  }, { passive: false });
+  $("stage").addEventListener("wheel", (e) => { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); },
+    { passive: false });
   $("stage").addEventListener("dblclick", (e) => {
     if (e.target.closest(".stage-bar")) return;
     zoom = zoom ? 0 : 1; pan = { x: 0, y: 0 }; applyZoom();
@@ -1034,13 +1352,23 @@ function bind() {
   window.addEventListener("dragenter", (e) => {
     e.preventDefault(); dragDepth++;
     const n = e.dataTransfer?.items?.length || 0;
-    $("veil-count").textContent = n > 1 ? `${n} items` : "PNG, JPEG, WebP, BMP or GIF";
+    $("veil-count").textContent = n > 1
+      ? `${n} items — we'll race every format on each one`
+      : "We'll race every format and keep the smallest that passes";
     $("veil").classList.add("on");
+    $("drop-target")?.classList.add("armed");
   });
   window.addEventListener("dragover", (e) => e.preventDefault());
-  window.addEventListener("dragleave", () => { if (--dragDepth <= 0) $("veil").classList.remove("on"); });
+  window.addEventListener("dragleave", () => {
+    if (--dragDepth <= 0) {
+      $("veil").classList.remove("on");
+      $("drop-target")?.classList.remove("armed");
+    }
+  });
   window.addEventListener("drop", async (e) => {
-    e.preventDefault(); dragDepth = 0; $("veil").classList.remove("on");
+    e.preventDefault(); dragDepth = 0;
+    $("veil").classList.remove("on");
+    $("drop-target")?.classList.remove("armed");
     if (!e.dataTransfer) return;
     const files = await filesFromDataTransfer(e.dataTransfer);
     if (files.length) addFiles(files);
@@ -1057,21 +1385,19 @@ function bind() {
   $("add-btn").addEventListener("click", () => $("file-input").click());
   $("empty-add").addEventListener("click", () => $("file-input").click());
   $("sample-btn").addEventListener("click", addSamples);
+  $("stop-btn").addEventListener("click", cancelAll);
 
   $("clear-btn").addEventListener("click", () => {
     if (!state.items.length) return;
+    cancelAll();
     removeItems(state.items.map((i) => i.id));
     toast("Cleared");
   });
-  $("remove-btn").addEventListener("click", () => {
-    if (selected) removeItems([selected]);
-  });
-  $("retry-btn").addEventListener("click", () => {
-    if (selected) requeue([selected]);
-  });
+  $("remove-btn").addEventListener("click", () => { if (selected) removeItems([selected]); });
+  $("retry-btn").addEventListener("click", () => { if (selected) requeue([selected]); });
   $("dl-one").addEventListener("click", () => {
     const it = state.byId.get(selected);
-    if (!it || !(it.status === "done" || it.status === "saved")) return;
+    if (!it || !isReady(it)) return;
     downloadBlob(it.afterBlob, outputName(it));
     toast(`Downloaded ${outputName(it)}`);
     it.status = "saved";
@@ -1098,13 +1424,35 @@ function bind() {
 
   $("save-btn").addEventListener("click", downloadAll);
 
-  // hold Space = flicker-test against the original; tap Space = toggle view
+  const menu = $("export-menu");
+  $("export-btn").addEventListener("click", () => {
+    const open = menu.hidden;
+    menu.hidden = !open;
+    $("export-btn").setAttribute("aria-expanded", String(open));
+  });
+  menu.addEventListener("click", (e) => {
+    const kind = e.target.dataset?.export;
+    if (!kind) return;
+    exportReport(kind);
+    menu.hidden = true;
+    $("export-btn").setAttribute("aria-expanded", "false");
+  });
+  document.addEventListener("click", (e) => {
+    if (!menu.hidden && !e.target.closest(".export")) {
+      menu.hidden = true;
+      $("export-btn").setAttribute("aria-expanded", "false");
+    }
+  });
+
   let spaceHeldAt = 0;
   document.addEventListener("keydown", (e) => {
     if (e.target.matches("input, select, textarea")) return;
     if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); downloadAll(); }
+    else if (e.key === "Escape") { cancelAll(); }
     else if (e.key === "Delete" || e.key === "Backspace") {
       if (selected) { e.preventDefault(); removeItems([selected]); }
+    } else if (e.key === "d" || e.key === "D") {
+      if (state.items.length) setMode(mode === "diff" ? "split" : "diff");
     } else if (e.key === " ") {
       e.preventDefault();
       if (e.repeat) return;
@@ -1126,9 +1474,9 @@ function bind() {
     if (e.key !== " " || e.target.matches("input, select, textarea")) return;
     $("viewport").classList.remove("peek");
     if (performance.now() - spaceHeldAt < 250 && state.items.length) {
-      setMode(mode === "split" ? "after" : "split");
+      setMode(mode === "after" ? "split" : "after");
     } else {
-      scheduleRender("inspector"); dirty.inspector = true; scheduleRender();
+      dirty.inspector = true; scheduleRender();
     }
   });
   $("keys-close").addEventListener("click", () => $("keys").close());
@@ -1141,6 +1489,9 @@ function bind() {
 /* --------------------------------- boot ----------------------------------- */
 
 loadSettings();
+applyTheme(currentThemePref());
+renderLifetime();
 bind();
 render();
+animateSizeDemo();
 startEngine();

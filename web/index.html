@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>imgcompress — image compression that proves it didn't ruin your image</title>
-<meta name="description" content="In-browser image compression with measured quality: every image is encoded several ways, scored against the original, and the smallest passing file wins.">
+<meta name="description" content="Compress images 70–90% smaller with no visible quality loss. Every image is encoded several ways, scored against the original, and the smallest passing file wins. Runs entirely in your browser — nothing is uploaded.">
 <link rel="canonical" href="https://imgcompress-app.vercel.app/">
 <meta name="theme-color" content="#141518" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f2f2ef" media="(prefers-color-scheme: light)">
@@ -14,14 +14,14 @@
 <meta property="og:site_name" content="imgcompress">
 <meta property="og:url" content="https://imgcompress-app.vercel.app/">
 <meta property="og:title" content="imgcompress — compression that proves it didn't ruin your image">
-<meta property="og:description" content="Every image is encoded several ways, scored against the original with a perceptual metric, and only the smallest version that still looks right survives. Runs entirely in your browser.">
+<meta property="og:description" content="70–90% smaller, with no visible quality loss. Every image is encoded several ways, scored against the original, and only the smallest version that still looks right survives. Runs entirely in your browser.">
 <meta property="og:image" content="https://imgcompress-app.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="imgcompress — image compression that proves it didn't ruin your image">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="imgcompress — compression that proves it didn't ruin your image">
-<meta name="twitter:description" content="Every image is encoded several ways, scored against the original, and only the smallest version that still looks right survives. Runs entirely in your browser.">
+<meta name="twitter:description" content="70–90% smaller, with no visible quality loss. Encoded several ways, scored against the original, smallest passing file wins. Runs entirely in your browser.">
 <meta name="twitter:image" content="https://imgcompress-app.vercel.app/og.png">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -52,7 +52,7 @@
         "Runs entirely in the browser — images are never uploaded",
         "Encodes each image with mozjpeg, palette PNG, lossless PNG (oxipng), WebP and AVIF, and keeps the smallest that passes",
         "Perceptual quality is measured with SSIM at the 5th percentile and verified per colour channel, never guessed",
-        "Before/after split comparison with zoom and a hold-to-flicker test",
+        "Before/after split comparison with zoom, a difference heatmap and a hold-to-flicker test",
         "Figma-safe defaults: JPEG and PNG only, capped at 4096px"
       ]
     },
@@ -62,27 +62,27 @@
         {
           "@type": "Question",
           "name": "Is anything uploaded?",
-          "acceptedAnswer": { "@type": "Answer", "text": "No. Compression runs entirely in your browser using Web Workers and the canvas API. Images never leave your device, and the page makes no network requests after it loads. There are no cookies and no analytics." }
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Compression runs entirely in your browser using Web Workers and WebAssembly. Images never leave your device, and the page makes no network requests after it loads. There are no cookies and no analytics." }
         },
         {
           "@type": "Question",
           "name": "Why does it default to JPEG and PNG instead of WebP?",
-          "acceptedAnswer": { "@type": "Answer", "text": "The default target is Figma. Figma's plugin API only accepts PNG, JPEG and GIF, and the standing community answer is that WebP uploads are decoded and re-encoded as PNG on import — turning a small WebP into a large PNG inside the .fig file. Switch the target to Web to allow WebP output." }
+          "acceptedAnswer": { "@type": "Answer", "text": "The default target is Figma. Figma's plugin API only accepts PNG, JPEG and GIF, and the standing community answer is that WebP uploads are decoded and re-encoded as PNG on import — turning a small WebP into a large PNG inside the .fig file. Switch the target to the web to allow WebP and AVIF output." }
         },
         {
           "@type": "Question",
           "name": "How is quality measured?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Every candidate encode is decoded back and compared to the original with SSIM, aggregated at the 5th percentile so a large flat background cannot hide a damaged region. Transparent images are scored over a dark and a light backdrop, and the worse score wins. The desktop version goes further and uses SSIMULACRA 2." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Every candidate encode is decoded back and compared to the original with SSIM, aggregated at the 5th percentile so a large flat background cannot hide a damaged region. Transparent images are scored over a dark and a light backdrop, and the worse score wins. The encode that ships is also verified per colour channel." }
         },
         {
           "@type": "Question",
           "name": "What is the difference between this and the desktop version?",
-          "acceptedAnswer": { "@type": "Answer", "text": "The web version uses your browser's encoders and an SSIM metric. The desktop version (pip install imgcompress) adds SSIMULACRA 2, mozjpeg, zopfli and libimagequant — it typically produces smaller files at the same measured quality, can watch folders, and saves batches straight to disk." }
+          "acceptedAnswer": { "@type": "Answer", "text": "The web version runs mozjpeg, oxipng and AVIF as WebAssembly and scores with per-channel SSIM. The desktop version (pip install imgcompress) adds SSIMULACRA 2 — the stronger perceptual metric — plus libimagequant and zopfli, can watch folders, and saves batches straight to disk." }
         },
         {
           "@type": "Question",
           "name": "Which formats can it read and write?",
-          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are passed through untouched. Output is JPEG, palette PNG, lossless PNG or WebP." }
+          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are passed through untouched. Output is JPEG, palette PNG, lossless PNG, WebP or AVIF." }
         },
         {
           "@type": "Question",
@@ -94,10 +94,10 @@
   ]
 }
 </script>
-<script>try{var t=localStorage.getItem("imgc-theme");if(!t)t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{var t=localStorage.getItem("imgc-theme");if(!t||t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
-<a class="skip" href="#app">Skip to the app</a>
+<a class="skip" href="#app">Skip to the compressor</a>
 
 <header class="site-head">
   <a class="brand" href="/" aria-label="imgcompress home">
@@ -109,60 +109,98 @@
     <b>imgcompress</b>
   </a>
   <nav aria-label="Site">
-    <a href="#how">How it works</a>
-    <a href="#bakeoff">The bake-off</a>
+    <a href="#learn">How it works</a>
     <a href="#desktop">Desktop&nbsp;app</a>
     <a href="#faq">FAQ</a>
     <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
   </nav>
-  <button class="btn ghost" id="theme-btn" title="Switch between dark and light">Light</button>
+  <div class="head-right">
+    <span class="lifetime num" id="lifetime" hidden></span>
+    <button class="btn ghost" id="theme-btn" title="Dark, light, or follow your system">Light</button>
+  </div>
 </header>
 
 <main>
-  <!-- ============================== the app ============================== -->
-  <section class="app-wrap" id="app" aria-label="Image compressor">
+  <!-- ========================= 1. HERO WORKSPACE ========================= -->
+  <section class="workspace" id="app" aria-label="Image compressor">
 
     <div class="empty" id="app-empty">
-      <div class="drop-target">
-        <h1>Compress images.<br>See the proof.</h1>
-        <p>Every image is encoded several ways, scored against the original with
-           a perceptual metric, and only the smallest version that still looks
-           right survives. Typical result on design assets: <b>70–90% smaller</b>.</p>
-        <div class="empty-actions">
-          <button class="btn primary" id="empty-add">Choose images</button>
-          <button class="btn" id="sample-btn">Try a sample</button>
+      <div class="drop-target" id="drop-target">
+        <h1>70–90% smaller.<br><span class="muted">No visible quality loss.</span></h1>
+
+        <div class="size-demo" aria-hidden="true">
+          <span class="sd-from num" id="sd-from">5.0 MB</span>
+          <span class="sd-arrow">→</span>
+          <span class="sd-to num" id="sd-to">812 KB</span>
+          <span class="sd-pct num" id="sd-pct">−84%</span>
         </div>
-        <p class="micro-hint">or drop files or folders anywhere on this page · or paste a screenshot</p>
-        <p class="privacy-line">Runs entirely in your browser — nothing is ever uploaded.</p>
+
+        <p>Every image is encoded several different ways, scored against the
+           original with a perceptual metric, and only the smallest version
+           that still passes survives. Then you get to check the proof.</p>
+
+        <div class="empty-actions">
+          <button class="btn primary big" id="empty-add">Choose images</button>
+          <button class="btn big" id="sample-btn">See a live demo</button>
+        </div>
+
+        <p class="micro-hint">or drop files and folders anywhere on this page ·
+           or paste a screenshot</p>
+
+        <ul class="pills" aria-label="Supported formats">
+          <li>PNG</li><li>JPEG</li><li>WebP</li><li>AVIF</li><li>GIF</li><li>BMP</li><li>TIFF</li>
+        </ul>
+
+        <p class="privacy-line">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 1.5 13.5 4v4c0 3.2-2.3 5.7-5.5 6.5C4.8 13.7 2.5 11.2 2.5 8V4L8 1.5Z"
+                  stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          </svg>
+          Runs entirely in your browser. Nothing is ever uploaded — no account, no
+          cookies, no tracking.
+        </p>
       </div>
     </div>
 
     <div class="app" id="app-full" hidden>
+      <!-- toolbar: the simple promise up front, everything else behind Advanced -->
       <div class="bar">
         <div class="field">
-          <label for="target">Target</label>
+          <label for="target">Optimise for</label>
           <select id="target" title="Which output formats are allowed">
-            <option value="figma">Figma (JPEG / PNG)</option>
-            <option value="web">Web (adds WebP)</option>
-            <option value="lossless">Lossless only</option>
+            <option value="figma">Figma &amp; design tools</option>
+            <option value="web">The web (adds WebP, AVIF)</option>
+            <option value="lossless">Lossless — pixel-perfect</option>
           </select>
         </div>
-        <div class="field">
-          <label for="quality">Quality</label>
-          <input type="range" id="quality" min="80" max="100" step="1" value="97"
-                 aria-describedby="quality-out">
-          <output class="num" id="quality-out">97</output>
-        </div>
-        <div class="field">
-          <label for="maxdim">Max size</label>
-          <input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560"
-                 aria-describedby="maxdim-hint">
-          <span id="maxdim-hint">px</span>
-        </div>
+        <button class="btn ghost" id="adv-btn" aria-expanded="false" aria-controls="advanced">
+          Advanced <span class="chev" aria-hidden="true">›</span>
+        </button>
         <div class="spacer"></div>
+        <button class="btn ghost danger" id="stop-btn" hidden>Stop</button>
         <button class="btn ghost" id="add-btn">Add images</button>
         <button class="btn ghost" id="clear-btn" title="Remove everything from the queue">Clear</button>
       </div>
+
+      <div class="advanced" id="advanced" hidden>
+        <div class="field">
+          <label for="quality">Quality floor</label>
+          <input type="range" id="quality" min="80" max="100" step="1" value="97"
+                 aria-describedby="quality-note">
+          <output class="num" id="quality-out">97</output>
+        </div>
+        <p class="adv-note" id="quality-note">imperceptible side by side</p>
+        <div class="field">
+          <label for="maxdim">Max dimension</label>
+          <input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560">
+          <span id="maxdim-hint">px · 0 keeps the original size</span>
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="suffix-toggle"> Add <code>-min</code> to filenames</label>
+        </div>
+      </div>
+
+      <!-- ===================== 2. PROCESSING DASHBOARD ==================== -->
       <div class="batch" id="batch" role="progressbar" aria-label="Batch progress"><i id="batch-bar"></i></div>
 
       <div class="body">
@@ -170,11 +208,14 @@
           <div class="queue-head">
             <span class="micro">Queue</span>
             <span class="count num" id="queue-count">0</span>
+            <div class="spacer"></div>
+            <span class="live-stat num" id="live-stat"></span>
           </div>
           <div class="queue-list" id="queue-list" role="listbox" aria-label="Images to compress" tabindex="0"></div>
           <div class="queue-foot" id="queue-foot">Drop images anywhere on this page</div>
         </aside>
 
+        <!-- ======================== 3. PROOF PANEL ======================== -->
         <section class="inspector" aria-label="Result inspector">
           <div class="insp-placeholder" id="inspector-empty">Select an image from the queue.</div>
           <div id="inspector-body" hidden>
@@ -183,14 +224,15 @@
               <span class="dims num" id="insp-dims"></span>
               <div class="spacer"></div>
               <button class="btn" id="retry-btn" hidden>Try again</button>
-              <button class="btn ghost" id="dl-one">Download</button>
-              <button class="btn ghost" id="remove-btn">Remove</button>
+              <button class="btn" id="dl-one">Download</button>
+              <button class="btn ghost" id="remove-btn" title="Remove from the queue (Delete)">Remove</button>
             </div>
 
             <div class="stage" id="stage">
               <div class="viewport" id="viewport">
                 <img id="img-before" alt="Original image" decoding="async">
                 <div class="after"><img id="img-after" alt="Compressed image" decoding="async"></div>
+                <canvas id="img-diff" hidden aria-label="Difference heatmap"></canvas>
                 <input class="split-input" type="range" id="split" min="0" max="100" value="50"
                        aria-label="Comparison split position">
                 <div class="divider" id="divider"></div>
@@ -199,14 +241,15 @@
               </div>
               <div class="stage-bar">
                 <button id="mode-split" aria-pressed="true" title="Split view (tap Space)">Split</button>
-                <button id="mode-after" aria-pressed="false" title="Compressed only (tap Space) · hold Space to flicker-test">After</button>
+                <button id="mode-after" aria-pressed="false" title="Compressed only · hold Space to flicker-test">After</button>
+                <button id="mode-diff" aria-pressed="false" title="Where the pixels actually changed">Diff</button>
                 <span class="vsep"></span>
                 <button id="zoom-out" aria-label="Zoom out" title="Zoom out (scroll wheel works too)">−</button>
                 <span class="z num" id="zoom-label">Fit</span>
                 <button id="zoom-in" aria-label="Zoom in" title="Zoom in (scroll wheel works too)">+</button>
                 <button id="zoom-reset" title="Back to fit (or double-click the image)">Reset</button>
               </div>
-              <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test</div>
+              <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test · <kbd>Diff</kbd> shows what changed</div>
             </div>
 
             <div class="details">
@@ -220,13 +263,15 @@
                   <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
                   <div class="stat"><div class="k">Floor</div><div class="v" id="s-floor">—</div></div>
                 </div>
+                <p class="verdict" id="s-verdict" hidden></p>
                 <div class="note" id="s-note" hidden></div>
                 <div class="warn" id="s-warn" hidden></div>
               </div>
               <div class="pane">
-                <h3 class="micro">Candidates tried</h3>
+                <h3 class="micro">Every candidate, ranked</h3>
                 <div class="cands" id="cands"></div>
-                <div class="override">
+                <details class="override">
+                  <summary>Override this image</summary>
                   <div class="line">
                     <label for="ov-format">Force</label>
                     <select id="ov-format">
@@ -239,70 +284,75 @@
                     </select>
                     <label for="ov-quality">Floor</label>
                     <input class="num-input" type="number" id="ov-quality" min="80" max="100" placeholder="—">
-                    <button class="btn" id="ov-apply">Apply to this image</button>
+                    <button class="btn" id="ov-apply">Apply</button>
                     <button class="btn ghost" id="ov-reset" hidden>Reset</button>
                   </div>
-                </div>
+                </details>
               </div>
             </div>
           </div>
         </section>
       </div>
 
+      <!-- ====================== 4. RESULTS SUMMARY ======================= -->
       <footer class="summary">
         <div class="totals">
           <span class="big num" id="t-sizes"></span>
           <span class="save num" id="t-saved"></span>
+          <span class="bandwidth" id="t-bandwidth"></span>
         </div>
         <div class="spacer"></div>
+        <div class="export">
+          <button class="btn ghost" id="export-btn" aria-haspopup="true" aria-expanded="false">Export report</button>
+          <div class="menu" id="export-menu" hidden>
+            <button data-export="copy">Copy summary</button>
+            <button data-export="csv">Download CSV</button>
+            <button data-export="json">Download JSON</button>
+          </div>
+        </div>
         <button class="btn primary" id="save-btn" disabled>Download</button>
       </footer>
     </div>
   </section>
 
-  <!-- ============================ how it works ============================ -->
-  <section class="section" id="how">
+  <!-- ======================= 5. LEARN MORE (below) ======================= -->
+  <section class="learn" id="learn">
     <h2>Quality is measured, not guessed</h2>
     <p class="lede">Most compressors ask you to pick a quality number and hope.
        This one encodes each image several different ways, decodes every
-       candidate back, scores it against the original with a real perceptual
-       metric, and keeps the smallest file that still clears the quality floor
-       you set. Then it shows you the evidence.</p>
+       candidate back, scores it against the original, and keeps the smallest
+       file that still clears the floor you set. Then it shows you the evidence.</p>
+
     <div class="steps">
       <div class="step">
         <span class="step-n num">1</span>
         <h3>Encode it several ways</h3>
-        <p>JPEG (mozjpeg, compiled to WebAssembly), palette PNG, lossless PNG —
-           plus WebP and AVIF if you allow them. Each format is searched
-           independently for the lowest setting that still clears your floor,
-           and every PNG gets a lossless oxipng squeeze.</p>
+        <p>mozjpeg, palette PNG, lossless PNG — plus WebP and AVIF if you allow
+           them. Each format is searched independently for the lowest setting
+           that still clears your floor, and every PNG gets a lossless oxipng
+           squeeze.</p>
       </div>
       <div class="step">
         <span class="step-n num">2</span>
         <h3>Score every candidate</h3>
         <p>Each encode is decoded back and compared to the original with SSIM at
            the 5th percentile, so a big flat background can't hide a damaged
-           subject. Transparency is scored on dark <i>and</i> light backdrops —
-           the worse score wins. And the encode that ships is verified per
-           colour channel, because luma-only metrics are blind to chroma
-           damage.</p>
+           subject. Transparency is scored on dark <i>and</i> light backdrops.
+           The shipped file is verified per colour channel too.</p>
       </div>
       <div class="step">
         <span class="step-n num">3</span>
         <h3>Keep the smallest that passes</h3>
         <p>The winner is whichever candidate came out smallest while still
-           passing. And nothing bigger than your original is ever produced —
-           already-tiny files pass through untouched.</p>
+           passing — and nothing bigger than your original is ever produced.
+           Already-tiny files pass through untouched.</p>
       </div>
     </div>
-  </section>
 
-  <!-- ============================= bake-off ============================== -->
-  <section class="section" id="bakeoff">
-    <h2>The format is a bake-off, not an assumption</h2>
-    <p class="lede">Which format wins is genuinely content-dependent — measured
-       on the project's benchmark corpus, with up to a <b>40× spread</b> between
-       the best and worst choice for the same image:</p>
+    <h3 class="sub">The format is a bake-off, not an assumption</h3>
+    <p>Which format wins is genuinely content-dependent — measured on the
+       project's benchmark corpus, with up to a <b>40× spread</b> between the
+       best and worst choice for the same image:</p>
     <div class="table-wrap">
       <table>
         <caption class="sr">Smallest file per format for four image types</caption>
@@ -320,20 +370,22 @@
     <p>Palette PNG is the best choice for two of these and the <i>worst
        possible</i> choice for the gradient. Picking one format up front leaves
        a lot on the table — so this tool doesn't pick. It tries them all.</p>
-    <h3>Why the default target is Figma, not WebP</h3>
-    <p>"Just use WebP" is the standard advice, and it's wrong if your images are
-       going into Figma. Figma's plugin API only knows PNG, JPEG and GIF, and
-       the standing community answer is that a WebP dropped onto the canvas is
-       decoded and <b>re-encoded as PNG</b> — turning your beautifully
-       compressed 40&nbsp;KB WebP into a multi-megabyte PNG inside the
-       <code>.fig</code>. The <b>Figma</b> target therefore sticks to formats
-       Figma stores byte-for-byte, and caps dimensions at 4096px — beyond that,
-       Figma rescales destructively on import. Use the <b>Web</b> target for
-       anything not bound for Figma.</p>
+
+    <details class="deep">
+      <summary>Why the default target is Figma, not WebP</summary>
+      <p>"Just use WebP" is the standard advice, and it's wrong if your images
+         are going into Figma. Figma's plugin API only knows PNG, JPEG and GIF,
+         and the standing community answer is that a WebP dropped onto the
+         canvas is decoded and <b>re-encoded as PNG</b> — turning your
+         beautifully compressed 40&nbsp;KB WebP into a multi-megabyte PNG inside
+         the <code>.fig</code>. The Figma target therefore sticks to formats
+         Figma stores byte-for-byte, and caps dimensions at 4096px — beyond
+         that, Figma rescales destructively on import. Pick <b>the web</b> for
+         anything not bound for Figma.</p>
+    </details>
   </section>
 
-  <!-- ============================== desktop ============================== -->
-  <section class="section" id="desktop">
+  <section class="learn" id="desktop">
     <h2>Want more? The desktop version goes further</h2>
     <p class="lede">This page ships mozjpeg, oxipng and AVIF compiled to
        WebAssembly — the same class of encoders the professionals use, running
@@ -356,13 +408,12 @@ imgcompress photos/        # or the command line</code></pre>
     <p><a class="btn" href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">Get it on GitHub</a></p>
   </section>
 
-  <!-- ================================ faq ================================ -->
-  <section class="section" id="faq">
+  <section class="learn" id="faq">
     <h2>Questions</h2>
     <details>
       <summary>Is anything uploaded?</summary>
-      <p>No. Compression runs entirely in your browser using Web Workers and the
-         canvas API. Images never leave your device, and the page makes no
+      <p>No. Compression runs entirely in your browser using Web Workers and
+         WebAssembly. Images never leave your device, and the page makes no
          network requests after it loads. There are no cookies and no
          analytics.</p>
     </details>
@@ -372,15 +423,16 @@ imgcompress photos/        # or the command line</code></pre>
          and GIF, and the standing community answer is that WebP uploads are
          decoded and re-encoded as PNG on import — turning a small WebP into a
          large PNG inside the <code>.fig</code> file. Switch the target to
-         <b>Web</b> to allow WebP output.</p>
+         <b>the web</b> to allow WebP and AVIF output.</p>
     </details>
     <details>
       <summary>How is quality measured?</summary>
       <p>Every candidate encode is decoded back and compared to the original
          with SSIM, aggregated at the 5th percentile so a large flat background
          cannot hide a damaged region. Transparent images are scored over a dark
-         and a light backdrop, and the worse score wins. The desktop version
-         goes further and uses SSIMULACRA&nbsp;2.</p>
+         and a light backdrop, and the worse score wins. The encode that ships
+         is also verified per colour channel, because luma-only metrics are
+         blind to chroma damage.</p>
     </details>
     <details>
       <summary>What is the difference between this and the desktop version?</summary>
@@ -395,7 +447,7 @@ imgcompress photos/        # or the command line</code></pre>
       <p>It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF
          where the browser can decode it. Animated GIFs are passed through
          untouched. Output is JPEG, palette PNG, lossless PNG, WebP or AVIF
-         (AVIF on the Web target, where the browser supports it).</p>
+         (AVIF on the web target, where the browser supports it).</p>
     </details>
     <details>
       <summary>Is it free?</summary>
@@ -414,23 +466,37 @@ imgcompress photos/        # or the command line</code></pre>
 </footer>
 
 <div class="veil" id="veil" aria-hidden="true">
-  <div class="box"><strong>Drop to add</strong><p id="veil-count">PNG, JPEG, WebP, BMP or GIF</p></div>
+  <div class="box">
+    <div class="veil-icon" aria-hidden="true">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+        <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="currentColor"
+              stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <strong>Drop to compress</strong>
+    <p id="veil-count">We'll race every format and keep the smallest that passes</p>
+  </div>
 </div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <dialog id="keys" aria-label="Keyboard shortcuts">
   <h3 class="micro">Keyboard</h3>
   <table>
     <tr><td><kbd>Space</kbd> tap</td><td>flip split / compressed</td></tr>
     <tr><td><kbd>Space</kbd> hold</td><td>flicker-test against the original</td></tr>
+    <tr><td><kbd>D</kbd></td><td>difference heatmap</td></tr>
     <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>walk the queue</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>download everything</td></tr>
     <tr><td><kbd>Delete</kbd></td><td>remove the selected image</td></tr>
     <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>paste a screenshot</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>stop the current batch</td></tr>
     <tr><td>scroll / double-click</td><td>zoom the comparison</td></tr>
   </table>
   <button class="btn" id="keys-close">Close</button>
 </dialog>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <input type="file" id="file-input" multiple accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,image/tiff,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff" hidden>
 
 <noscript><div class="noscript">This tool compresses images locally in your
