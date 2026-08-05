@@ -150,7 +150,10 @@ function renderLifetime() {
 
 /* ----------------------------- worker pool ------------------------------- */
 
-const POOL_MAX = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 4) - 1));
+/* Leave two threads for the UI and the browser's own decoding, take the rest.
+   The old cap of 4 left most of a modern machine idle on a batch; the ceiling
+   of 8 is about memory, since each worker keeps one decoded frame cached. */
+const POOL_MAX = Math.min(8, Math.max(2, (navigator.hardwareConcurrency || 4) - 2));
 const pool = [];
 
 function makeWorker(index) {
@@ -188,6 +191,15 @@ async function dispatch() {
   if (!queued.length) return;
   ensurePool(queued.length);
 
+  /* Start every read at once. This loop used to `await` each file's bytes
+     before handing the next item to a worker, so with a dozen files the last
+     worker sat idle through eleven sequential reads before it got any work. */
+  for (const item of queued) {
+    if (!item.bytesPromise) {
+      item.bytesPromise = item.file.arrayBuffer().catch(() => null);
+    }
+  }
+
   for (const item of queued) {
     // Prefer the worker that last handled this item - its decode cache makes
     // a quality-only re-run start instantly.
@@ -203,10 +215,9 @@ async function dispatch() {
     item.progress = "reading…";
     item.frac = 0;
     scheduleRender("queue");
-    let buffer;
-    try {
-      buffer = await item.file.arrayBuffer();
-    } catch {
+    const buffer = await item.bytesPromise;
+    item.bytesPromise = null;   // transferred below; a second read must re-open
+    if (!buffer) {
       item.status = "failed";
       item.error = "could not read the file";
       slot.busy = false; slot.itemId = null;
@@ -296,6 +307,7 @@ function onWorkerMessage(slot, msg) {
     item.status = "done";
     item.justFinished = true;
     item.wipePending = true;
+    item.perf = msg.perf || null;   // phase timings, for the benchmark
     item.result = r;
     item.afterBlob = blob;
     item.afterURL = URL.createObjectURL(blob);
@@ -344,8 +356,20 @@ function maybeCelebrate() {
 
 async function makeThumb(item) {
   try {
-    const bmp = await createImageBitmap(item.file);
+    // Decode straight to thumbnail scale. Decoding a 12MP original in full on
+    // the main thread just to draw it at 92px was the single heaviest thing the
+    // UI did per file, and with a couple of dozen files it made the page stutter
+    // while the workers were already busy.
     const side = 92;
+    let bmp;
+    try {
+      // Width only: giving both axes would force them and distort the frame.
+      bmp = await createImageBitmap(item.file, {
+        resizeWidth: side * 2, resizeQuality: "low",
+      });
+    } catch {
+      bmp = await createImageBitmap(item.file);      // older engines
+    }
     const scale = Math.max(side / bmp.width, side / bmp.height);
     const c = document.createElement("canvas");
     c.width = side; c.height = side;

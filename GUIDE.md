@@ -316,6 +316,43 @@ Two related rules, both straight out of the system's layout primitives:
   column is `max-content`, so without it the widest descendant sets the shell's
   width and the whole page scrolls sideways on a phone.
 
+### Speed, and the invariants that make it safe
+
+The engine got about **2.2× faster** (min-of-3 on a mixed corpus with a 12MP
+photograph: 30.9s → 14.1s) with **byte-identical output** on both the Figma and
+Web targets. Four changes did it, and each rests on an invariant that must hold
+if anyone touches this code:
+
+* **oxipng runs only where it could change the winner.** It was 37% of all
+  worker CPU, most of it spent losslessly shrinking a 25MB PNG of a photograph
+  that loses to JPEG by 34×. It now runs after ranking, on PNG-family
+  candidates where `size × 0.7 ≤ best`. *Invariant:* oxipng never takes more
+  than 30% off a canvas-written PNG. If that were ever false the constant is
+  `OXI_BEST_CASE`.
+* **The per-channel chroma check runs on the winner only**, not on every
+  candidate — it costs three to six extra full-frame passes each and only one
+  candidate ships. If the winner fails it is escalated up its ladder, or
+  dropped and the next-best checked. *Invariant:* the gate applies only when
+  something cleared the floor; a best-effort result is never rejected over
+  chroma, or a usable file would become a failed one.
+* **Encodes are memoised per (level, effort).** Only AVIF's output depends on
+  the effort flag, so `fastAffects` is set there and nowhere else. *Invariant:*
+  if any other encoder is ever given a real fast path, it must set that flag,
+  or the shipped bytes will silently be the probe's cheap encode.
+* **The search bisects the whole ladder** instead of probing the top rung
+  first. Score rises with quality, so a rung that passes proves every rung
+  above it would — that first probe bought nothing and cost the most expensive
+  encode of the image. Note the scores are *not* perfectly monotonic (tiled
+  sampling), so a different probe order can land on a different rung; both old
+  and new only guarantee that the chosen rung passes the full-frame check.
+
+`scratchpad/bench.mjs` measures all of it and doubles as the regression gate:
+it writes a snapshot of every fixture's winner, level, bytes and score, and
+fails on any change to them. It also reports **deterministic operation counts**
+(encodes, oxipng passes, SSIM passes), which is what an algorithmic claim should
+rest on — wall-clock on a thermally throttled laptop varied 2.3× across
+identical runs, so timings are reported as min-of-N.
+
 ### Gates
 
 Both live in the session scratchpad and are worth keeping with the repo:

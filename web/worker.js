@@ -81,6 +81,39 @@ async function probeWebp() {
 
 const CODECS = { mozjpeg: null, oxipng: null, avif: null };
 
+/* ------------------------------------------------------------------------- *
+ * timing. Cheap accumulators so the cost of every phase is a measurement
+ * rather than a guess; the totals ride along on the done message.
+ * ------------------------------------------------------------------------- */
+
+let PERF = null;
+const perfReset = () => {
+  PERF = {
+    decode: 0, encode: 0, back: 0, ssimTiled: 0, ssimFull: 0, ssimChroma: 0,
+    quantize: 0, oxipng: 0, pngWrite: 0, probes: 0, encodes: 0,
+    "enc:jpeg": 0, "enc:png8": 0, "enc:png": 0, "enc:webp": 0, "enc:avif": 0,
+  };
+};
+/* Both the elapsed time and the call count. Time is what a user feels but it is
+   hostage to thermal state; the counts are deterministic, so they are what
+   actually proves an algorithmic change. */
+function timed(bucket, fn) {
+  if (!PERF) return fn();
+  PERF[`n:${bucket}`] = (PERF[`n:${bucket}`] || 0) + 1;
+  const t = performance.now();
+  const out = fn();
+  PERF[bucket] += performance.now() - t;
+  return out;
+}
+async function timedAsync(bucket, fn) {
+  if (!PERF) return fn();
+  PERF[`n:${bucket}`] = (PERF[`n:${bucket}`] || 0) + 1;
+  const t = performance.now();
+  const out = await fn();
+  PERF[bucket] += performance.now() - t;
+  return out;
+}
+
 let onCodecStatus = null;   // set per job so the UI can narrate the first load
 
 async function loadCodec(name, script, globalName, wasmFile) {
@@ -102,16 +135,33 @@ const loadMozjpeg = () => loadCodec("mozjpeg", "mozjpeg.js", "__mozjpeg", "mozjp
 const loadOxipng = () => loadCodec("oxipng", "oxipng.js", "__oxipng", "squoosh_oxipng_bg.wasm");
 const loadAvif = () => loadCodec("avif", "avif.js", "__avif", "avif_enc.wasm");
 
-/** Lossless oxipng pass over any finished PNG - the browser-tier zopfli. */
-async function oxiPass(pngBytes, fast) {
-  if (fast || !CODECS.oxipng) return pngBytes;
+/** Lossless oxipng pass over a finished PNG - the browser-tier zopfli.
+ *
+ * Deliberately NOT called from inside an encoder. It is by far the most
+ * expensive step in the whole pipeline (37% of all worker CPU when it ran
+ * eagerly), and on a photograph it was being spent compressing a 25 MB
+ * lossless PNG that loses to JPEG by 34x. It now runs only where it could
+ * change which candidate wins - see `oxiCompetitive`. */
+async function oxiPass(pngBytes) {
+  if (!CODECS.oxipng) return pngBytes;
   try {
     const out = new Uint8Array(await CODECS.oxipng.optimise(pngBytes.buffer, { level: 2 }));
-    return out.length < pngBytes.length ? out : pngBytes;
+    if (out.length >= pngBytes.length) return pngBytes;
+    // Carry the reconstruction helpers across: oxipng is lossless, so the
+    // decoded pixels - and therefore every score already measured - are
+    // unchanged. Only the byte count moves.
+    if (pngBytes._rgba) out._rgba = pngBytes._rgba;
+    if (pngBytes._exact) out._exact = pngBytes._exact;
+    return out;
   } catch {
     return pngBytes;
   }
 }
+
+/* The most oxipng has ever plausibly taken off a canvas-written PNG is well
+   under 30%. If a candidate is still larger than the best after granting it a
+   30% discount it cannot win, so compressing it would only cost time. */
+const OXI_BEST_CASE = 0.7;
 
 /* ------------------------------------------------------------------------- *
  * GIF frame counter — a real block walker, not a heuristic. Needed because
@@ -343,27 +393,40 @@ function medianCutPalette(rgba, maxColors) {
   });
 }
 
+/* Reused across calls: a 2MB allocation per quantisation would be pure GC
+   pressure, and clearing it is a memset. */
+const NEAREST_CACHE = new Int16Array(1 << 20);
+
 function quantize(rgba, width, height, maxColors) {
   const exact = exactPalette(rgba, maxColors);
   if (exact) return exact;
 
   const palette = medianCutPalette(rgba, maxColors);
 
-  // Nearest-palette lookups are cached on a 5-bit/channel key, which bounds
-  // the search cost on photographic input.
-  const cache = new Map();
+  /* Nearest-palette lookups are cached on a 5-bit/channel key. The cache is a
+     flat Int16Array rather than a Map: the key space is 2^20, and a Map with a
+     million integer entries spends more time hashing and allocating boxed keys
+     than the colour search it was meant to avoid. -1 means "not yet computed".
+     Palette entries are also flattened, so the inner loop reads one typed array
+     instead of chasing a pointer per colour. */
+  const CACHE = NEAREST_CACHE; CACHE.fill(-1);
+  const pal = new Int16Array(palette.length * 4);
+  for (let i = 0; i < palette.length; i++) {
+    pal[i * 4] = palette[i][0]; pal[i * 4 + 1] = palette[i][1];
+    pal[i * 4 + 2] = palette[i][2]; pal[i * 4 + 3] = palette[i][3];
+  }
+  const n = palette.length;
   const nearest = (r, g, b, a) => {
     const key = ((r >> 3) << 15) | ((g >> 3) << 10) | ((b >> 3) << 5) | (a >> 3);
-    let idx = cache.get(key);
-    if (idx !== undefined) return idx;
+    const hit = CACHE[key];
+    if (hit !== -1) return hit;
     let best = 0, bd = Infinity;
-    for (let i = 0; i < palette.length; i++) {
-      const p = palette[i];
-      const dr = r - p[0], dg = g - p[1], db = b - p[2], da = a - p[3];
+    for (let i = 0, o = 0; i < n; i++, o += 4) {
+      const dr = r - pal[o], dg = g - pal[o + 1], db = b - pal[o + 2], da = a - pal[o + 3];
       const d = dr * dr + dg * dg + db * db + 2 * da * da; // alpha errors weigh double
       if (d < bd) { bd = d; best = i; }
     }
-    cache.set(key, best);
+    CACHE[key] = best;
     return best;
   };
 
@@ -655,14 +718,13 @@ function makeEncoders(job) {
     return exactQ && exactQ.palette.length <= level ? exactQ : null;
   }
 
-  async function encodePng8(level, fast) {
+  async function encodePng8(level) {
     const hit = exactFor(level);
     if (hit) {
-      // Identical pixels at every level the palette fits - build the final
-      // (oxipng-squeezed) version once and reuse it everywhere.
+      // Identical pixels at every level the palette fits - encode once.
       if (!exactPng) {
-        let data = await writeIndexedPng(hit.indices, width, height, hit.palette);
-        data = await oxiPass(data, false);
+        const data = await timedAsync("pngWrite",
+          () => writeIndexedPng(hit.indices, width, height, hit.palette));
         exactPng = Object.assign(data, {
           _rgba: indexedToRgba(hit.indices, hit.palette, width, height),
           _exact: true,
@@ -670,9 +732,9 @@ function makeEncoders(job) {
       }
       return exactPng;
     }
-    const q = quantize(rgba, width, height, level);
-    let data = await writeIndexedPng(q.indices, width, height, q.palette);
-    data = await oxiPass(data, fast);
+    const q = timed("quantize", () => quantize(rgba, width, height, level));
+    const data = await timedAsync("pngWrite",
+      () => writeIndexedPng(q.indices, width, height, q.palette));
     return Object.assign(data, {
       _rgba: indexedToRgba(q.indices, q.palette, width, height),
       _exact: false,
@@ -688,13 +750,15 @@ function makeEncoders(job) {
     png8: {
       name: "png8", ext: ".png", mime: "image/png",
       supportsAlpha: true, lossless: false, levels: PNG8_COLORS,
+      pngFamily: true,
       available: () => CAN_DEFLATE,
-      encode: (level, fast) => encodePng8(level, fast),
+      encode: (level) => encodePng8(level),
     },
     png: {
       name: "png", ext: ".png", mime: "image/png",
       supportsAlpha: true, lossless: true, levels: [100],
-      encode: async (level, fast) => oxiPass(await canvasEncode("image/png"), fast),
+      pngFamily: true,
+      encode: () => timedAsync("pngWrite", () => canvasEncode("image/png")),
     },
     webp: {
       name: "webp", ext: ".webp", mime: "image/webp",
@@ -705,6 +769,9 @@ function makeEncoders(job) {
     avif: {
       name: "avif", ext: ".avif", mime: "image/avif",
       supportsAlpha: true, lossless: false, levels: AVIF_QUALITY,
+      // The only encoder whose output depends on the fast flag, so the only one
+      // that has to be encoded twice when the search lands on its top level.
+      fastAffects: true,
       available: () => !!CODECS.avif,
       encode: async (level, fast) => {
         const av = await loadAvif();
@@ -719,6 +786,7 @@ function makeEncoders(job) {
     png8x: {
       name: "png8", ext: ".png", mime: "image/png",
       supportsAlpha: true, lossless: true, levels: [256], exactOnly: true,
+      pngFamily: true,
       available: () => CAN_DEFLATE,
       encode: async () => {
         const hit = exactFor(256);
@@ -750,66 +818,84 @@ async function searchOne(job, encoder, target, report) {
   const { width, height, rgba } = job;
   const levels = encoder.levels;
 
+  /* Encodes are memoised per (level, effort). Only AVIF's output depends on the
+     effort flag, so for every other encoder the "re-encode the winner at full
+     effort" step is a cache hit rather than a second pass over the pixels -
+     which on a 12MP photograph was a whole redundant mozjpeg encode. */
+  const memo = new Map();
+  const encodeAt = (index, fast) => {
+    const key = encoder.fastAffects ? `${index}|${fast ? 1 : 0}` : `${index}`;
+    let hit = memo.get(key);
+    if (!hit) {
+      hit = timedAsync("encode", () =>
+        timedAsync(`enc:${encoder.name}`, () => encoder.encode(levels[index], fast)));
+      memo.set(key, hit);
+    }
+    return hit;
+  };
+
   if (encoder.lossless || levels.length === 1) {
     report(1);
-    const data = await encoder.encode(levels[levels.length - 1], false);
-    return { data, level: null, score: 1.0 };
+    if (PERF) PERF.encodes++;
+    const data = await encodeAt(levels.length - 1, false);
+    return { data, level: null, score: 1.0, index: levels.length - 1, encoder };
   }
 
   let probes = 0;
   const probe = async (index) => {
     report(++probes);
-    const data = await encoder.encode(levels[index], true); // fast: search pass
+    if (PERF) PERF.probes++;
+    const data = await encodeAt(index, true);
     if (data._exact) return { data, score: 1.0 }; // pixel-identical by construction
-    const cand = await decodeToRgba(data, encoder.mime, width, height, job.scratch);
-    return { data, score: ssimSampled(rgba, cand, width, height) };
+    const cand = await timedAsync("back", () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
+    return { data, score: timed("ssimTiled", () => ssimSampled(rgba, cand, width, height)) };
   };
 
-  // The shipped encode is verified at full frame AND per colour channel -
-  // luma-only scoring cannot see chroma damage, and the browser's JPEG
-  // encoder subsamples chroma with no way to turn that off. Channels get
-  // twice the luma's distortion allowance: eyes tolerate chroma error far
-  // better than luma error (that asymmetry is why 4:2:0 exists), so this
-  // catches catastrophic chroma damage without outlawing ordinary JPEG.
-  const chromaFloor = 1 - 2 * (1 - target);
+  /* Full-frame luma check on the level the search landed on. The per-channel
+     chroma check is deliberately NOT here: it costs three to six more
+     full-frame passes and only the candidate that actually ships needs it, so
+     it runs once on the winner instead of once per candidate. */
   const finalScore = async (data) => {
-    if (data._exact) return { score: 1.0, chromaOk: true };
-    const cand = await decodeToRgba(data, encoder.mime, width, height, job.scratch);
-    return {
-      score: ssimRgba(rgba, cand, width, height),
-      chromaOk: ssimRgbaStrict(rgba, cand, width, height) >= chromaFloor,
-    };
+    if (data._exact) return { score: 1.0 };
+    const cand = await timedAsync("back", () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
+    return { score: timed("ssimFull", () => ssimRgba(rgba, cand, width, height)) };
   };
 
+  /* Straight bisection over the whole ladder. The old version probed the top
+     rung first to find out whether the format could pass at all, then bisected
+     underneath it - but score rises monotonically with quality, so a rung that
+     passes already proves every rung above it would. That first probe bought
+     nothing in the common case and cost a full encode of the image; on a
+     4.9MP photograph that is seconds. Five probes become four. */
   const top = levels.length - 1;
-  let chosen = top;
-  const first = await probe(top);
-  if (first.score >= target) {
-    let lo = 0, hi = top;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (mid === top) { hi = mid - 1; continue; }
-      const p = await probe(mid);
-      if (p.score >= target) { chosen = mid; hi = mid - 1; }
-      else lo = mid + 1;
-    }
+  let chosen = top;                       // best effort if nothing clears
+  let lo = 0, hi = top;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const p = await probe(mid);
+    if (p.score >= target) { chosen = mid; hi = mid - 1; }
+    else lo = mid + 1;
   }
 
-  // Always re-encode the winner at full effort - probes ran in fast mode.
-  let data = await encoder.encode(levels[chosen], false);
-  let { score, chromaOk } = await finalScore(data);
+  // The winner is re-encoded at full effort; for every encoder but AVIF that is
+  // a memo hit rather than a second pass over the pixels.
+  if (PERF) PERF.encodes++;
+  let data = await encodeAt(chosen, false);
+  let { score } = await finalScore(data);
 
-  // The sampled search can be marginally optimistic, and the channel check is
-  // stricter than the search metric. If the honest check misses, step up until
-  // it clears rather than shipping something that fails the promise we made.
-  while ((score < target || !chromaOk) && chosen < top) {
+  // The sampled search can be marginally optimistic. If the honest full-frame
+  // check misses, step up until it clears rather than shipping something that
+  // fails the promise we just made.
+  while (score < target && chosen < top) {
     report(++probes);
     chosen++;
-    data = await encoder.encode(levels[chosen], false);
-    ({ score, chromaOk } = await finalScore(data));
+    data = await encodeAt(chosen, false);
+    ({ score } = await finalScore(data));
   }
 
-  return { data, level: levels[chosen], score, chromaOk };
+  // encodeAt/finalScore travel with the result so the winner can be escalated
+  // later if the chroma check rejects it, without re-running the search.
+  return { data, level: levels[chosen], score, index: chosen, top, encodeAt, finalScore };
 }
 
 /* ------------------------------------------------------------------------- *
@@ -918,6 +1004,7 @@ async function runJob(msg) {
   }
 
   post({ type: "progress", stage: "decoding", frac: 0 });
+  perfReset();
 
   const cacheKey = `${id}|${limitFor(settings)}`;
   let job;
@@ -925,7 +1012,7 @@ async function runJob(msg) {
     job = DCACHE.job;
   } else {
     try {
-      job = await decodeNormalised(new Blob([buffer], { type: mime }), settings);
+      job = await timedAsync("decode", () => decodeNormalised(new Blob([buffer], { type: mime }), settings));
     } catch {
       post({
         type: "failed",
@@ -972,6 +1059,7 @@ async function runJob(msg) {
   const candidates = [];
   let bestPassing = null;  // smallest candidate that clears the floor
   let bestFailing = null;  // otherwise: highest score, smaller file breaks ties
+  const passing = [];      // every candidate that cleared it, for the post-passes
 
   for (const nameKey of names) {
     const encoder = encoders[nameKey];
@@ -988,8 +1076,9 @@ async function runJob(msg) {
       const found = await searchOne(job, encoder, target, report);
       const { data, level, score } = found;
       candidates.push({ format: encoder.name, bytes: data.length, score, lossless: !!(encoder.lossless || data._exact) });
-      const entry = { data, level, score, encoder };
-      if (score >= target && found.chromaOk !== false) {
+      const entry = { ...found, encoder };
+      if (score >= target) {
+        passing.push(entry);
         if (!bestPassing || data.length < bestPassing.data.length) bestPassing = entry;
       } else if (!bestFailing || score > bestFailing.score ||
                  (score === bestFailing.score && data.length < bestFailing.data.length)) {
@@ -1001,10 +1090,80 @@ async function runJob(msg) {
     done++;
   }
 
-  const best = bestPassing || bestFailing;
-  if (best === null) {
+  /* ---- chroma verification, on the winner only ------------------------- *
+   * Luma SSIM is structurally blind to chroma damage, so the encode that
+   * actually ships is checked per colour channel. Channels get twice the
+   * luma's distortion allowance: eyes tolerate chroma error far better than
+   * luma error, which is the whole reason 4:2:0 exists, so this catches
+   * catastrophic damage without outlawing ordinary JPEG.
+   *
+   * Running it on every candidate cost three to six extra full-frame passes
+   * each. Only one candidate ships, so only that one is checked - and if it
+   * fails, it is escalated or dropped and the next best is checked instead.
+   * Bounded by the number of candidates. */
+  const chromaFloor = 1 - 2 * (1 - target);
+  const chromaOk = async (entry) => {
+    if (entry.data._exact || entry.encoder.lossless) return true;
+    const cand = await timedAsync("back",
+      () => decodeToRgba(entry.data, entry.encoder.mime, job.width, job.height, job.scratch));
+    return timed("ssimChroma",
+      () => ssimRgbaStrict(job.rgba, cand, job.width, job.height)) >= chromaFloor;
+  };
+
+  /* The gate applies only when something actually cleared the floor. If nothing
+     did we are already shipping a best-effort result with a warning, and
+     refusing it over chroma would turn a usable file into a failed one. */
+  const rejected = new Set();
+  let best = bestPassing;
+  while (best && !(await chromaOk(best))) {
+    // Step this candidate up its ladder until the channels clear, then let it
+    // compete again at its new size.
+    let escalated = false;
+    while (best.index < best.top) {
+      best.index++;
+      best.data = await best.encodeAt(best.index, false);
+      ({ score: best.score } = await best.finalScore(best.data));
+      if (best.score >= target && await chromaOk(best)) { escalated = true; break; }
+    }
+    const row = candidates.find((c) => c.format === best.encoder.name);
+    if (escalated) {
+      if (row) { row.bytes = best.data.length; row.score = best.score; }
+    } else {
+      warnings.push(`${best.encoder.name} could not clear the colour check at any setting`);
+      rejected.add(best.encoder.name);
+      if (row) row.rejected = true;
+    }
+    // Re-pick the smallest survivor, or fall back to the best failing one.
+    const live = passing.filter((p) => !rejected.has(p.encoder.name) && p.score >= target);
+    best = live.length ? live.reduce((a, b) => (b.data.length < a.data.length ? b : a)) : null;
+  }
+  if (!best) best = bestFailing;   // nothing cleared the floor; warned about below
+
+  if (!best) {
     post({ type: "failed", error: "no candidate produced usable output", warnings, engines: engineFlags() });
     return;
+  }
+
+  /* ---- lossless post-compression, only where it can change the outcome -- *
+   * oxipng was 37% of all worker CPU when every PNG got it eagerly, and most
+   * of that was spent shrinking a lossless PNG of a photograph that loses to
+   * JPEG many times over. A candidate granted a 30% discount and still larger
+   * than the best cannot win, so it is left alone. Compressing losslessly
+   * cannot move any score, so nothing measured changes here. */
+  if (CODECS.oxipng) {
+    const sizeOf = (c) => c.data.length;
+    let bestSize = sizeOf(best);
+    const pngCandidates = passing.filter((p) => p.encoder.pngFamily && !rejected.has(p.encoder.name));
+    for (const cand of pngCandidates) {
+      if (sizeOf(cand) * OXI_BEST_CASE > bestSize) continue;   // cannot win
+      const before = sizeOf(cand);
+      cand.data = await timedAsync("oxipng", () => oxiPass(cand.data));
+      const row = candidates.find((c) => c.format === cand.encoder.name);
+      if (row) row.bytes = cand.data.length;
+      if (cand.data.length < bestSize) { best = cand; bestSize = cand.data.length; }
+      else if (cand === best) bestSize = Math.min(bestSize, cand.data.length);
+      if (PERF && before === cand.data.length) PERF.oxiNoGain = (PERF.oxiNoGain || 0) + 1;
+    }
   }
 
   if (best.score < target) {
@@ -1035,6 +1194,7 @@ async function runJob(msg) {
   post({
     type: "done",
     engines: engineFlags(),
+    perf: PERF,
     result: {
       passthrough: false, skipped: false, note: "",
       fmt: best.encoder.name, ext: best.encoder.ext, mime: best.encoder.mime,
