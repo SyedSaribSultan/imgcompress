@@ -56,13 +56,19 @@ def score_ssim(ref: Image.Image, data: bytes) -> float:
 
 
 def score_ss2(ref: Image.Image, data: bytes) -> float | None:
+    """A failed score must be LOUD. An earlier run swallowed MemoryErrors
+    (this benchmark was sharing the machine with two browser test rigs),
+    silently zeroed every score on the largest image, and produced a table
+    where a lossless copy 'failed' the floor. Run this benchmark alone."""
     if not HAVE_SSIMULACRA2:
         return None
     with Image.open(io.BytesIO(data)) as cand:
         cand.load()
         try:
             return ssimulacra2(ref, cand)
-        except Exception:
+        except Exception as exc:
+            print(f"    !! ssimulacra2 scoring failed: {type(exc).__name__}: {exc}",
+                  file=sys.stderr, flush=True)
             return None
 
 
@@ -308,7 +314,11 @@ def main() -> int:
               f"source {human(orig_bytes)}  reference {human(ref_bytes)} ===", flush=True)
         rows = []
         for r in strategies(ref, web):
-            s2 = score_ss2(ref, r.data) or 0.0
+            s2 = score_ss2(ref, r.data)
+            if s2 is None:
+                raise RuntimeError(
+                    f"scoring failed for {r.strategy} on {src.name}; "
+                    "a benchmark with silent holes is worse than none")
             s = score_ssim(ref, r.data)
             rows.append((r, s2, s))
             print(f"  {r.strategy:32} {r.fmt:5} {human(len(r.data)):>10}  "

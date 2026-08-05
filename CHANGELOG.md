@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] - 2026-08-05
+
+### Fixed
+- **Web: the quality floor actually defaulted to 99, not 90.** Settings init
+  still scaled the floor as if it were an SSIM fraction (`90 * 100`), which
+  pinned the slider at its maximum. Every search then demanded SSIMULACRA 2
+  >= 99, almost no lossy candidate could pass, and the app quietly
+  over-shipped lossless files several times larger than needed (a 1.3 MP
+  photograph shipped as a 1.5 MB lossless WebP; at the intended floor it
+  ships as a 598 KB JPEG at score 90.6). Floors persisted while the bug was
+  live are reset to the default once; targets and dimension caps are kept.
+  The e2e suite now asserts the fresh-profile floor is exactly 90.
+
 ## [2.3.0] - 2026-08-05
 
 ### Added

@@ -221,22 +221,50 @@ is how a "no dependencies to compile" promise quietly breaks.
 # The web version (`web/`)
 
 A static port of the same engine that runs entirely in the browser, deployed at
-[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app). Four files:
+[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app). Five files:
 `index.html` (landing + app shell), `app.css`, `app.js` (UI, worker pool, zip
-download), `worker.js` (the engine: SSIM at the 5th percentile with
-dual-backdrop transparency scoring, ladder binary search, the bake-off, the
-never-bigger rule — a port of `quality.py` + `core.py` + `encoders.py`).
+download), `ss2.js` (the metric), `worker.js` (the engine: ladder bisection,
+the bake-off, dual-backdrop transparency scoring, the never-bigger rule — a
+port of `quality.py` + `core.py` + `encoders.py`).
 
-What's honestly different from the desktop version, and why:
+### The metric is SSIMULACRA 2 itself
 
-* The metric is **SSIM p5, not SSIMULACRA 2** — there is no browser build of
-  SSIMULACRA 2. The page says so out loud rather than pretending.
-* Encoders are the browser's own (canvas JPEG/WebP/PNG), except **png8, which
-  is ours**: a median-cut quantizer with Floyd–Steinberg dithering and a
-  hand-rolled palette-PNG writer over `CompressionStream`. It detects exact
-  palettes (≤256 unique colours) and is genuinely lossless on flat artwork.
-* No zopfli / mozjpeg / libimagequant. The landing page pitches the desktop
-  version for exactly that reason.
+`web/ss2.js` is a JavaScript port of the Python `ssimulacra2` package — the
+implementation the desktop scores with. Anyone touching it must know:
+
+* **It is validated, not trusted.** `scratchpad/ss2_validate.mjs` scores a
+  60-pair corpus (four content types × jpeg/webp/avif/palette distortions ×
+  quality levels, plus small-image cases) against Python-reference scores.
+  Float64 planes matched to |Δ| = 0.0000; the shipped Float32 planes match to
+  mean |Δ| 0.0045, worst 0.0229, on the 100-point scale. Any change to ss2.js
+  must re-run that harness.
+* **Two boundary quirks are deliberate.** The reference transposes to (W, H)
+  before scoring, so its blur zero-pads along the image's *x* axis and
+  reflects along *y*; the port keeps row-major planes and swaps the boundary
+  treatment to compensate. And the Gaussian is scipy's exact construction:
+  radius `int(3.33 × 1.5 + 0.5) = 5`, discrete-sampled, normalised. "Fixing"
+  either breaks agreement with the desktop.
+* **Memory is budgeted, and that is load-bearing.** Full-frame scoring above
+  `VERIFY_BUDGET` (2.75MP) runs on a 3×3 spread of native-resolution 512px
+  tiles instead. Float64 full-frame on a 12MP image needed ~1.8GB, the
+  allocations threw inside the worker, every lossy candidate died silently,
+  and multi-megabyte lossless files won by forfeit. The 5MP E2E fixture exists
+  to catch exactly that: it asserts lossy candidates are *measured* past the
+  budget, not forfeited. The plane pool also refuses to retain buffers above
+  ~12MB (`SS2_POOL_MAX_LEN`), or one 12MP job could pin hundreds of megabytes.
+* The per-channel SSIM chroma guard applies **only under the `ssim` fallback
+  metric** — SSIMULACRA 2 works in XYB and weighs chroma natively, and the
+  reference has no such extra pass.
+
+What's honestly different from the desktop version now:
+
+* **Workflow** — folder watching, batch saves to disk, a scriptable CLI.
+* **libimagequant / zopfli** — the browser quantizer is median-cut with two
+  Lloyd refinement iterations plus an oxipng pass, which measures competitive
+  with pngquant+zopfli on flat art but can still trail on photographic
+  palettes.
+* Everything else is at parity: same metric, same floors, same candidate
+  ladders, mozjpeg / oxipng / libwebp (incl. lossless) / libaom via WASM.
 
 Deploys from `web/` as the Vercel project root (`vercel.json` holds the strict
 CSP and cache headers — no third-party requests of any kind). Tests live

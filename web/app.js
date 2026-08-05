@@ -95,14 +95,22 @@ function loadSettings() {
     if (saved.target) state.settings.target = saved.target;
     // Stored floors from before the metric change were SSIM fractions (<= 1);
     // they mean nothing on the SSIMULACRA 2 scale, so they reset to default.
-    if (saved.qualityTarget >= 60 && saved.qualityTarget <= 99) {
+    // v2: an init-scaling bug once pinned the slider to 99 and pushSettings
+    // persisted it. A floor stored without the version stamp is that bug's
+    // residue, not a choice, so it resets too. Target/dimension/suffix were
+    // never distorted and are honoured regardless.
+    if (saved.v >= 2 && saved.qualityTarget >= 60 && saved.qualityTarget <= 99) {
       state.settings.qualityTarget = saved.qualityTarget;
     }
     if (Number.isFinite(saved.maxDimension)) state.settings.maxDimension = saved.maxDimension;
     state.suffix = !!saved.suffix;
   } catch {}
   $("target").value = state.settings.target;
-  $("quality").value = Math.round(state.settings.qualityTarget * 100);
+  // qualityTarget is ALREADY on the slider's 0-100 scale. The old SSIM floor
+  // was a fraction and was scaled here; doing that to 90 pinned the slider to
+  // its max and silently ran every search at floor 99. See the e2e default
+  // assert - this line is why it exists.
+  $("quality").value = Math.round(state.settings.qualityTarget);
   $("quality-out").textContent = $("quality").value;
   $("maxdim").value = state.settings.maxDimension;
   $("suffix-toggle").checked = state.suffix;
@@ -112,7 +120,7 @@ function loadSettings() {
 function saveSettings() {
   try {
     localStorage.setItem("imgc-settings",
-      JSON.stringify({ ...state.settings, suffix: state.suffix }));
+      JSON.stringify({ v: 2, ...state.settings, suffix: state.suffix }));
   } catch {}
 }
 
