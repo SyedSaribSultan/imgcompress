@@ -30,8 +30,13 @@
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+<!-- The two faces above the fold, fetched in parallel with the CSS so they are
+     decoded by first paint. Self-hosted: no third-party connection, ever. -->
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
 <!-- HeyOz design tokens first: app.css consumes them and hand-types nothing. -->
 <link rel="stylesheet" href="/heyoz-tokens.css">
+<link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/app.css">
 
 <script type="application/ld+json">

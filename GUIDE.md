@@ -271,14 +271,41 @@ upstream, rebuild, and re-copy.
   override was the alternative and the system forbids it, because the two modes
   then drift.
 
-Webfonts are **deliberately not loaded.** The token values name
-`'Bricolage Grotesque'` and `'Geist'` first, and the upstream showcase pulls
-them from Google Fonts — which would be a third-party request, breaking both
-the CSP (`default-src 'none'`) and the promise that nothing leaves the machine.
-The stacks fall back to system faces. Self-hosting the `woff2` files under
-`web/` would restore the intended typography and stay first-party; that is the
-one open decision.
+### Typography
 
-`scratchpad/verify_tokens.mjs` gates all of this: it fails on a `var(--oz-*)`
-the token layer does not define, on any colour literal in `app.css`, and on a
-leftover reference to the pre-migration palette.
+The faces the tokens name are **self-hosted**, in `web/fonts/` and declared by
+`web/fonts.css`: Bricolage Grotesque (display, heading), Geist (body, label),
+Geist Mono. Upstream fetches these from Google Fonts by `<link>`; this app
+cannot, because a third-party request would break both the CSP
+(`default-src 'none'`) and the promise that nothing leaves the device. Six
+variable `woff2` faces, latin and latin-ext, 191 KB total, each keeping the
+exact `unicode-range` Google ships so an out-of-subset glyph falls through the
+token stack instead of rendering tofu. The two above-the-fold faces are
+preloaded.
+
+**Nothing renders above semibold (600), anywhere.** Three things enforce it,
+because there are three ways to break it:
+
+* Call sites use `--oz-weight-semibold`; the two heavier steps
+  (`--oz-default-weight-display` at 800, `--oz-weight-bold` at 700) are simply
+  never referenced. The tokens are *not* redefined — a token that no longer
+  means what it says is worse than a call site that picked a different one.
+* The self-hosted faces are cut to `wght 400..600`, so there is no heavier
+  master to render even if something asked.
+* `b, strong, th, h1–h6, optgroup` are reset to 600, because the user agent
+  renders those at `bold` and a stylesheet that never writes 700 otherwise
+  still gets 700. This is the one that actually bit — it is invisible to source
+  grepping and was caught only by measuring computed styles in the browser.
+
+### Gates
+
+Both live in the session scratchpad and are worth keeping with the repo:
+
+* `verify_tokens.mjs` — fails on a `var(--oz-*)` the token layer does not
+  define, any colour literal in `app.css`, a leftover pre-migration variable, a
+  weight above 600 reaching the app layer, and a declared face missing from
+  disk.
+* `verify_fonts.mjs` — loads the real page in Chrome and asserts the six faces
+  register and parse, that Bricolage and Geist are what actually paint, that
+  **no rendered element** computes above 600 (checked twice: empty state, then
+  with the app populated), and that every request stays on this origin.

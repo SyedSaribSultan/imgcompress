@@ -24,6 +24,17 @@
 
    The interface stays achromatic: brand orange is spent on the primary action
    and the badge on the winning encode, and nowhere else.
+
+   **Weight ceiling: 600.** Nothing in this app renders above semibold, in any
+   instance. Two of the system's steps carry heavier defaults —
+   `--oz-default-weight-display` is 800 and `--oz-weight-bold` is 700 — and
+   neither is referenced here; the display heading takes
+   `--oz-weight-semibold` explicitly instead. Those tokens are not redefined,
+   because a token that no longer means what it says is worse than a call site
+   that chose a different one. The self-hosted faces are cut to `wght 400..600`
+   for the same reason, so a heavier weight has no master to render even if one
+   were asked for, and `scratchpad/verify_tokens.mjs` fails the build on any
+   weight above 600 reaching the app layer.
    --------------------------------------------------------------------------- */
 
 /* heyoz-tokens.css is linked ahead of this file in the document head rather
@@ -55,6 +66,10 @@ body {
 }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; }
+/* The user agent renders b, strong, th and h1-h6 at `bold` (700). This app
+   caps at semibold, so the default is replaced rather than left to inherit -
+   a stylesheet that never writes 700 still gets 700 without this. */
+b, strong, th, h1, h2, h3, h4, h5, h6, optgroup { font-weight: var(--oz-weight-semibold); }
 a { color: var(--oz-color-content-primary); text-decoration-color: var(--oz-color-content-tertiary); text-underline-offset: 3px; }
 a:hover { text-decoration-color: var(--oz-color-border-brand); }
 
@@ -264,7 +279,9 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   font-size: var(--oz-text-display-md);
   line-height: var(--oz-leading-display-md);
   letter-spacing: var(--oz-tracking-display-md);
-  font-weight: var(--oz-default-weight-display);
+  /* Semibold, not the display step's own 800: this app caps at 600 everywhere.
+     See the weight ceiling note at the top of this file. */
+  font-weight: var(--oz-weight-semibold);
   margin: 0;
 }
 .empty p {
@@ -617,7 +634,7 @@ kbd {
 }
 .cand .badge {
   font-family: var(--oz-font-label);
-  font-size: var(--oz-text-label-xs); font-weight: var(--oz-weight-bold);
+  font-size: var(--oz-text-label-xs); font-weight: var(--oz-weight-semibold);
   letter-spacing: var(--oz-tracking-label-xs); text-transform: uppercase;
   color: var(--oz-color-content-brand);
 }
@@ -763,7 +780,7 @@ dialog#keys td:first-child { color: var(--oz-color-content-secondary); white-spa
   display: inline-grid; place-content: center;
   width: 26px; height: 26px; border-radius: var(--oz-radius-full);
   background: var(--oz-color-fill-brand-secondary); color: var(--oz-color-content-brand);
-  font-size: var(--oz-text-label-sm); font-weight: var(--oz-weight-bold);
+  font-size: var(--oz-text-label-sm); font-weight: var(--oz-weight-semibold);
 }
 .step h3 { margin: var(--oz-space-4) 0 var(--oz-space-2); font-size: var(--oz-text-body-md); }
 .step p { font-size: var(--oz-text-body-sm); margin: 0; }
@@ -797,7 +814,7 @@ td.win::before {
 }
 .checks li::before {
   content: "✓"; position: absolute; left: 2px; top: 0;
-  color: var(--oz-color-content-success); font-weight: var(--oz-weight-bold);
+  color: var(--oz-color-content-success); font-weight: var(--oz-weight-semibold);
 }
 
 .code {
