@@ -1,0 +1,356 @@
+[
+ {
+  "name": "camera-12mp-1.jpg",
+  "fmt": "jpeg",
+  "level": 94,
+  "score": 90.2183,
+  "lossless": false,
+  "passthrough": false,
+  "originalBytes": 1992520,
+  "newBytes": 348490,
+  "candidates": [
+   "jpeg:348490",
+   "png8:1441006",
+   "png:5206633"
+  ]
+ },
+ {
+  "name": "camera-12mp-2.jpg",
+  "fmt": "jpeg",
+  "level": 94,
+  "score": 90.2183,
+  "lossless": false,
+  "passthrough": false,
+  "originalBytes": 1992520,
+  "newBytes": 348490,
+  "candidates": [
+   "jpeg:348490",
+   "png8:1441006",
+   "png:5206633"
+  ]
+ },
+ {
+  "name": "camera-12mp-3.jpg",
+  "fmt": "jpeg",
+  "level": 94,
+  "score": 90.2183,
+  "lossless": false,
+  "passthrough": false,
+  "originalBytes": 1992520,
+  "newBytes": 348490,
+  "candidates": [
+   "jpeg:348490",
+   "png8:1441006",
+   "png:5206633"
+  ]
+ },
+ {
+  "name": "camera-12mp-4.jpg",
+  "fmt": "jpeg",
+  "level": 94,
+  "score": 90.2183,
+  "lossless": false,
+  "passthrough": false,
+  "originalBytes": 1992520,
+  "newBytes": 348490,
+  "candidates": [
+   "jpeg:348490",
+   "png8:1441006",
+   "png:5206633"
+  ]
+ },
+ {
+  "name": "camera-12mp-5.jpg",
+  "fmt": "jpeg",
+  "level": 94,
+  "score": 90.2183,
+  "lossless": false,
+  "passthrough": false,
+  "originalBytes": 1992520,
+  "newBytes": 348490,
+  "candidates": [
+   "jpeg:348490",
+   "png8:1441006",
+   "png:5206633"
+  ]
+ },
+ {
+  "name": "camera-12mp-6.jpg",
+  "fmt": "jpeg",
+  "level": 94,
+  "score": 90.2183,
+  "lossless": false,
+  "passthrough": false,
+  "originalBytes": 1992520,
+  "newBytes": 348490,
+  "candidates": [
+   "jpeg:348490",
+   "png8:1441006",
+   "png:5206633"
+  ]
+ },
+ {
+  "name": "logo-alpha-1.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 12944,
+  "newBytes": 4350,
+  "candidates": [
+   "png8:4350",
+   "png:41480"
+  ]
+ },
+ {
+  "name": "logo-alpha-2.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 12944,
+  "newBytes": 4350,
+  "candidates": [
+   "png8:4350",
+   "png:41480"
+  ]
+ },
+ {
+  "name": "logo-alpha-3.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 12944,
+  "newBytes": 4350,
+  "candidates": [
+   "png8:4350",
+   "png:41480"
+  ]
+ },
+ {
+  "name": "logo-alpha-4.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 12944,
+  "newBytes": 4350,
+  "candidates": [
+   "png8:4350",
+   "png:41480"
+  ]
+ },
+ {
+  "name": "logo-alpha-5.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 12944,
+  "newBytes": 4350,
+  "candidates": [
+   "png8:4350",
+   "png:41480"
+  ]
+ },
+ {
+  "name": "logo-alpha-6.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 12944,
+  "newBytes": 4350,
+  "candidates": [
+   "png8:4350",
+   "png:41480"
+  ]
+ },
+ {
+  "name": "product-1.png",
+  "fmt": "png",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 704369,
+  "newBytes": 521376,
+  "candidates": [
+   "jpeg:671816",
+   "png8:571371",
+   "png:521376"
+  ]
+ },
+ {
+  "name": "product-2.png",
+  "fmt": "png",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 704369,
+  "newBytes": 521376,
+  "candidates": [
+   "jpeg:671816",
+   "png8:571371",
+   "png:521376"
+  ]
+ },
+ {
+  "name": "product-3.png",
+  "fmt": "png",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 704369,
+  "newBytes": 521376,
+  "candidates": [
+   "jpeg:671816",
+   "png8:571371",
+   "png:521376"
+  ]
+ },
+ {
+  "name": "product-4.png",
+  "fmt": "png",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 704369,
+  "newBytes": 521376,
+  "candidates": [
+   "jpeg:671816",
+   "png8:571371",
+   "png:521376"
+  ]
+ },
+ {
+  "name": "product-5.png",
+  "fmt": "png",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 704369,
+  "newBytes": 521376,
+  "candidates": [
+   "jpeg:671816",
+   "png8:571371",
+   "png:521376"
+  ]
+ },
+ {
+  "name": "product-6.png",
+  "fmt": "png",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 704369,
+  "newBytes": 521376,
+  "candidates": [
+   "jpeg:671816",
+   "png8:571371",
+   "png:521376"
+  ]
+ },
+ {
+  "name": "screenshot-retina-1.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 16885,
+  "newBytes": 4253,
+  "candidates": [
+   "jpeg:86949",
+   "png8:4253",
+   "png:86667"
+  ]
+ },
+ {
+  "name": "screenshot-retina-2.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 16885,
+  "newBytes": 4253,
+  "candidates": [
+   "jpeg:86949",
+   "png8:4253",
+   "png:86667"
+  ]
+ },
+ {
+  "name": "screenshot-retina-3.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 16885,
+  "newBytes": 4253,
+  "candidates": [
+   "jpeg:86949",
+   "png8:4253",
+   "png:86667"
+  ]
+ },
+ {
+  "name": "screenshot-retina-4.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 16885,
+  "newBytes": 4253,
+  "candidates": [
+   "jpeg:86949",
+   "png8:4253",
+   "png:86667"
+  ]
+ },
+ {
+  "name": "screenshot-retina-5.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 16885,
+  "newBytes": 4253,
+  "candidates": [
+   "jpeg:86949",
+   "png8:4253",
+   "png:86667"
+  ]
+ },
+ {
+  "name": "screenshot-retina-6.png",
+  "fmt": "png8",
+  "level": null,
+  "score": null,
+  "lossless": true,
+  "passthrough": false,
+  "originalBytes": 16885,
+  "newBytes": 4253,
+  "candidates": [
+   "jpeg:86949",
+   "png8:4253",
+   "png:86667"
+  ]
+ }
+]

@@ -855,6 +855,17 @@ function makeEncoders(job) {
       name: "jpeg", ext: ".jpg", mime: "image/jpeg",
       supportsAlpha: false, lossless: false, levels: JPEG_QUALITY,
       encode: (level) => jpegEncode(level),
+      /* Which quantisation table wins is content-dependent: on the benchmark's
+         real 5MP photograph the default (3, ImageMagick) ships 371 KB where
+         Annex K needs ~430 KB, and on the hard synthetic it is the other way
+         round - Annex K passes at 461 KB where the default needs 597 KB. So
+         neither is guessed at: after the search converges, the alternate table
+         competes at the final rung and the smallest verified file ships. */
+      alternates: (level) => !CODECS.mozjpeg ? [] : [{
+        encode: async () => new Uint8Array(await CODECS.mozjpeg.encode(
+          { data: rgba, width, height },
+          { quality: level, auto_subsample: false, chroma_subsample: 1, quant_table: 0 })),
+      }],
     },
     png8: {
       name: "png8", ext: ".png", mime: "image/png",
@@ -1016,6 +1027,26 @@ async function searchOne(job, encoder, target, report) {
     chosen++;
     data = await encodeAt(chosen, false);
     ({ score } = await finalScore(data));
+  }
+
+  /* Alternate encodes compete at the finish line: the chosen rung and the one
+     below it, verified with the same honest scorer, smallest passing wins.
+     Bounded work - at most two extra encodes - and an alternate that is not
+     smaller is discarded without even paying for its verification. Only a
+     passing result is worth improving; a best-effort failure is left alone. */
+  if (encoder.alternates && score >= target) {
+    for (const idx of [chosen, chosen - 1]) {
+      if (idx < 0) continue;
+      for (const alt of encoder.alternates(levels[idx])) {
+        report(++probes);
+        if (PERF) PERF.encodes++;
+        const altData = await timedAsync("encode",
+          () => timedAsync(`enc:${encoder.name}`, alt.encode));
+        if (altData.length >= data.length) continue;   // only smaller can win
+        const { score: altScore } = await finalScore(altData);
+        if (altScore >= target) { data = altData; score = altScore; chosen = idx; }
+      }
+    }
   }
 
   // encodeAt/finalScore travel with the result so the winner can be escalated

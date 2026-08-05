@@ -232,7 +232,7 @@ port of `quality.py` + `core.py` + `encoders.py`).
 `web/ss2.js` is a JavaScript port of the Python `ssimulacra2` package — the
 implementation the desktop scores with. Anyone touching it must know:
 
-* **It is validated, not trusted.** `scratchpad/ss2_validate.mjs` scores a
+* **It is validated, not trusted.** `tests/web/ss2_validate.mjs` scores a
   60-pair corpus (four content types × jpeg/webp/avif/palette distortions ×
   quality levels, plus small-image cases) against Python-reference scores.
   Float64 planes matched to |Δ| = 0.0000; the shipped Float32 planes match to
@@ -267,9 +267,10 @@ What's honestly different from the desktop version now:
   ladders, mozjpeg / oxipng / libwebp (incl. lossless) / libaom via WASM.
 
 Deploys from `web/` as the Vercel project root (`vercel.json` holds the strict
-CSP and cache headers — no third-party requests of any kind). Tests live
-outside the repo in the session scratchpad: a Node suite for the pure functions
-and a puppeteer E2E that runs the fixture set against production.
+CSP and cache headers — no third-party requests of any kind). The browser test
+harness lives in `tests/web/`: the promise-suite E2E, the perf bench with its
+snapshot gates, the fixture generators, and a static server that replays
+production's headers. `tests/web/README.md` has the run instructions.
 
 ### Design system
 
@@ -373,8 +374,17 @@ if anyone touches this code:
   encode of the image. Note the scores are *not* perfectly monotonic (tiled
   sampling), so a different probe order can land on a different rung; both old
   and new only guarantee that the chosen rung passes the full-frame check.
+* **JPEG quantisation tables compete at the finish line.** Which mozjpeg
+  table wins is content-dependent — the benchmark's real photograph ships
+  smaller with the default ImageMagick table, its hard synthetic ships 23%
+  smaller with Annex K — so after the search converges, the alternate table
+  is encoded at the chosen rung and the rung below, verified with the same
+  scorer, and the smallest passing file ships (`encoder.alternates` in
+  `worker.js`). *Invariants:* at most two extra encodes; an alternate that
+  is not smaller is discarded before verification; a best-effort failure is
+  never "improved", only a passing result.
 
-`scratchpad/bench.mjs` measures all of it and doubles as the regression gate:
+`tests/web/bench.mjs` measures all of it and doubles as the regression gate:
 it writes a snapshot of every fixture's winner, level, bytes and score, and
 fails on any change to them. It also reports **deterministic operation counts**
 (encodes, oxipng passes, SSIM passes), which is what an algorithmic claim should
@@ -383,7 +393,7 @@ identical runs, so timings are reported as min-of-N.
 
 ### Gates
 
-Both live in the session scratchpad and are worth keeping with the repo:
+Both live in `tests/web/`:
 
 * `verify_tokens.mjs` — fails on a `var(--oz-*)` the token layer does not
   define, any colour literal in `app.css`, a leftover pre-migration variable, a

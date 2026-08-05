@@ -1,0 +1,9 @@
+fixtures/
+bench/
+batch/
+downloads/
+ss2_vectors/
+shot-*.png
+counts-*.json
+bench-*.json
+node_modules/

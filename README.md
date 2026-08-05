@@ -25,9 +25,16 @@ Or skip the install: **[imgcompress-app.vercel.app](https://imgcompress-app.verc
 runs the same bake-off entirely in your browser — including SSIMULACRA 2
 itself, ported to JavaScript and validated against the reference
 implementation. Nothing is uploaded; images never leave your device.
+
 [tests/BENCHMARK.md](tests/BENCHMARK.md) holds a reproducible head-to-head
-against single-format pipelines and fixed-quality defaults at a matched
-perceptual floor.
+against single-format pipelines and fixed-quality defaults, every strategy
+searched to the same SSIMULACRA 2 ≥ 90 floor. On that corpus imgcompress is
+the smallest or tied-smallest passing file on every image; on the 12 MP
+photograph the browser version ships 362 KB where searched single-format
+JPEG needs 517–544 KB — and every fixed-quality default fails the floor
+outright. The one caveat is spelled out there too: on one hard palette image
+the desktop's optional libimagequant quantizer beats the browser quantizer
+by ~2.5 KB.
 
 ---
 

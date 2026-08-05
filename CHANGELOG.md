@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.3.2] - 2026-08-05
+
+### Changed
+- **Web: JPEG quantisation tables now compete instead of being guessed.**
+  Which mozjpeg table wins is content-dependent: on the benchmark's real
+  photograph the default (ImageMagick) ships 371 KB where Annex K needs
+  ~430 KB, and on the hard synthetic it is the other way round — Annex K
+  passes at 461 KB where the default needs 597 KB. After the quality search
+  converges, the alternate table is encoded at the chosen rung and the one
+  below, verified with the same scorer, and the smallest passing file
+  ships. At most two extra encodes, and an alternate that is not smaller
+  is discarded without paying for verification.
+
 ## [2.3.1] - 2026-08-05
 
 ### Fixed

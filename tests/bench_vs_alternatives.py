@@ -336,7 +336,9 @@ def main() -> int:
             rel = "—"
             if winner:
                 w = len(winner[0].data)
-                rel = "best" if r is winner[0] else f"+{100 * (len(r.data) - w) / w:.0f}%"
+                # {:+} keeps the sign honest: below-floor rows can be smaller
+                # than the best PASSING file, and those must read as negative.
+                rel = "best" if r is winner[0] else f"{100 * (len(r.data) - w) / w:+.0f}%"
             mark = "yes" if s2 >= FLOOR else "**no**"
             star = " **←**" if winner and r is winner[0] else ""
             lines.append(f"| {r.strategy}{star} | {r.fmt} | {r.setting} | {human(len(r.data))} "

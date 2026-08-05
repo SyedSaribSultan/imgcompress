@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imgcompress"
-version = "2.3.1"
+version = "2.3.2"
 description = "Quality-targeted image compression. Measures perceptual quality instead of guessing it, and picks the best format per image."
 readme = "README.md"
 requires-python = ">=3.9"
