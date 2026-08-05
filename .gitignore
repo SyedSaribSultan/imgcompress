@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# working folders - keep the folders, ignore what lands in them
+input/*
+output/*
+!input/.gitkeep
+!output/.gitkeep
+
+# generated benchmark corpus
+tests/fixtures/

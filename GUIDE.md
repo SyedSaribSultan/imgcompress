@@ -1,0 +1,217 @@
+# Guide to this repository
+
+About 1,600 lines total, four source files that matter. Here's the tour.
+
+## The mental model
+
+Everything follows one rule: **never assume quality, measure it.** The tool
+encodes an image several different ways, decodes each result back, scores it
+against the original, and keeps the smallest file that still clears your quality
+floor. Every design decision falls out of that.
+
+The second rule follows from the first: **the best format is content-dependent.**
+A photograph wants JPEG, a screenshot wants palette PNG, a smooth gradient wants
+lossless PNG. So the tool doesn't pick — it tries them all and keeps the winner.
+
+## The four files that matter
+
+### `imgcompress/quality.py` — "how good does this look?"
+
+Two metrics behind one interface:
+
+* **SSIMULACRA 2** (default). XYB colour space, multi-scale, sees chroma.
+  Correlates with human judgement at r≈0.88. Scale runs to 100; 90 is
+  "visually lossless".
+* **SSIM** (fallback). numpy-only, roughly 5× faster, luminance only — so it is
+  structurally blind to chroma damage. Aggregated at the 5th percentile rather
+  than the mean, so a large flat background can't hide a damaged subject.
+
+Two things here are subtle and worth not breaking:
+
+* `score_sampled()` scores a grid of **native-resolution tiles** rather than the
+  whole frame during the search. Never a downscaled copy — compression artefacts
+  live at full resolution, so shrinking the image hides exactly what you're
+  looking for. Measured drift versus the full-frame score is under 0.5 points
+  anywhere near the useful thresholds.
+* `flatten()` composites transparent images over a backdrop before scoring,
+  twice — dark and light — and the worse score wins. Fully transparent pixels
+  carry arbitrary RGB, so comparing them raw produces nonsense. The upstream
+  `ssimulacra2` package has a dead alpha branch and gets this wrong, which is
+  why it's handled here instead of delegated.
+
+### `imgcompress/encoders.py` — "how do I write the bytes?"
+
+Five candidates — `jpeg`, `png8`, `png`, `webp`, `webp-lossless` — each exposing
+an ascending ladder of quality levels, so the search can bisect over any of them
+generically without knowing what the levels mean.
+
+`TARGETS` maps `figma` / `web` / `lossless` to which candidates are allowed.
+**This is the single place the Figma format policy lives.**
+
+`JpegEncoder` is hardcoded to 4:4:4 chroma. That's deliberate: on saturated
+content, matching 4:4:4's quality-76 score with 4:2:0 required quality 97 and
+produced a file 3.8× larger. Luma-only SSIM cannot see this, which is how the
+mistake survives in most hand-rolled compressors.
+
+Three optional pip packages do real work when installed, and all three ship
+Windows wheels:
+
+| Package | What it does | Worth |
+| --- | --- | --- |
+| `imagequant` | libimagequant, the engine inside pngquant | Large. Pillow's own quantizers hit SSIMULACRA 2 87 at 256 colours where this hits 90 at 64 |
+| `zopflipy` | zopflipng-grade deflate | ~10% off any PNG, lossless |
+| `mozjpeg-lossless-optimization` | mozjpeg's lossless pass | ~1%, free, never changes a pixel |
+
+### `imgcompress/core.py` — the engine
+
+The pipeline per image:
+
+```
+_normalise()      EXIF rotate -> resize -> strip metadata
+_search_one()     once per allowed candidate format
+  -> pick the smallest result that cleared the floor
+guardrails        never bigger than source; animated passthrough; error capture
+write
+```
+
+`_search_one()` is the heart of it:
+
+1. Probe the top quality level first. If even maximum quality misses the target,
+   there's nothing to search for — take it and move on.
+2. Bisect over the level ladder, scoring on sampled tiles with a fast encoder
+   setting. Cheap.
+3. Re-encode the winning level at full encoder effort and verify at full
+   resolution. If the honest check misses, step up until it clears — the tool
+   never ships something that fails the promise it just printed.
+
+`compress_tree()` uses **processes, not threads**. The metric is numpy/scipy
+bound, and this is the difference between using one core and using all of them.
+
+### `imgcompress/cli.py` — arguments and the report
+
+Also home to `PRESETS` and to `--check`, which reports which optional engines are
+actually installed. Worth running first on any new machine.
+
+## Where to make changes
+
+| You want to… | Go to |
+| --- | --- |
+| Change what formats Figma gets | `encoders.py` → `TARGETS` |
+| Add a format (AVIF, JPEG XL) | Subclass `Encoder`, add to `ALL` and to a target |
+| Change quality or size defaults | `cli.py` → `PRESETS` |
+| Change how quality is judged | `quality.py` → `Metric` |
+| Change the search strategy | `core.py` → `_search_one` |
+| Change resize / metadata behaviour | `core.py` → `_normalise` |
+
+## Running it
+
+```bash
+python compress.py --check                # which engines are live
+python compress.py input/ -o output/ -v   # -v shows every candidate, not just the winner
+python -m unittest discover -s tests      # 20 tests, ~20 seconds
+
+python tests/make_fixtures.py             # build the benchmark corpus
+python tests/bench_formats.py             # reproduce the format table (~4 min)
+python tests/bench_versions.py            # reproduce the v1-vs-v2 claim (~6 min)
+```
+
+`-v` is the flag to reach for when a result surprises you. It prints every
+candidate's size, so you can see *why* a format won rather than guessing.
+
+## What the tests actually cover
+
+Beyond the obvious (output is smaller, folder structure mirrors, corrupt files
+don't crash the run), the suite pins down the decisions that were expensive to
+learn:
+
+* the percentile aggregation really is stricter than the mean
+* transparent pixels are composited, not dropped
+* JPEG output is 4:4:4, asserted by reading the sampling factors back out
+* the `figma` target never offers WebP
+* images with alpha are never routed to JPEG
+* the `figma` target caps at 4096px even when you ask for unlimited
+* the bake-off winner is the smallest passing candidate, not just any candidate
+
+If you change behaviour and one of these fails, read the README section it maps
+to before "fixing" the test.
+
+## Two things to know before extending it
+
+**The Figma format policy rests on one unverified claim** — that Figma
+transcodes WebP to PNG on import. It comes from a Figma forum expert, not a
+changelog. The downside if it's true is severe and the upside is a few percent,
+so JPEG/PNG is the right default either way. But if you ever add a format or
+loosen `TARGETS`, re-check that first: it's the hinge the whole policy turns on.
+To settle it: import a WebP into Figma and have any plugin call
+`getBytesAsync()` on it. Bytes starting `RIFF` mean WebP survived.
+
+**Keep dependencies pip-only.** This runs on Windows with plain Python. Every
+engine was chosen because it has a Windows wheel. The moment something shells out
+to `cwebp`, `pngquant` or `avifenc`, `run.bat` stops working.
+
+---
+
+# The desktop app
+
+Added in 2.1. Three files, plus the packaging around them.
+
+### `imgcompress/server.py` — state and the local API
+
+Standard library only: `http.server`, threads, a `queue`. A tool people install
+to compress a folder should not drag a web framework along with it.
+
+* **`Session`** is the whole application state — the item list, the settings, the
+  compressed bytes, the watched folder. One per running app, guarded by an
+  `RLock`, with a `rev` counter the UI polls against.
+* Compressed bytes live in `Session.results` and **never touch disk** until
+  `save()` is called. That's what makes "review the batch, then decide" possible.
+* Worker threads pull from a `queue.Queue`. Threads rather than processes because
+  the state is shared and the metric is numpy/scipy-bound, which releases the GIL.
+* Bound to `127.0.0.1` with a per-run token, checked on every API route. The
+  token is injected into the HTML at serve time, replacing `__TOKEN__`.
+* `pick_folder()` opens the OS folder chooser through stdlib `tkinter`, and
+  returns `""` when that isn't available so the UI can fall back to a prompt.
+
+### `imgcompress/gui.py` — the launcher
+
+Opens a real window via `pywebview` when it's installed, and the browser
+otherwise. The fallback is the same full application, which is why pywebview is a
+soft dependency rather than a hard one.
+
+### `imgcompress/webui/app.html` — the interface
+
+One self-contained file: no build step, no CDN, no framework. Polls
+`/api/state` (400ms while working, 1200ms idle) and re-renders on `rev` change.
+
+Design notes that are decisions rather than accidents:
+
+* **The UI is achromatic except for one brass accent**, spent on exactly two
+  things: the primary action and the badge on the winning encoding. The interface
+  is chrome around photographs; if it has opinions about colour, it competes with
+  the images.
+* **The viewport is sized in JavaScript** to the image's fitted box, so the split
+  divider lines up with the visible image edges rather than with a letterboxed
+  container. `applyZoom()` handles both fit and fixed zoom levels.
+* **Desktop-first, with a 720px floor.** A three-pane inspector doesn't become
+  useful at phone width by stacking; below the floor the app scrolls rather than
+  pretending.
+* `[hidden] { display: none !important; }` is load-bearing — several elements set
+  an explicit `display`, which otherwise beats the user-agent `[hidden]` rule.
+
+### Where to change things
+
+| You want to… | Go to |
+| --- | --- |
+| Add an API route | `server.py` → `Handler.do_GET` / `do_POST` |
+| Change what the UI shows per image | `server.py` → `Item` + `app.html` → `renderInspector` |
+| Change polling or worker counts | `server.py` → `Session.__init__`, `app.html` → `poll` |
+| Restyle | `app.html` → the `:root` / `[data-theme="light"]` variable blocks |
+
+### Packaging
+
+`pyproject.toml` defines two entry points — `imgcompress` (CLI) and
+`imgcompress-gui` — with optional extras: `full` (the good engines), `app`
+(pywebview), `dev` (ruff). CI runs the tests on Linux, macOS and Windows across
+Python 3.9–3.13, plus a **core-only job** that proves the tool still works with
+every optional engine absent. Keep that job passing: silently requiring an extra
+is how a "no dependencies to compile" promise quietly breaks.

@@ -1,0 +1,17 @@
+# core
+pillow>=10.0
+numpy>=1.24
+
+# perceptual metric - SSIMULACRA 2 correlates with human judgement far better
+# than SSIM, and unlike SSIM it can see chroma damage. Pure Python.
+ssimulacra2>=0.3
+scipy>=1.10
+
+# encoders. All ship Windows wheels; without them the tool still runs but
+# falls back to noticeably weaker built-ins.
+imagequant>=1.1                      # libimagequant - the engine inside pngquant
+zopflipy>=1.9                        # zopflipng-grade lossless PNG recompression
+mozjpeg-lossless-optimization>=1.3   # mozjpeg's lossless JPEG pass
+
+# optional: a real app window for the GUI instead of a browser tab
+pywebview>=4.4 ; sys_platform == "win32" or sys_platform == "darwin"
