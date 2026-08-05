@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
-
 from ssimulacra2 import compute_ssimulacra2
 
 OUT = Path(__file__).parent / "ss2_vectors"
