@@ -52,7 +52,7 @@
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript and a modern browser",
-      "softwareVersion": "2.3.2",
+      "softwareVersion": "2.4.0",
       "license": "https://github.com/SyedSaribSultan/imgcompress/blob/main/LICENSE",
       "sameAs": ["https://github.com/SyedSaribSultan/imgcompress"],
       "author": { "@type": "Organization", "name": "HeyOz" },
@@ -179,12 +179,45 @@
     <div class="app" id="app-full" hidden>
       <!-- toolbar: the simple promise up front, everything else behind Advanced -->
       <div class="bar">
+        <!-- Two decisions, both the person's to make, both defaulting to
+             "let the app work it out". The groups say which is which, and
+             the single-format group says out loud what it buys: speed.
+             Values keep the original target names so a saved setting, and
+             every test that drives this control, still mean what they did. -->
         <div class="field">
-          <label for="target">Optimise for</label>
-          <select id="target" title="Which output formats are allowed">
-            <option value="figma">Figma &amp; design tools</option>
-            <option value="web">The web (adds WebP, AVIF)</option>
-            <option value="lossless">Lossless — pixel-perfect</option>
+          <label for="target">Format</label>
+          <select id="target" title="Which format to produce">
+            <optgroup label="Let the app choose — it tries these and keeps the smallest that passes">
+              <option value="figma">Best for design tools — JPEG or PNG</option>
+              <option value="web">Best for the web — adds WebP and AVIF</option>
+              <option value="lossless">Lossless only — pixel-perfect</option>
+            </optgroup>
+            <!-- Not labelled "faster". Measured on the benchmark corpus,
+                 restricting to JPEG saves only 1.1-1.4x against the design-tool
+                 set, because JPEG's own quality search is nearly the whole
+                 cost; and the choices that ARE ~2x quicker get there partly by
+                 failing to reach the floor. Promising speed here would be
+                 selling a number the engine does not owe. -->
+            <optgroup label="Use one format — skips the comparison">
+              <option value="one-jpeg">JPEG only</option>
+              <option value="one-webp">WebP only</option>
+              <option value="one-png">PNG only</option>
+              <option value="one-avif">AVIF only</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field">
+          <label for="quality-preset">Quality</label>
+          <select id="quality-preset" title="How good the result has to look">
+            <option value="95">Maximum — for masters you'll re-edit</option>
+            <option value="90">High — you won't see the difference</option>
+            <option value="85">Balanced — imperceptible unless you compare</option>
+            <option value="80">Smaller — imperceptible side by side</option>
+            <option value="70">Smallest — fine for thumbnails</option>
+            <!-- Only ever selected by the Advanced slider landing off-preset;
+                 offering "custom" as a choice would ask for a number the
+                 control cannot take. -->
+            <option value="custom" hidden>Custom</option>
           </select>
         </div>
         <button class="btn ghost" id="adv-btn" aria-expanded="false" aria-controls="advanced">
@@ -195,6 +228,8 @@
       </div>
 
       <div class="advanced" id="advanced" hidden>
+        <!-- The number behind the words. Same setting as the Quality control
+             above, on the scale the measurement actually uses. -->
         <div class="field">
           <label for="quality">Quality floor</label>
           <input type="range" id="quality" min="60" max="99" step="1" value="90"
@@ -283,6 +318,11 @@
                 <!-- Shown instead when there is no divider to hang them on. -->
                 <span class="tag corner dark" id="stage-badge" hidden></span>
               </div>
+              <!-- Some files this browser cannot draw at all: a damaged export,
+                   or a format it has no decoder for. Saying so is the honest
+                   substitute for a preview - the alternative was the broken
+                   image glyph, which reads as "this app is broken". -->
+              <p class="stage-none" id="stage-none" hidden></p>
               <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test · <kbd>D</kbd> shows what changed</div>
             </div>
 
@@ -315,6 +355,7 @@
                     <div class="stat"><div class="k">SSIMULACRA 2</div><div class="v" id="s-score">—</div></div>
                     <div class="stat"><div class="k">Quality floor</div><div class="v" id="s-floor">—</div></div>
                     <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
+                    <div class="stat"><div class="k">Time taken</div><div class="v" id="s-time">—</div></div>
                   </div>
                   <p class="metric-note">Every candidate was decoded back and scored
                      against your original with SSIMULACRA&nbsp;2 — the metric the
@@ -518,7 +559,9 @@ imgcompress photos/        # or the command line</code></pre>
 <footer class="site-foot">
   <span>MIT licence</span>
   <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
-  <span class="num">v2.3.2</span>
+  <!-- The one place the version is written. Exported reports read it from
+       here, so a report can never claim a version the page is not. -->
+  <span class="num" id="app-version">v2.4.0</span>
   <span>by HeyOz</span>
   <!-- Lifetime totals live here, labelled, so they cannot be mistaken for the
        current batch's numbers in the results bar. -->
@@ -556,6 +599,20 @@ imgcompress photos/        # or the command line</code></pre>
     <tr><td>scroll / double-click</td><td>zoom the comparison</td></tr>
   </table>
   <button class="btn" id="keys-close">Close</button>
+</dialog>
+
+<!-- JPEG has no alpha channel. Choosing "JPEG only" with transparent artwork
+     in the queue is therefore a question, not an instruction, and the app asks
+     it once rather than quietly producing black boxes where the transparency
+     was - or quietly ignoring what was asked for. -->
+<dialog id="alpha-ask" aria-labelledby="alpha-ask-title">
+  <h3 class="micro" id="alpha-ask-title">JPEG can’t store transparency</h3>
+  <p class="dlg-body" id="alpha-ask-body"></p>
+  <div class="dlg-actions">
+    <button class="btn" id="alpha-keep">Keep those as PNG</button>
+    <button class="btn ghost" id="alpha-flatten">Flatten onto white</button>
+    <button class="btn ghost" id="alpha-cancel">Cancel</button>
+  </div>
 </dialog>
 
 <input type="file" id="file-input" multiple accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,image/tiff,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff" hidden>

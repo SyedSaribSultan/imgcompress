@@ -161,6 +161,59 @@ try {
     }
   }
 
+  // ---- every image reports how long it took --------------------------------
+  {
+    const t = await page.evaluate(() => ({
+      elapsed: state.items.filter((i) => i.status === "done" || i.status === "saved")
+        .map((i) => i.elapsedMs),
+      phases: [...document.querySelectorAll("#queue-list .phase")].map((e) => e.textContent),
+      rows: reportRows(),
+    }));
+    ok(t.elapsed.length > 0 && t.elapsed.every((ms) => ms > 0),
+       `every finished image recorded a duration (${t.elapsed.length} images)`);
+    ok(t.phases.some((p) => /\d+(\.\d+)?\s?(ms|s)\b/.test(p)),
+       "the queue shows each image's time");
+    ok(t.rows.every((r) => typeof r.time_ms === "number" && r.time_ms > 0),
+       "the exported report carries time_ms per image");
+  }
+
+  /* ---- nothing ever paints the browser's broken-image glyph ---------------
+   * A file this browser cannot decode (a damaged export, or a format with no
+   * decoder) used to leave a torn-page icon and the alt text sitting on the
+   * stage, which reads as "this app is broken". An <img> with nothing to show
+   * must be out of the layout, and the stage must say what happened. */
+  const ghosts = () => {
+    const out = [];
+    for (const id of ["img-before", "img-after"]) {
+      const el = document.getElementById(id);
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      if (cs.display !== "none" && cs.visibility !== "hidden" &&
+          el.naturalWidth === 0 && r.width > 0 && r.height > 0) {
+        out.push(`${id} ${Math.round(r.width)}x${Math.round(r.height)}`);
+      }
+    }
+    return out;
+  };
+  {
+    await page.evaluate(() => selectItem(state.items.find((i) => i.name === "corrupt.png").id));
+    await new Promise((r) => setTimeout(r, 400));
+    const g = await page.evaluate(ghosts);
+    ok(g.length === 0, `undecodable file paints no broken-image box (${g.join(", ") || "clean"})`);
+    const msg = await page.evaluate(() => {
+      const el = document.getElementById("stage-none");
+      return { hidden: el.hidden, text: el.textContent.trim() };
+    });
+    ok(!msg.hidden && msg.text.length > 0, `the stage says why there is no preview ("${msg.text}")`);
+
+    await page.evaluate(() => selectItem(state.items.find((i) => i.name === "photo.png").id));
+    await new Promise((r) => setTimeout(r, 400));
+    const g2 = await page.evaluate(ghosts);
+    ok(g2.length === 0, `a normal image paints no broken-image box (${g2.join(", ") || "clean"})`);
+    ok(await page.evaluate(() => document.getElementById("stage-none").hidden),
+       "the placeholder is gone once there is a preview");
+  }
+
   // ---- inspector renders ---------------------------------------------------
   await page.evaluate(() => selectItem(state.items[0].id));
   await page.waitForFunction(() => document.getElementById("img-before").naturalWidth > 0);
@@ -195,6 +248,94 @@ try {
     return { fmt: it.fmt, n: it.newBytes, o: it.originalBytes };
   });
   ok(uiForced.n <= uiForced.o, "forced jpeg still never bigger");
+
+  /* ---- the two decisions the toolbar offers ------------------------------
+   * Quality is words on top of one number, and Format spans "let the app
+   * choose" to "use this one". Both must survive round-tripping, because the
+   * engine reads the DOM: a control that displays one thing while the engine
+   * runs another is the exact shape of the floor-99 bug. */
+  {
+    const roundTrip = await page.evaluate(() => {
+      const sel = document.getElementById("quality-preset");
+      const slider = document.getElementById("quality");
+      const out = {};
+      sel.value = "80";
+      sel.dispatchEvent(new Event("change"));
+      out.wordsSetTheNumber = slider.value;
+      slider.value = "87";
+      slider.dispatchEvent(new Event("input"));
+      out.offPreset = sel.value;
+      sel.value = "90";
+      sel.dispatchEvent(new Event("change"));
+      out.backTo90 = slider.value;
+      return out;
+    });
+    ok(roundTrip.wordsSetTheNumber === "80",
+       `a named quality sets the floor (${roundTrip.wordsSetTheNumber})`);
+    ok(roundTrip.offPreset === "custom",
+       `a floor between the names reads as Custom (${roundTrip.offPreset})`);
+    ok(roundTrip.backTo90 === "90", "and it goes back");
+
+    const one = await page.evaluate(() => {
+      const t = document.getElementById("target");
+      t.value = "one-webp";
+      t.dispatchEvent(new Event("change"));
+      return { has: !!t.querySelector('option[value="one-jpeg"]') };
+    });
+    await new Promise((r) => setTimeout(r, 600));
+    const restricted = await page.evaluate(() => state.settings.formats);
+    ok(one.has, "the Format control offers single formats");
+    ok(JSON.stringify(restricted) === '["webp"]',
+       `choosing one format restricts the engine to it (${JSON.stringify(restricted)})`);
+
+    /* JPEG cannot store transparency, and the fixture set contains a logo that
+     * has it. Choosing JPEG must therefore ask rather than silently produce
+     * black boxes or silently ignore the request. */
+    await page.evaluate(() => {
+      const t = document.getElementById("target");
+      t.value = "one-jpeg";
+      t.dispatchEvent(new Event("change"));
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    ok(await page.evaluate(() => document.getElementById("alpha-ask").open),
+       "choosing JPEG with transparent artwork queued asks first");
+    await page.click("#alpha-cancel");
+    await new Promise((r) => setTimeout(r, 400));
+    const afterCancel = await page.evaluate(() => document.getElementById("target").value);
+    ok(afterCancel === "one-webp",
+       `cancelling restores the setting actually in force (${afterCancel})`);
+
+    // Answer it this time, and check the logo is kept rather than mangled.
+    const rev = await page.evaluate(() => state.settingsRev);
+    await page.evaluate(() => {
+      const t = document.getElementById("target");
+      t.value = "one-jpeg";
+      t.dispatchEvent(new Event("change"));
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    await page.click("#alpha-keep");
+    await page.waitForFunction((r) => state.settingsRev > r &&
+      state.items.every((i) => ["done", "failed", "saved"].includes(i.status)),
+      { timeout: 900_000, polling: 300 }, rev);
+    const logo = await page.evaluate(() => {
+      const it = state.items.find((i) => i.name === "logo.png");
+      return { fmt: it.fmt, warnings: it.warnings || [] };
+    });
+    ok(logo.fmt !== "jpeg", `transparent artwork is not forced into JPEG (${logo.fmt})`);
+    ok(logo.warnings.some((w) => /transparen/i.test(w)),
+       `and the reason is stated (${JSON.stringify(logo.warnings)})`);
+
+    // Back to automatic for the rest of the suite.
+    const rev2 = await page.evaluate(() => state.settingsRev);
+    await page.evaluate(() => {
+      const t = document.getElementById("target");
+      t.value = "figma";
+      t.dispatchEvent(new Event("change"));
+    });
+    await page.waitForFunction((r) => state.settingsRev > r &&
+      state.items.every((i) => ["done", "failed", "saved"].includes(i.status)),
+      { timeout: 900_000, polling: 300 }, rev2);
+  }
 
   // ---- settings change requeues -------------------------------------------
   await page.evaluate(() => {

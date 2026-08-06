@@ -3,6 +3,58 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-08-06
+
+### Added
+- **Both decisions are now the person's to make, and both still default to
+  "let the app work it out".** The toolbar carries two controls:
+  - **Format** spans the range from delegation to instruction. *Let the app
+    choose* keeps the bake-off (design tools, web, or lossless-only sets);
+    *Use one format* runs JPEG, WebP, PNG or AVIF alone. The group labels say
+    which is which, so the trade-off is legible without knowing what a
+    bake-off is. A format this browser cannot encode is disabled with the
+    reason on the label rather than failing later. The single-format group is
+    deliberately **not** sold as "faster": measured on the benchmark corpus,
+    restricting to JPEG saves only 1.1–1.4× against the design-tool set,
+    because JPEG's own quality search is nearly the entire cost.
+  - **Quality** is now words — *Maximum, for masters you'll re-edit* through
+    *Smallest, fine for thumbnails*. The 60–99 SSIMULACRA 2 floor stays in
+    Advanced, and the two are one setting seen two ways: a named quality sets
+    the floor, and a floor set between the names reads back as *Custom — floor
+    87* instead of being snapped to the nearest preset.
+- **Choosing JPEG for transparent artwork asks instead of assuming.** JPEG has
+  no alpha channel, so the request is a question with two defensible answers,
+  and the app puts it in a modal: keep those images as PNG, or flatten the
+  transparency onto white and take the JPEG. Both answers say what they did on
+  the affected image; cancelling restores the setting actually in force rather
+  than leaving the control displaying one the engine never received.
+  Transparency is measured from the decoded pixels, never inferred from the
+  file extension, so an opaque PNG never triggers the question. Flattening
+  happens before anything is encoded or scored, so the result is measured
+  against the flattened original — the image that was actually asked for.
+- **Every image reports how long it took.** The time appears on the image's
+  row in the queue, in the "How this was measured" drawer alongside the
+  candidate count, and as `time_ms` in exported CSV/JSON reports. The
+  completion toast reports the run's wall clock. Per-image times are
+  deliberately never summed into a batch total: images compress several at a
+  time, so adding them up would claim a wait several times longer than the
+  one that actually happened. The clock starts when an image reaches a
+  worker, not when it was dropped, so time spent queued behind other images
+  is not billed to it.
+
+### Fixed
+- **The broken-image glyph on the stage.** A file this browser cannot decode
+  — a damaged export, or a format it has no decoder for — left an `<img>`
+  pointing at something that would never paint, so Chrome drew its torn-page
+  icon and the alt text over the artwork; a second `<img>` with no source at
+  all laid out its alt text next to it. An image element with nothing to show
+  is now out of the layout entirely, and the stage says what happened instead
+  ("No preview — this browser can't read this file"). The E2E suite now fails
+  on any visible image box with nothing decoded in it.
+- Exported reports claimed version 2.2.0 regardless of the running version.
+  The footer is now the single source of that string and the report reads it
+  from there.
+
 ## [2.3.2] - 2026-08-05
 
 ### Changed

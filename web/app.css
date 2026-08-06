@@ -642,6 +642,13 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   display: block; width: 100%; height: 100%; object-fit: contain;
   user-select: none; -webkit-user-drag: none;
 }
+/* An <img> with nothing to show is not blank: with no src it lays out its alt
+   text, and with a src that will not decode it paints the browser's broken
+   glyph next to it. Both landed in the corner of the stage - a torn-page icon
+   and the words "Original image" over the artwork. An image element that has
+   no image is removed from the layout instead, and the stage says what
+   happened in its own words (see .stage-none). */
+.viewport img:not([src]), .viewport img.dead { display: none; }
 .viewport .after { position: absolute; inset: 0; overflow: hidden; clip-path: inset(0 0 0 var(--split)); }
 .viewport .after img { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* The one orchestrated moment in the app: when a result lands, the compressed
@@ -733,6 +740,13 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
               transform var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default);
 }
 .hint.on { opacity: 1; transform: translate(-50%, 0); }
+/* Sits in the same centred cell as the viewport, so it reads as the preview's
+   replacement rather than a caption under it. job: status */
+.stage-none {
+  max-width: 34ch; text-align: center;
+  font-size: var(--oz-text-body-sm); color: var(--oz-color-content-tertiary);
+  padding: var(--oz-space-6);
+}
 kbd {
   font-family: var(--oz-font-mono); font-size: var(--oz-text-label-xs);
   background: var(--oz-color-fill-tertiary);
@@ -965,17 +979,26 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
 
-dialog#keys {
+dialog#keys, dialog#alpha-ask {
   background: var(--oz-color-surface-overlay); color: var(--oz-color-content-primary);
   border: none; border-radius: var(--oz-radius-8);
   box-shadow: var(--oz-elevation-large);
   padding: var(--oz-space-6) var(--oz-space-7); min-width: 340px;
   animation: oz-enter-pop var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast) both;
 }
-dialog#keys::backdrop {
+dialog#keys::backdrop, dialog#alpha-ask::backdrop {
   background: var(--oz-overlay-dimness);
   backdrop-filter: blur(var(--oz-overlay-blur));
 }
+dialog#alpha-ask { max-width: 44ch; }
+.dlg-body {
+  margin: var(--oz-space-4) 0 var(--oz-space-6);
+  font-size: var(--oz-text-body-sm); line-height: var(--oz-leading-body-sm);
+  color: var(--oz-color-content-secondary);
+}
+/* The recommended action leads and wraps last, so the row reads as one
+   choice with a default rather than three equal buttons. */
+.dlg-actions { display: flex; flex-wrap: wrap; gap: var(--oz-space-3); }
 dialog#keys table {
   margin: var(--oz-space-4) 0 var(--oz-space-5);
   font-size: var(--oz-text-body-sm); border-collapse: collapse;

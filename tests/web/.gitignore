@@ -8,3 +8,4 @@ counts-*.json
 bench-*.json
 node_modules/
 fonts-live.png
+*.log

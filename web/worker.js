@@ -62,6 +62,24 @@ const TARGETS = {
   lossless: ["png", "png8x", "webp-lossless"], // png8x = palette PNG only when pixel-exact
 };
 
+/** Formats with no alpha channel at all - not "loses quality on alpha", but
+ *  has nowhere to put it. Only jpeg, among everything here. */
+const ALPHA_LESS = new Set(["jpeg"]);
+
+/** Composite onto white, in place. Matches PIL's rounding so a flattened
+ *  frame scores identically here and in the desktop's reference scorer. */
+function flattenOntoWhite(rgba) {
+  for (let i = 0; i < rgba.length; i += 4) {
+    const a = rgba[i + 3];
+    if (a === 255) continue;
+    const f = a / 255;
+    rgba[i]     = Math.round(rgba[i]     * f + 255 * (1 - f));
+    rgba[i + 1] = Math.round(rgba[i + 1] * f + 255 * (1 - f));
+    rgba[i + 2] = Math.round(rgba[i + 2] * f + 255 * (1 - f));
+    rgba[i + 3] = 255;
+  }
+}
+
 /* ------------------------------------------------------------------------- *
  * capability probes
  * ------------------------------------------------------------------------- */
@@ -1184,10 +1202,35 @@ async function runJob(msg) {
     DCACHE = { key: cacheKey, job };
   }
 
-  const alpha = hasAlphaPixels(job.rgba);
+  let alpha = hasAlphaPixels(job.rgba);
+  /* Reported to the UI, which uses it to know whether choosing JPEG needs to
+     ask a question. It describes the SOURCE, so it must not move when the
+     answer to that question flattens the pixels below. */
+  const sourceAlpha = alpha;
   const target = settings.qualityTarget;
   job.metric = metric;
   await probeWebp();
+
+  /* A single chosen format that cannot hold this image's transparency. The
+     person was asked which way they wanted it; this is where that answer is
+     applied. Flattening happens before anything is encoded or scored, so the
+     reference the result is measured against is the flattened original - the
+     image they actually asked for - rather than one with transparency the
+     output could never have reproduced. */
+  const chosen = settings.formats && settings.formats.length === 1
+    ? settings.formats[0] : null;
+  let alphaNote = "";
+  if (alpha && chosen && ALPHA_LESS.has(chosen)) {
+    if (settings.alphaPolicy === "flatten") {
+      flattenOntoWhite(job.rgba);
+      job.refCanvas.getContext("2d").putImageData(
+        new ImageData(job.rgba, job.width, job.height), 0, 0);
+      alpha = false;
+      alphaNote = `transparency flattened onto white — ${chosen} cannot store it`;
+    } else {
+      alphaNote = `kept as PNG — ${chosen} cannot store transparency`;
+    }
+  }
 
   const encoders = makeEncoders(job);
   let names = settings.formats && settings.formats.length
@@ -1208,6 +1251,24 @@ async function runJob(msg) {
     if (e.available && !e.available()) return false;
     return true;
   });
+
+  /* The chosen format was filtered out - transparency it cannot store, or a
+     codec this browser lacks. Falling back to the automatic set for this one
+     image beats failing it: the person gets a compressed file and a line
+     saying why it is not the format they picked. Silence is the one option
+     that is never right here. */
+  if (!names.length && chosen) {
+    names = (TARGETS[settings.target] || TARGETS.figma).filter((n) => {
+      const e = encoders[n];
+      return e && !(alpha && !e.supportsAlpha) && !(e.available && !e.available());
+    });
+    if (names.length) {
+      warnings.push(alphaNote ||
+        `${chosen} is not available in this browser — used the automatic set instead`);
+      alphaNote = "";
+    }
+  }
+  if (alphaNote) warnings.push(alphaNote);
 
   if (!names.length) {
     post({ type: "failed", error: "no candidate format can carry this image in this browser" });
@@ -1355,7 +1416,7 @@ async function runJob(msg) {
         level: null, score: null, metric: metric.name,
         width: job.originalW, height: job.originalH,
         outW: job.originalW, outH: job.originalH,
-        candidates, warnings,
+        candidates, warnings, alpha: sourceAlpha,
       },
     }, [buffer]);
     return;
@@ -1376,7 +1437,7 @@ async function runJob(msg) {
       lossless: isLossless, metric: metric.name,
       width: job.originalW, height: job.originalH,
       outW: job.width, outH: job.height,
-      candidates, warnings,
+      candidates, warnings, alpha: sourceAlpha,
     },
   }, [payload.buffer]);
 }

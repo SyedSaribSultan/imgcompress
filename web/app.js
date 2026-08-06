@@ -17,6 +17,23 @@ function human(n) {
   return `${i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
 }
 
+/* Read from the footer rather than duplicated here: a second copy of a version
+   string is a second thing to forget, and the exported report was still
+   claiming 2.2.0 long after the app had moved on. */
+const APP_VERSION =
+  (document.getElementById("app-version")?.textContent || "").trim().replace(/^v/, "") || "unknown";
+
+/** Elapsed time, at a precision a person can actually use. Sub-second work is
+ *  reported in milliseconds because "0.1 s" reads as a rounding artefact,
+ *  and anything past a minute gets minutes because "83.4 s" does not. */
+function duration(ms) {
+  if (ms == null || !isFinite(ms)) return "—";
+  if (ms < 950) return `${Math.max(1, Math.round(ms))} ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(ms < 9950 ? 1 : 0)} s`;
+  const m = Math.floor(ms / 60000);
+  return `${m}m ${Math.round((ms - m * 60000) / 1000)}s`;
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -65,16 +82,46 @@ const state = {
   byId: new Map(),
   // qualityTarget is on the SSIMULACRA 2 scale (0-100), the same floor the
   // desktop app uses. 90 is its published "visually lossless" line.
-  settings: { target: "figma", metric: "ss2", qualityTarget: 90, maxDimension: 2560 },
+  /* `formats` null means the bake-off decides; a one-element array means the
+     person did. `alphaPolicy` only matters when that choice cannot hold the
+     image's transparency, and is only ever set by answering the dialog. */
+  settings: {
+    target: "figma", metric: "ss2", qualityTarget: 90, maxDimension: 2560,
+    formats: null, alphaPolicy: "png",
+  },
   settingsRev: 0,
   caps: { webp: null, png8: null },
   suffix: false,
 };
+
+/* The Format control is one list spanning "you choose" to "I choose", so its
+   value carries both facts. Single-format picks leave the design-tool preset
+   behind, and with it that preset's dimension cap - the same rule the
+   per-image format override has always used. */
+const ONE = "one-";
+function parseFormatChoice(value) {
+  if (!value.startsWith(ONE)) return { target: value, formats: null };
+  return { target: "web", formats: [value.slice(ONE.length)] };
+}
+function formatChoiceValue(s) {
+  return s.formats && s.formats.length ? ONE + s.formats[0] : s.target;
+}
+
+/* Words first, number behind Advanced. The floor is still the single source of
+   truth - these are named landmarks on it, not a separate setting. */
+const QUALITY_PRESETS = [95, 90, 85, 80, 70];
 let selected = null;
 let mode = "split";
 let zoom = 0;
 let pan = { x: 0, y: 0 };
 let batchActive = false;
+let batchStartedAt = 0;   // wall clock for the run, not the sum of its images
+/** Mark the start of a run. Adding files to a run already in flight extends
+ *  it rather than restarting the clock. */
+function beginBatch() {
+  if (!batchActive) batchStartedAt = performance.now();
+  batchActive = true;
+}
 let ovSyncedFor = null;   // which item the override controls currently reflect
 const BASE_TITLE = document.title;
 
@@ -103,9 +150,22 @@ function loadSettings() {
       state.settings.qualityTarget = saved.qualityTarget;
     }
     if (Number.isFinite(saved.maxDimension)) state.settings.maxDimension = saved.maxDimension;
+    if (Array.isArray(saved.formats) && saved.formats.length === 1) {
+      state.settings.formats = saved.formats;
+    }
+    if (saved.alphaPolicy === "flatten") state.settings.alphaPolicy = "flatten";
     state.suffix = !!saved.suffix;
   } catch {}
-  $("target").value = state.settings.target;
+  const choice = formatChoiceValue(state.settings);
+  $("target").value = choice;
+  // A stored single-format pick whose codec this browser lacks would leave the
+  // control blank and the engine on a format it cannot run. Fall back to the
+  // recommended automatic set instead of pretending.
+  if (!$("target").value) {
+    state.settings.formats = null;
+    state.settings.target = "figma";
+    $("target").value = "figma";
+  }
   // qualityTarget is ALREADY on the slider's 0-100 scale. The old SSIM floor
   // was a fraction and was scaled here; doing that to 90 pinned the slider to
   // its max and silently ran every search at floor 99. See the e2e default
@@ -120,7 +180,7 @@ function loadSettings() {
 function saveSettings() {
   try {
     localStorage.setItem("imgc-settings",
-      JSON.stringify({ v: 2, ...state.settings, suffix: state.suffix }));
+      JSON.stringify({ v: 3, ...state.settings, suffix: state.suffix }));
   } catch {}
 }
 
@@ -136,6 +196,14 @@ function hintForQuality(q) {
 function reflectQualityHint() {
   const q = Number($("quality").value);
   $("quality-note").textContent = hintForQuality(q);
+  // The words and the number are one setting seen two ways, so the preset
+  // follows the slider. A floor between the landmarks is a real choice, not an
+  // error - it gets the hidden "Custom" entry rather than being snapped away.
+  const sel = $("quality-preset");
+  sel.value = QUALITY_PRESETS.includes(q) ? String(q) : "custom";
+  const custom = sel.querySelector('option[value="custom"]');
+  custom.hidden = sel.value !== "custom";
+  custom.textContent = `Custom — floor ${q}`;
 }
 
 /* --------------------------- lifetime statistics -------------------------- */
@@ -227,6 +295,11 @@ async function dispatch() {
     item.stage = "reading";
     item.progress = "reading…";
     item.frac = 0;
+    // The clock starts when this image actually gets a worker, not when it was
+    // dropped: time spent queued behind other images is the batch's, not this
+    // image's, and reporting the wait as if it were work would be a lie.
+    item.startedAt = performance.now();
+    item.elapsedMs = null;
     scheduleRender("queue");
     const buffer = await item.bytesPromise;
     item.bytesPromise = null;   // transferred below; a second read must re-open
@@ -279,6 +352,7 @@ const STAGE_TEXT = {
 function onWorkerMessage(slot, msg) {
   if (msg.type === "caps") {
     state.caps = { ...state.caps, ...msg.caps };
+    reflectFormatAvailability();
     scheduleRender("queue");
     return;
   }
@@ -301,13 +375,18 @@ function onWorkerMessage(slot, msg) {
 
   slot.busy = false;
   slot.itemId = null;
-  if (msg.engines) state.caps = { ...state.caps, ...msg.engines };
+  if (msg.engines) { state.caps = { ...state.caps, ...msg.engines }; reflectFormatAvailability(); }
 
   if (msg.rev !== state.settingsRev && !item.override) {
+    // Settings moved under this result: it is about to be redone from the top,
+    // so the clock restarts too rather than counting the discarded attempt.
     item.status = "queued";
+    item.startedAt = null;
     scheduleRender(); dispatch();
     return;
   }
+
+  if (item.startedAt != null) item.elapsedMs = performance.now() - item.startedAt;
 
   if (msg.type === "failed") {
     item.status = "failed";
@@ -334,6 +413,9 @@ function onWorkerMessage(slot, msg) {
     item.warnings = r.warnings || [];
     item.candidates = r.candidates || [];
     item.passthrough = !!r.passthrough;
+    // Measured from the decoded pixels, not guessed from the extension: it is
+    // what decides whether choosing JPEG has to ask a question first.
+    item.alpha = !!r.alpha;
     item.diffURL = null;
     if (r.width) { item.width = r.width; item.height = r.height; }
     item.outW = r.outW || item.width;
@@ -361,9 +443,13 @@ function maybeCelebrate() {
   const before = done.reduce((s, i) => s + i.originalBytes, 0);
   const after = done.reduce((s, i) => s + i.newBytes, 0);
   const saved = before - after;
+  // Wall clock for the run. Images are compressed several at a time, so this
+  // is measured, never summed from the per-image times - adding them up would
+  // report a number several times larger than the wait the person just had.
+  const took = batchStartedAt ? ` in ${duration(performance.now() - batchStartedAt)}` : "";
   toast(saved > 0
-    ? `All done — you just saved ${human(saved)} (${Math.round(saved / before * 100)}%) across ${done.length} image${done.length === 1 ? "" : "s"}`
-    : "All done — these were already well compressed");
+    ? `All done${took} — you just saved ${human(saved)} (${Math.round(saved / before * 100)}%) across ${done.length} image${done.length === 1 ? "" : "s"}`
+    : `All done${took} — these were already well compressed`);
 }
 
 /* ------------------------------ add files -------------------------------- */
@@ -406,7 +492,7 @@ function addFiles(files) {
   const usable = [...files].filter((f) => SUPPORTED.test(f.name) || /^image\//.test(f.type));
   if (!usable.length) { toast("No supported images in that drop"); return; }
   startEngine();
-  batchActive = true;
+  beginBatch();
   for (const file of usable) {
     const item = {
       id: uid(),
@@ -482,7 +568,7 @@ function requeue(ids) {
     if (item.diffURL) { URL.revokeObjectURL(item.diffURL); item.diffURL = null; }
     any = true;
   }
-  if (any) batchActive = true;
+  if (any) beginBatch();
   scheduleRender();
   dispatch();
 }
@@ -539,8 +625,9 @@ function phaseLine(it) {
   if (it.status === "failed") return "";
   if (it.status === "queued") return "Waiting";
   if (it.status === "working") return it.progress || "Working";
-  if (it.passthrough) return "Passed through unchanged";
-  return fmtLabel(it.fmt) + (it.level != null ? ` · quality ${it.level}` : "");
+  const took = it.elapsedMs != null ? ` · ${duration(it.elapsedMs)}` : "";
+  if (it.passthrough) return "Passed through unchanged" + took;
+  return fmtLabel(it.fmt) + (it.level != null ? ` · quality ${it.level}` : "") + took;
 }
 
 function buildRow(it) {
@@ -623,6 +710,20 @@ function renderQueue() {
   // live savings while the batch is still running
   const saved = done.reduce((s, i) => s + (i.originalBytes - i.newBytes), 0);
   $("live-stat").textContent = busyItems && saved > 0 ? `−${human(saved)} so far` : "";
+}
+
+/* Offering "AVIF only" in a browser with no AVIF encoder would be offering a
+   dead end. The automatic sets need no such gate - they route around whatever
+   is missing by design; a single chosen format has nowhere to route to. */
+function reflectFormatAvailability() {
+  const have = { jpeg: true, png: true, webp: state.caps.webp, avif: state.caps.avif };
+  for (const [fmt, ok] of Object.entries(have)) {
+    const opt = $("target").querySelector(`option[value="${ONE}${fmt}"]`);
+    if (!opt || ok === null) continue;          // not probed yet: leave it be
+    opt.disabled = !ok;
+    opt.textContent = ok ? `${fmt.toUpperCase()} only`
+                         : `${fmt.toUpperCase()} only — not available in this browser`;
+  }
 }
 
 function capsLine() {
@@ -710,7 +811,25 @@ function renderInspector(it) {
   $("insp-dims").textContent = dims + out;
 
   const before = $("img-before"), after = $("img-after");
-  if (before.dataset.src !== it.beforeURL) { before.dataset.src = it.beforeURL; before.src = it.beforeURL; }
+  if (before.dataset.src !== it.beforeURL) {
+    before.dataset.src = it.beforeURL;
+    // A previous item's failure must not mark this one dead before it tries.
+    before.classList.toggle("dead", !!it.previewDead);
+    before.src = it.beforeURL;
+  }
+  /* Some files decode nowhere in this browser - a damaged export, or a format
+     it has no decoder for (the same reason the compression itself failed).
+     The element is then hidden and the stage says so, because the alternative
+     is the browser's broken-image glyph sitting on the artwork. */
+  const dead = !!it.previewDead;
+  const none = $("stage-none");
+  none.hidden = !dead;
+  $("viewport").hidden = dead;
+  if (dead) {
+    none.textContent = it.status === "failed"
+      ? "No preview — this browser can’t read this file."
+      : "No preview — this browser can’t display this format, but the file was still compressed.";
+  }
   const ready = isReady(it);
   const wantAfter = ready ? it.afterURL : "";
   if (after.dataset.src !== wantAfter) {
@@ -783,6 +902,12 @@ function renderInspector(it) {
         : `${it.width}×${it.height}`);
   const floor = it.override?.qualityTarget ?? state.settings.qualityTarget;
   $("s-floor").innerHTML = Number(floor).toFixed(0) + (it.override ? " <small>override</small>" : "");
+  // Encodes-and-scores for this one image. Images run several at a time, so
+  // this is deliberately not summed into a batch total anywhere.
+  $("s-time").innerHTML = it.elapsedMs != null
+    ? `${duration(it.elapsedMs)}${it.candidates?.length
+        ? ` <small>${it.candidates.length} candidate${it.candidates.length === 1 ? "" : "s"}</small>` : ""}`
+    : (it.status === "working" ? `<span class="skel w-sm"></span>` : "—");
 
   const verdict = $("s-verdict");
   const vtext = ready ? verdictFor(it) : "";
@@ -1177,6 +1302,9 @@ function reportRows() {
     metric: it.metric || "ssimulacra2",
     quality_score: it.lossless ? "lossless" : (it.score != null ? +it.score.toFixed(2) : ""),
     width: it.outW, height: it.outH,
+    // Per-image, and only meaningful as such: images are compressed in
+    // parallel, so this column does not add up to the run's wall clock.
+    time_ms: it.elapsedMs != null ? Math.round(it.elapsedMs) : "",
   }));
 }
 
@@ -1193,7 +1321,7 @@ function exportReport(kind) {
     toast("CSV downloaded");
   } else if (kind === "json") {
     const payload = {
-      tool: "imgcompress web", version: "2.2.0",
+      tool: "imgcompress web", version: APP_VERSION,
       settings: { ...state.settings },
       totals: { before_bytes: before, after_bytes: after, saved_bytes: saved },
       images: rows,
@@ -1229,13 +1357,55 @@ function toast(message) {
 /* ------------------------------- settings --------------------------------- */
 
 function currentSettings() {
+  const { target, formats } = parseFormatChoice($("target").value);
   return {
-    target: $("target").value,
+    target, formats,
     metric: "ss2",
     qualityTarget: Number($("quality").value),
     maxDimension: Number($("maxdim").value) || 0,
+    alphaPolicy: state.settings.alphaPolicy,
   };
 }
+/* ---- choosing a format that cannot hold what is already in the queue ----- *
+ * JPEG has no alpha channel. Asking for "JPEG only" with transparent artwork
+ * queued is a question with two defensible answers, so it is asked once, up
+ * front, instead of being resolved silently in either direction. Only images
+ * the engine has actually looked at count: `alpha` is measured from the
+ * decoded pixels, never guessed from the file extension. */
+const CARRIES_ALPHA = { jpeg: false, webp: true, png: true, avif: true };
+
+function alphaItemCount() {
+  return state.items.filter((i) => i.alpha === true).length;
+}
+
+let alphaAnswered = false;   // distinguishes a decision from a dismissal
+
+function onFormatChoice() {
+  const { formats } = parseFormatChoice($("target").value);
+  const one = formats && formats[0];
+  const n = alphaItemCount();
+  if (!one || CARRIES_ALPHA[one] !== false || !n) { pushSettings(); return; }
+
+  const dlg = $("alpha-ask");
+  $("alpha-ask-body").textContent =
+    `${n} ${n === 1 ? "image has" : "images have"} transparent areas, and ` +
+    `${one.toUpperCase()} has nowhere to put them. Keep those images as PNG, ` +
+    `or flatten the transparency onto white and take the ${one.toUpperCase()}?`;
+  alphaAnswered = false;
+  dlg.showModal();
+}
+
+function settleAlphaChoice(policy) {
+  if (policy) {
+    state.settings.alphaPolicy = policy;
+    alphaAnswered = true;
+    $("alpha-ask").close();
+    pushSettings();
+  } else {
+    $("alpha-ask").close();   // the close handler puts the control back
+  }
+}
+
 let pushTimer;
 function pushSettings() {
   clearTimeout(pushTimer);
@@ -1428,8 +1598,16 @@ function setMode(m) {
 }
 
 function bind() {
-  $("target").addEventListener("change", pushSettings);
+  $("target").addEventListener("change", onFormatChoice);
   $("maxdim").addEventListener("change", pushSettings);
+  // The words drive the number, and the number drives the engine. One setting.
+  $("quality-preset").addEventListener("change", (e) => {
+    if (e.target.value === "custom") return;    // only the slider sets that
+    $("quality").value = e.target.value;
+    $("quality-out").textContent = e.target.value;
+    reflectQualityHint();
+    pushSettings();
+  });
   $("quality").addEventListener("input", () => {
     $("quality-out").textContent = $("quality").value;
     reflectQualityHint();
@@ -1515,6 +1693,18 @@ function bind() {
       if (mode === "diff") { dirty.inspector = true; scheduleRender(); }
     });
   }
+  /* The original would not decode. Recorded on the item, not just the element,
+     so it survives selecting away and back - and matched against the URL that
+     actually failed, so a stale flag cannot condemn a later image. */
+  $("img-before").addEventListener("error", (e) => {
+    const url = e.target.getAttribute("src");
+    if (!url) return;                       // src removed, not a load failure
+    const it = state.byId.get(selected);
+    if (!it || it.beforeURL !== url) return;
+    it.previewDead = true;
+    dirty.inspector = true;
+    scheduleRender();
+  });
   new ResizeObserver(() => applyZoom()).observe($("stage"));
 
   $("stage").addEventListener("wheel", (e) => { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); },
@@ -1675,6 +1865,19 @@ function bind() {
     }
   });
   $("keys-close").addEventListener("click", () => $("keys").close());
+
+  $("alpha-keep").addEventListener("click", () => settleAlphaChoice("png"));
+  $("alpha-flatten").addEventListener("click", () => settleAlphaChoice("flatten"));
+  $("alpha-cancel").addEventListener("click", () => settleAlphaChoice(null));
+  /* Esc and the backdrop close a <dialog> without touching a button, and that
+     must mean the same thing as Cancel: the control goes back to what is
+     actually in force, rather than displaying a setting the engine was never
+     given. An answered dialog is exempt - its choice is already on its way
+     through pushSettings, which reads this control. */
+  $("alpha-ask").addEventListener("close", () => {
+    if (alphaAnswered) { alphaAnswered = false; return; }
+    $("target").value = formatChoiceValue(state.settings);
+  });
 
   window.addEventListener("beforeunload", (e) => {
     if (state.items.some((i) => i.status === "done")) e.preventDefault();

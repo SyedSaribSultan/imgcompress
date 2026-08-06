@@ -39,6 +39,25 @@ gate: an optimisation may move the timings, it may not move a single output
 byte. If output legitimately changes (an engine improvement), regenerate with
 `BENCH_WRITE=1` and commit the new snapshots with the change that caused them.
 
+## What each Format choice costs
+
+```
+node tests/web/speed_by_choice.mjs        # idle machine only
+```
+
+Drives the real app across every Format choice on the benchmark corpus and
+reports the app's own per-image clock. Run it on an idle machine — timings
+taken under load are fiction. What it found (2026-08-06) is worth knowing
+before optimising anything: restricting to JPEG saves only 1.1–1.4× against
+the design-tool set, because JPEG's own quality search is nearly the entire
+cost; the ~2× wins from WebP-only and AVIF-only come partly from failing to
+reach the floor; and "Best for the web" costs 1.9–3.1× while producing
+byte-identical output to the design-tool preset on photographs.
+
+`probe_controls.mjs` is a focused probe of the Format and Quality controls,
+including the flatten-onto-white answer to the transparency dialog that the
+E2E does not cover (the E2E takes the keep-as-PNG branch).
+
 ## Metric validation + design gates
 
 ```

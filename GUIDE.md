@@ -197,6 +197,15 @@ Design notes that are decisions rather than accidents:
   pretending.
 * `[hidden] { display: none !important; }` is load-bearing — several elements set
   an explicit `display`, which otherwise beats the user-agent `[hidden]` rule.
+* **An `<img>` with nothing to show must leave the layout.** With no `src` it
+  lays out its `alt` text; with a `src` that will not decode it paints the
+  browser's broken-image glyph beside it. Both landed on the comparison stage
+  — a torn-page icon and the words "Original image" over the artwork — for any
+  file this browser has no decoder for. `.viewport img:not([src])` and
+  `img.dead` are display-none, and `#stage-none` explains the absence in the
+  product's own words. The E2E fails on any visible image box with
+  `naturalWidth === 0`, which is what that class of bug looks like from
+  outside.
 
 ### Where to change things
 
@@ -226,6 +235,37 @@ A static port of the same engine that runs entirely in the browser, deployed at
 download), `ss2.js` (the metric), `worker.js` (the engine: ladder bisection,
 the bake-off, dual-backdrop transparency scoring, the never-bigger rule — a
 port of `quality.py` + `core.py` + `encoders.py`).
+
+### The two controls, and why they are shaped that way
+
+The toolbar asks for two decisions and defaults both to delegation.
+
+* **Format** is one `<select>` spanning `figma` / `web` / `lossless` (the
+  automatic sets) and `one-jpeg` / `one-webp` / `one-png` / `one-avif`. The
+  `one-` prefix is parsed in `parseFormatChoice`, which is also why the value
+  space *extends* the old target names rather than replacing them — every
+  saved setting and every test that drives `#target` still means what it did.
+  A single pick sets `settings.formats` and moves the target to `web`, the
+  same thing the per-image format override has always done, which also drops
+  the design-tool dimension cap along with the preset.
+* **Quality** is `#quality-preset` (words) sitting on top of `#quality` (the
+  60–99 floor, in Advanced). *One setting, two views* — the words write the
+  number and `reflectQualityHint` writes back, showing a hidden `custom`
+  option when the floor lands between the landmarks. **Never make the words
+  the source of truth:** the engine reads the floor from the DOM, and a
+  control that displays one thing while the engine runs another is exactly
+  the shape of the floor-99 bug.
+* **JPEG cannot store alpha**, so choosing it with transparent artwork queued
+  opens `#alpha-ask` rather than resolving it silently in either direction.
+  *Invariants:* `item.alpha` is measured from decoded pixels in the worker and
+  reports the **source**, so it does not move when flattening rewrites those
+  pixels; dismissing the dialog by any route (Esc, backdrop, Cancel) restores
+  the control to the setting actually in force; flattening runs before any
+  encode or score, so the reference the result is measured against is the
+  flattened original rather than transparency the output could never carry.
+  A chosen format that gets filtered out — no alpha channel, or no codec in
+  this browser — falls back to the automatic set with a warning rather than
+  failing the image.
 
 ### The metric is SSIMULACRA 2 itself
 
