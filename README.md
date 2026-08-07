@@ -5,10 +5,14 @@
 
 **Image compression that proves it didn't ruin your image.**
 
-Most compressors ask you to pick a quality number and hope. This one encodes
-each image several different ways, decodes every candidate back, scores it
-against the original with a real perceptual metric, and keeps the smallest file
-that still clears the quality floor you set. Then it shows you the evidence.
+Most compressors ask you to pick a quality number and hope. This one saves each
+image several different ways, opens every version back up, compares it to your
+original, and keeps the smallest one that still looks close enough. Then it
+shows you the evidence.
+
+Put plainly: every image comes out as small as it can go without you being able
+to see the difference — and you get the side-by-side to check that for
+yourself.
 
 Typical result on design assets: **70–90% smaller**, at a measured
 visually-lossless quality level.
@@ -22,16 +26,16 @@ imgcompress photos/        # or the command line
 ```
 
 Or skip the install: **[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app)**
-runs the same bake-off entirely in your browser — including SSIMULACRA 2
+runs the same comparison entirely in your browser — including SSIMULACRA 2
 itself, ported to JavaScript and validated against the reference
 implementation. Nothing is uploaded; images never leave your device.
 
 [tests/BENCHMARK.md](tests/BENCHMARK.md) holds a reproducible head-to-head
 against single-format pipelines and fixed-quality defaults, every strategy
-searched to the same SSIMULACRA 2 ≥ 90 floor. On that corpus imgcompress is
+searched to the same visual match of 90 or better. On that corpus imgcompress is
 the smallest or tied-smallest passing file on every image; on the 12 MP
 photograph the browser version ships 362 KB where searched single-format
-JPEG needs 517–544 KB — and every fixed-quality default fails the floor
+JPEG needs 517–544 KB — and every fixed-quality default misses the target
 outright. The one caveat is spelled out there too: on one hard palette image
 the desktop's optional libimagequant quantizer beats the browser quantizer
 by ~2.5 KB.
@@ -41,7 +45,7 @@ by ~2.5 KB.
 ## Two ideas, both load-bearing
 
 **1. Quality is measured, not guessed.**
-Every candidate encode is decoded and scored with
+Every version is opened back up and compared to the original with
 [SSIMULACRA 2](https://github.com/cloudinary/ssimulacra2) — the metric the
 image-compression community converged on, which correlates with human judgement
 at r≈0.88 versus SSIM's ≈0.76, and unlike SSIM can actually see chroma damage.
@@ -49,10 +53,10 @@ The encoder quality setting is *found* by binary search, not assumed. Flat UI
 artwork survives a very low setting; a noisy photograph automatically gets a
 high one.
 
-**2. The format is a bake-off, not an assumption.**
-Each image is encoded as JPEG *and* palette PNG *and* lossless PNG (plus WebP if
-you allow it), each searched independently, and the smallest passing result
-wins. The winner is genuinely content-dependent:
+**2. The format is a comparison, not an assumption.**
+Each image is saved as JPEG *and* palette PNG *and* lossless PNG (plus WebP if
+you allow it), each searched separately, and the smallest one that still looks
+close enough wins. The winner is genuinely content-dependent:
 
 | Image | jpeg | png8 | png | webp | webp-lossless | winner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -82,8 +86,8 @@ score.
 - **Split comparison** — drag the divider, or press <kbd>Space</kbd> to flip
   between original and compressed. Zoom to 100%, 200%, 400% and pan around.
   This is the point of the whole thing: you can *check*.
-- **Candidates panel** — see every encoding that was tried and why the winner
-  won, then override the format or quality for that one image.
+- **Versions panel** — see every version that was tried, why each one lost in a
+  single sentence, and switch to any of them instantly.
 - **Nothing is written until you press Save.** Review the whole batch, then
   save it or throw it away.
 - **Watch a folder** — point it at your Figma export folder and it compresses
@@ -136,7 +140,7 @@ still resolve, so existing scripts keep working.
 | --- | --- |
 | `--for web \| documents \| email \| thumbnail \| original` | Where the image is going (default: `web`) |
 | `-m, --max-dimension 1920` | Cap the longest edge. `0` keeps original dimensions |
-| `-q, --quality-target 95` | Minimum visual match, 0–100 |
+| `-q, --quality-target 95` | Minimum visual match, 0–100 (100 = indistinguishable) |
 | `--metric ssimulacra2 \| ssim` | `ssim` is ~5× faster and cruder |
 | `-f, --format jpeg` | Always use this format; repeat to allow several |
 | `--fast` / `--no-zopfli` | Trade a few percent of size for speed |
@@ -145,7 +149,7 @@ still resolve, so existing scripts keep working.
 
 ### Choosing a quality target
 
-SSIMULACRA 2 runs to 100. The author's published scale:
+The visual match runs to 100, where 100 means indistinguishable:
 
 | Value | Feels like |
 | --- | --- |
@@ -223,8 +227,8 @@ with weaker built-ins.
 1. **Caps the pixel dimensions.** The single biggest win; no codec recovers the
    bytes wasted on a 6000px export that renders at 1200px.
 2. **Strips metadata** — EXIF, camera junk, colour profiles, XMP blobs.
-3. **Runs the bake-off**, binary-searching each candidate format for the lowest
-   quality that still clears the perceptual floor.
+3. **Runs the comparison**, searching each format for the smallest setting that
+   still looks close enough to the original.
 4. **Keeps the smallest winner**, and never writes a file bigger than the source.
 
 Transparency is preserved, and scored against both a dark and a light backdrop

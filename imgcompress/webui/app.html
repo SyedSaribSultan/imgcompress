@@ -436,7 +436,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
     </div>
 
     <div class="field">
-      <label for="quality">Quality</label>
+      <label for="quality">Min visual match</label>
       <input type="range" id="quality" min="60" max="99" step="1" value="90"
              aria-describedby="quality-out">
       <output class="num" id="quality-out" style="width:2.4em">90</output>
@@ -526,11 +526,11 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
                 <div class="v" id="s-saved">—</div></div>
               <div class="stat"><div class="k">Format</div>
                 <div class="v" id="s-format">—</div></div>
-              <div class="stat"><div class="k" id="s-metric-k">Quality</div>
+              <div class="stat"><div class="k" id="s-metric-k">Visual match</div>
                 <div class="v" id="s-score">—</div></div>
               <div class="stat"><div class="k">Dimensions</div>
                 <div class="v" id="s-dims">—</div></div>
-              <div class="stat"><div class="k">Floor</div>
+              <div class="stat"><div class="k">Your target</div>
                 <div class="v" id="s-floor">—</div></div>
             </div>
             <div class="note" id="s-note" hidden></div>
@@ -538,20 +538,20 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
           </div>
 
           <div class="pane">
-            <h3 class="micro">Candidates tried</h3>
+            <h3 class="micro">Versions tried</h3>
             <div class="cands" id="cands"></div>
             <div class="override">
               <div class="line">
-                <label for="ov-format">Force</label>
+                <label for="ov-format">Always use</label>
                 <select id="ov-format">
-                  <option value="">best of all candidates</option>
+                  <option value="">whichever comes out smallest</option>
                   <option value="jpeg">jpeg</option>
                   <option value="png8">png8 (palette)</option>
                   <option value="png">png (lossless)</option>
                   <option value="webp">webp</option>
                   <option value="webp-lossless">webp lossless</option>
                 </select>
-                <label for="ov-quality" style="min-width:auto">Quality</label>
+                <label for="ov-quality" style="min-width:auto">Min match</label>
                 <input class="num-input" type="number" id="ov-quality" min="1" max="100" placeholder="—">
                 <button class="btn" id="ov-apply">Apply to this image</button>
               </div>
@@ -737,9 +737,14 @@ function renderInspector(it) {
                         : "none")
     : "—";
   $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
-  $("s-metric-k").textContent = it.metric === "ssim" ? "SSIM" : "SSIMULACRA 2";
-  $("s-score").textContent = it.score == null ? (ready ? "lossless" : "—")
-    : (it.metric === "ssim" ? it.score.toFixed(4) : it.score.toFixed(1));
+  // "Visual match", not the measure's name. Which measure produced it is a
+  // fact about our implementation; how close the result came is the fact the
+  // person is here for. The name still appears on the SSIM fallback, because
+  // that scale is 0-1 and calling it the same thing would be misleading.
+  $("s-metric-k").textContent = it.metric === "ssim" ? "SSIM" : "Visual match";
+  $("s-score").textContent = it.score == null ? (ready ? "pixel-identical" : "—")
+    : (it.metric === "ssim" ? it.score.toFixed(4)
+                            : `${Math.round(it.score)} / 100`);
   $("s-dims").innerHTML = !it.width ? "—"
     : (it.out_width && it.out_width !== it.width
         ? `${it.out_width}×${it.out_height} <small>from ${it.width}×${it.height}</small>`
@@ -759,7 +764,9 @@ function renderInspector(it) {
   const cands = $("cands");
   if (!it.candidates?.length) {
     cands.innerHTML = `<div class="note" style="margin:0">${
-      it.status === "failed" ? "This file could not be read." : "Encoding…"}</div>`;
+      it.status === "failed"
+        ? "This file looks damaged and couldn't be read. Try re-exporting it."
+        : "Trying formats…"}</div>`;
   } else {
     const winner = Math.min(...it.candidates.map((c) => c.bytes));
     cands.innerHTML = [...it.candidates].sort((a, b) => a.bytes - b.bytes).map((c) => `
@@ -768,7 +775,8 @@ function renderInspector(it) {
         <span class="b">${human(c.bytes)}</span>
         <span class="${c.bytes === winner ? "badge" : "s"}">${
           c.bytes === winner ? "winner" :
-          (c.score >= 100 ? "lossless" : (it.metric === "ssim" ? c.score.toFixed(3) : c.score.toFixed(1)))}</span>
+          (c.score >= 100 ? "identical"
+            : (it.metric === "ssim" ? c.score.toFixed(3) : `${Math.round(c.score)}/100`))}</span>
       </div>`).join("");
   }
   $("ov-format").value = it.override?.formats?.[0] || "";

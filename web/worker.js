@@ -1168,7 +1168,7 @@ async function runJob(msg) {
         type: "done",
         result: {
           passthrough: true, skipped: true,
-          note: "animated — passed through unchanged",
+          note: "animated — left exactly as it is",
           fmt: "gif", ext: ".gif", mime: "image/gif",
           bytes: buffer, originalBytes, newBytes: originalBytes,
           level: null, score: null, metric: metric.name,
@@ -1192,7 +1192,7 @@ async function runJob(msg) {
     } catch {
       post({
         type: "failed",
-        error: "could not decode — the file is corrupt or this browser cannot read it",
+        error: "This file looks damaged and couldn't be read. Try re-exporting it.",
       });
       return;
     }
@@ -1272,7 +1272,9 @@ async function runJob(msg) {
   if (alphaNote) warnings.push(alphaNote);
 
   if (!names.length) {
-    post({ type: "failed", error: "no candidate format can carry this image in this browser" });
+    post({ type: "failed",
+           error: "No format your browser can write is able to hold this image. "
+                + "Try a different destination, or the desktop version." });
     return;
   }
 
@@ -1383,7 +1385,10 @@ async function runJob(msg) {
   if (!best) best = bestFailing;   // nothing cleared the floor; warned about below
 
   if (!best) {
-    post({ type: "failed", error: "no candidate produced usable output", warnings, engines: engineFlags() });
+    post({ type: "failed",
+           error: "None of the formats could be written for this image. "
+                + "It may be damaged; try re-exporting it.",
+           warnings, engines: engineFlags() });
     return;
   }
 
@@ -1419,8 +1424,11 @@ async function runJob(msg) {
   }
 
   if (best.score < target) {
-    warnings.push(`could not reach ${metric.name} ${target}; best was ${
-      best.score.toFixed(metric.name === "ssim" ? 4 : 1)}`);
+    warnings.push(
+      `Couldn't get this close enough to your original — the best any format `
+      + `managed was ${metric.name === "ssim" ? best.score.toFixed(4) : Math.round(best.score)}`
+      + `${metric.name === "ssim" ? "" : " out of 100"} against your target of `
+      + `${target}. Lower the target, or keep the original.`);
   }
 
   // Never ship a bigger file. (Stricter than the desktop rule: any regrowth
@@ -1432,7 +1440,7 @@ async function runJob(msg) {
       type: "done",
       result: {
         passthrough: true, skipped: true,
-        note: "already well compressed — passed through unchanged",
+        note: "already smaller than anything we could make — left as it is",
         fmt: best.encoder.name, ext: null, mime,
         bytes: buffer, originalBytes, newBytes: originalBytes,
         level: null, score: null, metric: metric.name,

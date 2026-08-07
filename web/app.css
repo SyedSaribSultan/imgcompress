@@ -1034,6 +1034,15 @@ kbd {
   font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
   font-family: var(--oz-font-mono); align-self: center;
 }
+/* Why the version on screen won, or why the one you picked did not. Sits
+   directly under the row it explains, in the same register as the narration -
+   a sentence, not a readout, so it is prose rather than mono. */
+.cand-why {
+  margin: var(--oz-space-2) 0 0;
+  font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+  line-height: var(--oz-leading-body-xs);
+}
 /* The answer to clicking "prefer something else?". One pass, on an effects
    spring so it cannot overshoot, and it is a response to an action rather than
    an ambient loop - so it is not marked `.oz-ambient` and does not need to be

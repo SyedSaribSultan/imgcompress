@@ -6,6 +6,53 @@ This project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **The interface speaks English.** Eleven invented words for three ideas meant
+  it was possible to look at this product and not know what it was telling you.
+  One concept now gets one word everywhere a person can see it — the browser
+  app, the desktop app, the command line, every error message and the README:
+
+  | Was | Is |
+  | --- | --- |
+  | bake-off | the comparison |
+  | candidate | version |
+  | floor / quality floor | your target / minimum visual match |
+  | passes, still passes | close enough to the original |
+  | survives | wins |
+  | untouched | left exactly as it is |
+  | force a format | always use |
+  | redo just this image | try different settings |
+  | SSIMULACRA 2 82.8 | visual match 83 out of 100 |
+
+  The measure's real name moved into the details panel, where it belongs: which
+  measure produced the number is a fact about our implementation, and how close
+  the result came is the fact somebody is actually here for. The SSIM fallback
+  keeps its name, because that scale runs 0–1 and calling it the same thing
+  would mislead.
+- **What the tool does is described as a benefit, not as machinery.** "Every
+  image is encoded several different ways, scored against the original with a
+  perceptual metric, and only the smallest version that still passes survives"
+  became "every image comes out as small as it can go without you being able to
+  see the difference — and you get the side-by-side to check that for
+  yourself."
+- **Every version that lost now says why**, in one sentence: bigger than your
+  original, too different from it (with both numbers), lost too much colour
+  detail, or close enough but larger than the one chosen. A list of rejects
+  with no reasons showed the machinery working without saying anything. The
+  sentence for whichever version is on screen is shown under the row rather
+  than hidden in a tooltip.
+- **Error messages say what happened, then what to do next.** No apology, no
+  blame, no error code as the headline. "Error: unsupported format" became
+  "Those file types aren't supported yet. Try PNG, JPEG, WebP, AVIF, GIF, BMP
+  or TIFF."
+- **"How this was measured" is written for a person.** It explains that the
+  comparison looks at local contrast and detail the way eyes do rather than
+  counting pixel differences, and that 100 means indistinguishable — and it now
+  carries the fact that makes this tool beat the obvious alternative: colour is
+  never thrown away, because matching the same quality with colour detail
+  discarded needed setting 97 instead of 76, a file 3.8× larger.
+
+  Zero output bytes changed; both byte snapshots are identical.
+
 - **Presets are now destinations, and the default is no longer a design tool.**
   There used to be two overlapping settings — `--preset` chose size and
   quality, `--target` chose which formats were allowed — and both defaulted to

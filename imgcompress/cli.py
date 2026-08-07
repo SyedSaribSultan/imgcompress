@@ -38,11 +38,12 @@ def describe(res: CompressionResult, verbose: bool = False) -> str:
         bits.append(f"q{res.level}")
     if res.score is not None:
         fmt = "{:.1f}" if res.metric == "ssimulacra2" else "{:.4f}"
-        bits.append(f"{res.metric} " + fmt.format(res.score))
+        label = "visual match" if res.metric == "ssimulacra2" else res.metric
+        bits.append(f"{label} " + fmt.format(res.score))
     line = f"  ok {name}  " + "  ".join(bits)
     if verbose and res.candidates:
         losers = "   ".join(f"{c}={human(s)}" for c, s, _ in sorted(res.candidates, key=lambda x: x[1]))
-        line += f"\n       candidates: {losers}"
+        line += f"\n       versions tried: {losers}"
     for warning in res.warnings:
         line += f"\n     ! {warning}"
     return line

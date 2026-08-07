@@ -666,7 +666,12 @@ async function makeThumb(item) {
 
 function addFiles(files) {
   const usable = [...files].filter((f) => SUPPORTED.test(f.name) || /^image\//.test(f.type));
-  if (!usable.length) { toast("No supported images in that drop"); return; }
+  if (!usable.length) {
+    // What happened, then what to do about it. "Unsupported" on its own leaves
+    // someone guessing which of their files was the problem and what would work.
+    toast("Those file types aren't supported yet. Try PNG, JPEG, WebP, AVIF, GIF, BMP or TIFF.");
+    return;
+  }
   startEngine();
   const firstEver = state.items.length === 0;
   for (const file of usable) {
@@ -995,7 +1000,7 @@ function narrationFor(it) {
     return `That file couldn't be read${it.error ? ` — ${escapeHtml(it.error)}` : ""}. ` +
            `Your original is untouched.`;
   }
-  if (it.status === "cancelled") return "Stopped. Your original is untouched.";
+  if (it.status === "cancelled") return "Stopped. Your original has not been changed.";
   if (!isReady(it)) return escapeHtml(WORKING_LINE);
 
   const ask = (action, words) =>
@@ -1003,7 +1008,7 @@ function narrationFor(it) {
 
   if (it.pick === ORIGINAL_PICK) {
     return `Keeping your original, exactly as it arrived.` +
-           ask("auto", "Go back to the smallest one that passed?");
+           ask("auto", "Go back to the smallest one that still looked right?");
   }
   if (it.pick) {
     return `Showing <b>${escapeHtml(fmtLabel(it.fmt))}</b> because you picked it — ` +
@@ -1013,8 +1018,9 @@ function narrationFor(it) {
     return `This was already smaller than anything we could make, so it was left ` +
            `exactly as it is.` + ask("chips", "See what we tried?");
   }
-  return `Went with <b>${escapeHtml(fmtLabel(it.fmt))}</b> — smallest option that ` +
-         `still passes.` + ask("chips", "Prefer something else?");
+  return `Went with <b>${escapeHtml(fmtLabel(it.fmt))}</b> — the smallest version ` +
+         `that still looks close enough to your original.` +
+         ask("chips", "Prefer something else?");
 }
 
 /** The invitation's other half: put the chips under the eye that just asked
@@ -1030,14 +1036,14 @@ function surfaceChips() {
   cands.scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
 }
 
-/** The numbers behind the sentence: how the winner compares to the runner-up
- *  and where it landed against the floor. The narration says which one won, so
- *  this no longer repeats it. */
+/** The numbers behind the sentence: how close the result came, and how it
+ *  compares to the runner-up. The narration says which one won, so this no
+ *  longer repeats it. */
 function verdictFor(it) {
   if (it.pick === ORIGINAL_PICK) return "";
   if (it.passthrough) {
-    return `Every encode came out <b>larger than the file you gave us</b>, which is ` +
-           `what already-well-compressed looks like.`;
+    return `Every version came out <b>larger than the file you gave us</b>, which ` +
+           `is what an already well-compressed image looks like.`;
   }
   if (!it.candidates?.length) return "";
   const pct = it.originalBytes ? 100 * (it.originalBytes - it.newBytes) / it.originalBytes : 0;
@@ -1045,8 +1051,8 @@ function verdictFor(it) {
   const runner = sorted.find((c) => c.format !== it.fmt);
   const quality = it.lossless
     ? "and it is <b>pixel-identical</b> to the original"
-    : `at SSIMULACRA 2 <b>${it.score?.toFixed(1)}</b>, above your ${Number(
-        it.override?.qualityTarget ?? state.settings.qualityTarget).toFixed(0)} floor`;
+    : `Visual match <b>${Math.round(it.score ?? 0)} out of 100</b>, above your ` +
+      `target of ${Math.round(it.override?.qualityTarget ?? state.settings.qualityTarget)}`;
   let line = `<b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
   if (runner && runner.bytes > it.newBytes) {
     const gap = 100 * (runner.bytes - it.newBytes) / runner.bytes;
@@ -1238,7 +1244,7 @@ function renderCandidates(it) {
     // Never a bare spinner: this sits directly under the sentence that explains
     // what the app is doing, and it names the format being measured right now.
     cands.innerHTML = waiting
-      ? `<span class="cand-wait">${escapeHtml(it.progress || "Testing formats…")}</span>`
+      ? `<span class="cand-wait">${escapeHtml(it.progress || "Trying formats…")}</span>`
       : "";
     return;
   }
@@ -1266,19 +1272,58 @@ function renderCandidates(it) {
     </button>`;
   };
 
+  /* Why each version that lost, lost. A list of rejects with no reasons is
+     clutter: it shows the machinery working without saying anything. One plain
+     sentence each turns the same list into the evidence it was always meant to
+     be. Rank order below matters - a version can be both too different AND
+     larger, and the first reason is the disqualifying one. */
+  const target = Math.round(it.override?.qualityTarget ?? state.settings.qualityTarget);
+  const winnerBytes = it.auto && !it.auto.passthrough ? it.auto.bytes : smallest;
+  const reasonFor = (c) => {
+    if (c.format === autoFmt) {
+      return "The smallest version that still looked close enough to your original.";
+    }
+    if (c.bytes >= it.originalBytes) {
+      return "Bigger than your original, so it was discarded.";
+    }
+    if (!c.lossless && c.score != null && Math.round(c.score) < target) {
+      return `Too different from the original — matched ${Math.round(c.score)} `
+           + `against your target of ${target}.`;
+    }
+    if (c.rejected) {
+      return "Close enough overall, but it lost too much colour detail.";
+    }
+    const larger = winnerBytes ? Math.round(100 * (c.bytes - winnerBytes) / winnerBytes) : 0;
+    return larger > 0
+      ? `Close enough to the original, but ${larger}% larger than the one chosen.`
+      : "Close enough to the original, but not the smallest.";
+  };
+
   cands.innerHTML = rows.map((c) => {
-    const quality = c.lossless ? "pixel-identical to the original"
-      : `SSIMULACRA 2 ${c.score?.toFixed(1)}`;
+    const quality = c.lossless ? "pixel-identical to your original"
+      : `visual match ${Math.round(c.score ?? 0)} out of 100`;
     const mark = c.format === autoFmt ? "winner"
       : now === c.format ? "showing"
       : c.bytes === smallest ? "smallest" : "";
     return chip(c.format, fmtLabel(c.format), c.bytes, mark,
-      `${fmtLabel(c.format)} · ${human(c.bytes)} · ${quality}${
-        c.rejected ? " · failed the colour check" : ""} — tap to show this one`);
+      `${fmtLabel(c.format)} · ${human(c.bytes)} · ${quality}\n${reasonFor(c)}\n`
+      + `Tap to show this one — it is already made, so it appears instantly.`);
   }).join("") + chip(
     ORIGINAL_PICK, "Original", it.originalBytes,
     now === ORIGINAL_PICK ? "showing" : "",
-    `Your file exactly as it arrived · ${human(it.originalBytes)} — tap to keep this instead`);
+    `Your file exactly as it arrived · ${human(it.originalBytes)}\n`
+    + `Tap to keep this instead — nothing is written until you save.`);
+
+  /* The reason for whichever version is on screen, said out loud rather than
+     hidden in a tooltip. One line, under the row it explains. */
+  const shown = rows.find((c) => c.format === now);
+  const why = $("cand-why");
+  if (why) {
+    why.textContent = now === ORIGINAL_PICK
+      ? "Keeping your file exactly as it arrived."
+      : shown ? reasonFor(shown) : "";
+    why.hidden = !why.textContent;
+  }
 
   // Widths go through the CSSOM: a style="" attribute in markup would (rightly)
   // be refused by the page's style-src CSP, leaving every meter at zero.
@@ -2160,7 +2205,7 @@ function bind() {
     const n = e.dataTransfer?.items?.length || 0;
     $("veil-count").textContent = n > 1
       ? `${n} items — we'll race every format on each one`
-      : "We'll race every format and keep the smallest that passes";
+      : "We'll try every format and keep the smallest one that still looks right";
     $("veil").classList.add("on");
     $("drop-target")?.classList.add("armed");
   });

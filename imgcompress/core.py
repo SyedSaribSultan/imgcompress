@@ -240,7 +240,7 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
                 result.suffix = source.suffix
                 result.new_bytes = result.original_bytes
                 result.skipped = True
-                result.note = "animated - passed through unchanged"
+                result.note = "animated - left exactly as it is"
                 return result
 
             img, original_size, resized_to = _normalise(opened, settings)
@@ -251,7 +251,8 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
     has_alpha = _has_alpha(img)
     names = _candidate_names(settings, has_alpha)
     if not names:
-        result.error = "no candidate format can carry this image"
+        result.error = ("No format available here can hold this image. "
+                        "Allow more formats, or choose a different destination.")
         return result
 
     # The smallest candidate that clears the floor wins. A candidate that
@@ -266,7 +267,9 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
         try:
             found = _search_one(img, encoder, metric, target, settings.fast)
         except Exception as exc:  # a broken candidate must not kill the file
-            result.warnings.append(f"{encoder.name} failed: {type(exc).__name__}")
+            result.warnings.append(
+                f"{encoder.name} could not be written for this image, so it was "
+                f"left out of the comparison ({type(exc).__name__})")
             continue
         if not found:
             continue
@@ -281,13 +284,16 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
 
     best = best_passing or best_failing
     if best is None:
-        result.error = "no candidate produced usable output"
+        result.error = ("None of the formats could be written for this image. "
+                        "It may be damaged; try re-exporting it.")
         return result
 
     data, level, score, encoder = best
     if score < target:
+        label = "visual match" if metric.name == "ssimulacra2" else metric.name
         result.warnings.append(
-            f"could not reach {metric.name} {target:g}; best was {score:.1f}"
+            f"could not reach a {label} of {target:g}; the closest was {score:.1f}. "
+            f"Lower the target, or keep the original."
         )
 
     # Never ship a bigger file. The one exception is a caller who *forced* a
@@ -301,7 +307,7 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
         result.suffix = source.suffix
         result.new_bytes = result.original_bytes
         result.skipped = True
-        result.note = "already well compressed - passed through unchanged"
+        result.note = "already smaller than anything we could make - left as it is"
         result.fmt = encoder.name
         return result
 

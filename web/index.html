@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="imgcompress">
 <meta property="og:url" content="https://imgcompress-app.vercel.app/">
 <meta property="og:title" content="imgcompress — compression that proves it didn't ruin your image">
-<meta property="og:description" content="70–90% smaller, with no visible quality loss. Every image is encoded several ways, scored against the original, and only the smallest version that still looks right survives. Runs entirely in your browser.">
+<meta property="og:description" content="70–90% smaller, with no visible quality loss. Every image is encoded several ways, scored against the original, and only the smallest version that still looks right is kept. Runs entirely in your browser.">
 <meta property="og:image" content="https://imgcompress-app.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -62,7 +62,7 @@
         "Encodes each image with mozjpeg, palette PNG, lossless PNG (oxipng), WebP, lossless WebP and AVIF, and keeps the smallest that passes",
         "Quality is measured with SSIMULACRA 2 — the community's perceptual metric — running in-browser, validated against the reference implementation",
         "Before/after split comparison with zoom, a difference heatmap and a hold-to-flicker test",
-        "Pick where the image is going — website, design tool, email, thumbnail or untouched original — and the formats, size and quality follow"
+        "Pick where the image is going — website, design tool, email, thumbnail or full-quality original — and the formats, size and quality follow"
       ]
     },
     {
@@ -81,17 +81,17 @@
         {
           "@type": "Question",
           "name": "How is quality measured?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Every candidate encode is decoded back and scored against the original with SSIMULACRA 2 — the perceptual metric the image-compression community converged on, running entirely in the browser as a port validated against the reference implementation. Transparent images are scored over a dark and a light backdrop, and the worse score wins." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Every version is opened back up and compared to your original with SSIMULACRA 2 — the perceptual measure the image-compression community converged on, running entirely in the browser and checked against the reference version. It looks at local contrast and detail the way eyes do rather than counting pixel differences, and 100 means indistinguishable. Transparent images are compared over both a dark and a light background, and the worse result is the one that counts." }
         },
         {
           "@type": "Question",
           "name": "What is the difference between this and the desktop version?",
-          "acceptedAnswer": { "@type": "Answer", "text": "They compress to the same measured SSIMULACRA 2 floor with the same class of encoders. The desktop version (pip install imgcompress) adds workflow: folder watching, batch saves straight to disk and a scriptable CLI, plus libimagequant and zopfli, which are still worth a few percent on palette images." }
+          "acceptedAnswer": { "@type": "Answer", "text": "They compress to the same measured visual match with the same class of encoders. The desktop version (pip install imgcompress) adds workflow: folder watching, batch saves straight to disk and a scriptable CLI, plus libimagequant and zopfli, which are still worth a few percent on palette images." }
         },
         {
           "@type": "Question",
           "name": "Which formats can it read and write?",
-          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are passed through untouched. Output is JPEG, palette PNG, lossless PNG, WebP (lossy or lossless) or AVIF." }
+          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are left exactly as they are. Output is JPEG, palette PNG, lossless PNG, WebP (lossy or lossless) or AVIF." }
         },
         {
           "@type": "Question",
@@ -149,9 +149,9 @@
           <span class="sd-pct num" id="sd-pct">−84%</span>
         </div>
 
-        <p>Every image is encoded several different ways, scored against the
-           original with a perceptual metric, and only the smallest version
-           that still passes survives. Then you get to check the proof.</p>
+        <p>Every image comes out as small as it can go without you being able
+           to see the difference — and you get the side-by-side to check that
+           for yourself.</p>
 
         <div class="empty-actions">
           <button class="btn primary big" id="empty-add">Choose images</button>
@@ -184,7 +184,7 @@
     <div class="app" id="app-full" hidden>
       <!-- toolbar: the simple promise up front, everything else behind Advanced.
            No longer the primary way anyone finds out they have a choice - the
-           candidate chips under the image are - so this is the power-user
+           version chips under the image are - so this is the power-user
            surface: change it and the whole queue is redone to match. -->
       <div class="bar" id="bar-controls">
         <!-- Two decisions, both the person's to make, both defaulting to
@@ -242,7 +242,7 @@
         <!-- The number behind the words. Same setting as the Quality control
              above, on the scale the measurement actually uses. -->
         <div class="field">
-          <label for="quality">Quality floor</label>
+          <label for="quality">Minimum visual match</label>
           <input type="range" id="quality" min="60" max="99" step="1" value="90"
                  aria-describedby="quality-note">
           <output class="num" id="quality-out">90</output>
@@ -363,7 +363,11 @@
             <div class="readout">
               <p class="narration" id="narration" aria-live="polite"></p>
               <div class="cands" id="cands" role="group"
-                   aria-label="Every encode that was tried"></div>
+                   aria-label="Every version that was tried"></div>
+              <!-- Why the version on screen is the one on screen. Every version
+                   that lost gets the same sentence in its own tooltip; this is
+                   the one for whatever you are looking at, said out loud. -->
+              <p class="cand-why" id="cand-why" aria-live="polite" hidden></p>
             </div>
 
             <div class="details" id="details">
@@ -392,38 +396,45 @@
                 <details class="advanced-info">
                   <summary>How this was measured</summary>
                   <div class="stats">
-                    <div class="stat"><div class="k">SSIMULACRA 2</div><div class="v" id="s-score">—</div></div>
-                    <div class="stat"><div class="k">Quality floor</div><div class="v" id="s-floor">—</div></div>
+                    <div class="stat"><div class="k">Visual match</div><div class="v" id="s-score">—</div></div>
+                    <div class="stat"><div class="k">Your target</div><div class="v" id="s-floor">—</div></div>
                     <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
                     <div class="stat"><div class="k">Time taken</div><div class="v" id="s-time">—</div></div>
                   </div>
-                  <p class="metric-note">Every candidate was decoded back and scored
-                     against your original with SSIMULACRA&nbsp;2 — the metric the
-                     image-compression community converged on, colour-aware by
-                     construction. 90 means the difference doesn't survive a flicker
-                     test; 100 is identical.</p>
+                  <p class="metric-note">We compare the two images the way eyes
+                     do — looking at local contrast and detail rather than counting
+                     pixel differences. <b>100 means indistinguishable.</b> At 90
+                     the difference does not show even when the two are flicked
+                     back and forth on top of each other.</p>
+                  <p class="metric-note">Colour is never thrown away, which most
+                     JPEG encoders do to save space. Matching this quality with
+                     colour detail discarded needed setting 97 instead of 76 — a
+                     file <b>3.8&times; larger</b>. The measure used here can see
+                     colour damage; the older ones everybody still uses cannot.
+                     <span class="muted">(The measure is SSIMULACRA&nbsp;2, run in
+                     your browser and checked against the reference version.)</span></p>
                 </details>
               </div>
               <!-- The manual overrides, for this image only. A dropdown is the
                    right shape here and the wrong shape above: it can name a
-                   format the bake-off never tried, which no chip can, but it
+                   format the comparison never tried, which no chip can, but it
                    reads as status rather than invitation - so it lives down
                    here with the other numbers, not next to the picture.
                    Anything set here is a genuine re-run, not a swap. -->
               <div class="pane">
-                <h3 class="micro">Redo just this image
-                  <span class="hint-inline">try something the bake-off didn't</span></h3>
+                <h3 class="micro">Try different settings
+                  <span class="hint-inline">for this image only</span></h3>
                 <div class="ov-grid">
-                  <label for="ov-format">Force a format</label>
+                  <label for="ov-format">Always use</label>
                   <select id="ov-format">
-                    <option value="">best of all candidates</option>
+                    <option value="">whichever comes out smallest</option>
                     <option value="jpeg">jpeg</option>
                     <option value="png8">png8 (palette)</option>
                     <option value="png">png (lossless)</option>
                     <option value="webp">webp</option>
                     <option value="avif">avif</option>
                   </select>
-                  <label for="ov-quality">Quality floor</label>
+                  <label for="ov-quality">Minimum visual match</label>
                   <input class="num-input" type="number" id="ov-quality" min="60" max="99" placeholder="—">
                 </div>
                 <div class="ov-actions">
@@ -463,23 +474,23 @@
   <section class="learn" id="learn">
     <h2>Quality is measured, not guessed</h2>
     <p class="lede">Most compressors ask you to pick a quality number and hope.
-       This one encodes each image several different ways, decodes every
-       candidate back, scores it against the original, and keeps the smallest
-       file that still clears the floor you set. Then it shows you the evidence.</p>
+       This one saves each image several different ways, opens every version
+       back up, compares it to your original, and keeps the smallest one that
+       still looks close enough. Then it shows you the evidence.</p>
 
     <div class="steps">
       <div class="step">
         <span class="step-n num">1</span>
         <h3>Encode it several ways</h3>
         <p>mozjpeg, palette PNG, lossless PNG — plus WebP and AVIF if you allow
-           them. Each format is searched independently for the lowest setting
-           that still clears your floor, and every PNG gets a lossless oxipng
-           squeeze.</p>
+           them. Each format is searched separately for the smallest setting
+           that still looks close enough to your original, and every PNG gets a
+           lossless oxipng squeeze.</p>
       </div>
       <div class="step">
         <span class="step-n num">2</span>
-        <h3>Score every candidate</h3>
-        <p>Each encode is decoded back and scored against the original with
+        <h3>Compare every version</h3>
+        <p>Each one is opened back up and compared to your original with
            <b>SSIMULACRA&nbsp;2</b> — the metric the image-compression community
            converged on, running right here in your browser and validated
            against the reference implementation. Transparency is scored on dark
@@ -487,14 +498,15 @@
       </div>
       <div class="step">
         <span class="step-n num">3</span>
-        <h3>Keep the smallest that passes</h3>
-        <p>The winner is whichever candidate came out smallest while still
-           passing — and nothing bigger than your original is ever produced.
-           Already-tiny files pass through untouched.</p>
+        <h3>Keep the smallest one that still looks right</h3>
+        <p>The winner is whichever version came out smallest while still
+           looking close enough to your original — and nothing bigger than what
+           you started with is ever produced. Files that are already small
+           enough are left exactly as they are.</p>
       </div>
     </div>
 
-    <h3 class="sub">The format is a bake-off, not an assumption</h3>
+    <h3 class="sub">The format is a comparison, not an assumption</h3>
     <p>Which format wins is genuinely content-dependent — measured on the
        project's benchmark corpus, with up to a <b>40× spread</b> between the
        best and worst choice for the same image:</p>
@@ -535,10 +547,11 @@
 
   <section class="learn" id="desktop">
     <h2>Prefer a desktop app? There's one of those too</h2>
-    <p class="lede">This page runs the full pipeline: SSIMULACRA&nbsp;2 as the
-       quality floor, mozjpeg, oxipng, real lossless WebP and AVIF — all
-       compiled to WebAssembly, all local. The Python version compresses to
-       the same measured floor; what it adds is workflow:</p>
+    <p class="lede">This page runs the full pipeline: a real perceptual measure
+       deciding when a version is close enough, plus mozjpeg, oxipng, real
+       lossless WebP and AVIF — all compiled to WebAssembly, all local. The
+       Python version holds the same measured standard; what it adds is
+       workflow:</p>
     <ul class="checks">
       <li><b>Folder watching</b> — point it at your Figma export folder and new
           arrivals are compressed as they land</li>
@@ -575,13 +588,16 @@ imgcompress photos/        # or the command line</code></pre>
     </details>
     <details>
       <summary>How is quality measured?</summary>
-      <p>Every candidate encode is decoded back and scored against the original
-         with SSIMULACRA&nbsp;2 — the perceptual metric the image-compression
-         community converged on, which correlates with human judgement at
-         r≈0.88 and sees chroma damage that luma-only metrics miss. It runs
-         entirely in your browser, as a port validated against the reference
-         implementation. Transparent images are scored over a dark and a light
-         backdrop, and the worse score wins.</p>
+      <p>Every version is opened back up and compared to your original. The
+         comparison looks at local contrast and detail the way eyes do, rather
+         than counting pixel differences, and it can see colour damage that the
+         older measures everybody still uses cannot. <b>100 means
+         indistinguishable.</b> Images with transparency are compared over both
+         a dark and a light background, and the worse of the two is the one
+         that counts — a halo you cannot see on white is still a defect.</p>
+      <p class="muted">The measure is SSIMULACRA&nbsp;2, which agrees with human
+         judgement at r≈0.88 against about 0.76 for the older SSIM. It runs
+         entirely in your browser, checked against the reference version.</p>
     </details>
     <details>
       <summary>What is the difference between this and the desktop version?</summary>
