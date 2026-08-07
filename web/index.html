@@ -52,7 +52,7 @@
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript and a modern browser",
-      "softwareVersion": "2.5.0",
+      "softwareVersion": "2.6.0",
       "license": "https://github.com/SyedSaribSultan/imgcompress/blob/main/LICENSE",
       "sameAs": ["https://github.com/SyedSaribSultan/imgcompress"],
       "author": { "@type": "Organization", "name": "HeyOz" },
@@ -176,39 +176,16 @@
       </div>
     </div>
 
-    <!-- ===================== 1b. SET UP THE BATCH ======================= *
-         Dropping images used to start compressing them on the spot, which
-         spends a minute of someone's laptop before they have been told they
-         could have picked a format, a quality, or renamed anything. This step
-         stops between "here are your images" and "here is the work": it shows
-         what was picked up and hands over the controls first. The settings bar
-         is physically moved in here rather than duplicated, so there is
-         exactly one Format control and one Quality control in the document. -->
-    <div class="setup" id="app-stage" hidden>
-      <div class="setup-head">
-        <h2 id="setup-title">Ready when you are</h2>
-        <p class="setup-sub" id="setup-sub">Nothing has been compressed yet.
-           Check the list, choose how you want it done, then start.</p>
-      </div>
-
-      <div class="setup-controls" id="setup-controls"></div>
-
-      <ul class="setup-list" id="setup-list" aria-label="Images waiting to be compressed"></ul>
-
-      <div class="setup-actions">
-        <button class="btn primary big" id="setup-go">Compress</button>
-        <button class="btn big" id="setup-add">Add more</button>
-        <div class="spacer"></div>
-        <button class="btn ghost" id="setup-cancel">Start over</button>
-      </div>
-      <p class="setup-foot micro">Runs on this device. Nothing is uploaded, and
-         you can change any of it afterwards.</p>
-    </div>
-
+    <!-- A drop goes straight here. There is no step in between: the original is
+         painted first, the work starts on the next frame, and every control the
+         old set-up step held now lives in the result view below - where it can
+         be pulled and its effect seen at once, instead of being guessed at
+         before there is anything to compare. -->
     <div class="app" id="app-full" hidden>
       <!-- toolbar: the simple promise up front, everything else behind Advanced.
-           This element and #advanced are MOVED between here and the set-up
-           step rather than copied - see placeControls(). -->
+           No longer the primary way anyone finds out they have a choice - the
+           candidate chips under the image are - so this is the power-user
+           surface: change it and the whole queue is redone to match. -->
       <div class="bar" id="bar-controls">
         <!-- Two decisions, both the person's to make, both defaulting to
              "let the app work it out". The groups say which is which, and
@@ -303,7 +280,15 @@
           <div class="insp-placeholder" id="inspector-empty">Select an image from the queue.</div>
           <div id="inspector-body" hidden>
             <div class="insp-head">
-              <h2 id="insp-name">—</h2>
+              <!-- Editable in place. Renaming used to live in the set-up step,
+                   and the extension is not part of it: the winning format
+                   decides that, and typing ".png" onto a JPEG would promise
+                   something untrue. -->
+              <h2 class="insp-title">
+                <input id="insp-name" type="text" spellcheck="false"
+                       aria-label="Name for this image">
+                <span class="insp-ext num" id="insp-ext"></span>
+              </h2>
               <span class="dims num" id="insp-dims"></span>
               <div class="spacer"></div>
               <button class="btn" id="retry-btn" hidden>Try again</button>
@@ -362,6 +347,22 @@
               <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test · <kbd>D</kbd> shows what changed</div>
             </div>
 
+            <!-- ====================== 3b. THE READOUT ======================= *
+                 One sentence saying what is happening or what happened, and
+                 under it every encode that was tried, as something you can
+                 touch. This band is deliberately between the picture and the
+                 numbers: it is the only place in the app that has to be
+                 understood without being read carefully, and a chip that
+                 changes the picture the instant it is tapped teaches that
+                 there was a choice here far better than any label pointing at
+                 a menu could. The sentence ends in a real action for the same
+                 reason - it is an invitation, not a caption. -->
+            <div class="readout">
+              <p class="narration" id="narration" aria-live="polite"></p>
+              <div class="cands" id="cands" role="group"
+                   aria-label="Every encode that was tried"></div>
+            </div>
+
             <div class="details" id="details">
               <div class="pane">
                 <!-- Headline numbers only. Everything a person needs to decide
@@ -400,26 +401,32 @@
                      test; 100 is identical.</p>
                 </details>
               </div>
+              <!-- The manual overrides, for this image only. A dropdown is the
+                   right shape here and the wrong shape above: it can name a
+                   format the bake-off never tried, which no chip can, but it
+                   reads as status rather than invitation - so it lives down
+                   here with the other numbers, not next to the picture.
+                   Anything set here is a genuine re-run, not a swap. -->
               <div class="pane">
-                <h3 class="micro">Every candidate, ranked <span class="hint-inline">click one to preview or keep it</span></h3>
-                <div class="cands" id="cands"></div>
-                <div class="ov-floor">
-                  <label for="ov-quality">Quality floor for this image</label>
+                <h3 class="micro">Redo just this image
+                  <span class="hint-inline">try something the bake-off didn't</span></h3>
+                <div class="ov-grid">
+                  <label for="ov-format">Force a format</label>
+                  <select id="ov-format">
+                    <option value="">best of all candidates</option>
+                    <option value="jpeg">jpeg</option>
+                    <option value="png8">png8 (palette)</option>
+                    <option value="png">png (lossless)</option>
+                    <option value="webp">webp</option>
+                    <option value="avif">avif</option>
+                  </select>
+                  <label for="ov-quality">Quality floor</label>
                   <input class="num-input" type="number" id="ov-quality" min="60" max="99" placeholder="—">
-                  <button class="btn sm" id="ov-apply">Apply</button>
+                </div>
+                <div class="ov-actions">
+                  <button class="btn sm" id="ov-apply">Compress again</button>
                   <button class="btn ghost sm" id="ov-reset" hidden>Reset</button>
                 </div>
-                <!-- Kept in the DOM: the candidate cards write to it, and the E2E
-                     drives it directly. Not shown, because clicking a card is the
-                     direct route to the same thing. -->
-                <select id="ov-format" class="sr" aria-hidden="true" tabindex="-1">
-                  <option value="">best of all candidates</option>
-                  <option value="jpeg">jpeg</option>
-                  <option value="png8">png8 (palette)</option>
-                  <option value="png">png (lossless)</option>
-                  <option value="webp">webp</option>
-                  <option value="avif">avif</option>
-                </select>
               </div>
             </div>
           </div>
@@ -597,7 +604,7 @@ imgcompress photos/        # or the command line</code></pre>
   <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
   <!-- The one place the version is written. Exported reports read it from
        here, so a report can never claim a version the page is not. -->
-  <span class="num" id="app-version">v2.5.0</span>
+  <span class="num" id="app-version">v2.6.0</span>
   <span>by HeyOz</span>
   <!-- Lifetime totals live here, labelled, so they cannot be mistaken for the
        current batch's numbers in the results bar. -->

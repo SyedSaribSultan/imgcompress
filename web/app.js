@@ -46,6 +46,9 @@ const SUPPORTED = /\.(png|jpe?g|webp|bmp|tiff?|gif)$/i;
 const FORMAT_LABEL = {
   jpeg: "JPEG", png8: "PNG-8", png: "PNG", webp: "WebP",
   "webp-lossless": "WebP lossless", avif: "AVIF", gif: "GIF",
+  // Not an encoder: the choice to keep the file exactly as it arrived, which
+  // is a real candidate and the one the original chip stands for.
+  original: "Original",
 };
 const fmtLabel = (f) => FORMAT_LABEL[f] || (f ? f.toUpperCase() : "");
 
@@ -92,10 +95,6 @@ const state = {
   settingsRev: 0,
   caps: { webp: null, png8: null },
   suffix: false,
-  /* True between "images picked up" and "start compressing". Items sit at
-     status "staged", which is neither busy nor ready, so nothing dispatches
-     and no result is claimed for them. */
-  staging: false,
 };
 
 /* The Format control is one list spanning "you choose" to "I choose", so its
@@ -217,7 +216,13 @@ function reflectQualityHint() {
 function bumpLifetime(images, bytes) {
   try {
     const s = JSON.parse(localStorage.getItem("imgc-stats") || "{}");
-    const next = { images: (s.images || 0) + images, bytes: (s.bytes || 0) + bytes };
+    // Clamped: choosing a larger encode after the fact sends a negative delta
+    // through here, and a lifetime total is not allowed to go backwards past
+    // zero on the way to being corrected.
+    const next = {
+      images: (s.images || 0) + images,
+      bytes: Math.max(0, (s.bytes || 0) + bytes),
+    };
     localStorage.setItem("imgc-stats", JSON.stringify(next));
     renderLifetime();
   } catch {}
@@ -398,25 +403,20 @@ function onWorkerMessage(slot, msg) {
     item.warnings = msg.warnings || [];
   } else if (msg.type === "done") {
     const r = msg.result;
-    if (item.afterURL) URL.revokeObjectURL(item.afterURL);
-    const blob = new Blob([r.bytes], { type: r.mime });
     item.status = "done";
     item.justFinished = true;
     item.wipePending = true;
     item.perf = msg.perf || null;   // phase timings, for the benchmark
     item.result = r;
-    item.afterBlob = blob;
-    item.afterURL = URL.createObjectURL(blob);
-    item.newBytes = r.newBytes;
-    item.fmt = r.fmt;
-    item.level = r.level;
-    item.score = r.score;
     item.metric = r.metric;
-    item.lossless = !!r.lossless;
-    item.note = r.note || "";
     item.warnings = r.warnings || [];
     item.candidates = r.candidates || [];
-    item.passthrough = !!r.passthrough;
+    adoptCandidateBytes(item);
+    // The engine's answer, kept whole, and made the one on screen. A choice
+    // among the other encodes is a swap away and never destroys this.
+    item.pick = null;
+    item.auto = autoView(r, new Blob([r.bytes], { type: r.mime }));
+    applyView(item, item.auto);
     // Measured from the decoded pixels, not guessed from the extension: it is
     // what decides whether choosing JPEG has to ask a question first.
     item.alpha = !!r.alpha;
@@ -424,10 +424,7 @@ function onWorkerMessage(slot, msg) {
     if (r.width) { item.width = r.width; item.height = r.height; }
     item.outW = r.outW || item.width;
     item.outH = r.outH || item.height;
-    if (!item.counted) {
-      item.counted = true;
-      bumpLifetime(1, Math.max(0, item.originalBytes - item.newBytes));
-    }
+    countLifetime(item);
   }
   scheduleRender();
   dispatch();
@@ -456,97 +453,148 @@ function maybeCelebrate() {
     : `All done${took} — these were already well compressed`);
 }
 
-/* ------------------------- the set-up step -------------------------------- *
- * One settings bar exists in the document. Rather than cloning it - two live
- * copies of a control the engine reads from is the floor-99 bug waiting to
- * happen again - the real nodes are moved between the set-up panel and the
- * dashboard toolbar. Same elements, same ids, same listeners, one truth. */
-function placeControls(where) {
-  const host = where === "setup" ? $("setup-controls") : $("app-full");
-  const bar = $("bar-controls"), adv = $("advanced");
-  if (bar.parentElement === host) return;
-  if (where === "setup") { host.append(bar, adv); }
-  else { host.prepend(bar, adv); }        // toolbar sits above the dashboard
-}
+/* ------------------------ which encode is on screen ----------------------- *
+ * The bake-off produces several finished files and used to throw all but one
+ * away. It now brings them all home, so "show me the AVIF instead" is a
+ * relabel and a new object URL rather than a fresh run of the whole search.
+ *
+ * Three fields carry the state. `auto` is the answer the engine gave, kept
+ * whole so it can always be returned to. `candBlobs` holds every encode's
+ * bytes. `pick` is what the person chose to look at instead - null while the
+ * engine's answer stands. The live fields (fmt, newBytes, score, afterBlob…)
+ * always describe whichever of those is currently on screen, so every number,
+ * the split view, the diff and the download follow from one swap. */
+
+const ORIGINAL_PICK = "__original";
 
 const splitName = (name) => {
   const m = /^(.*?)(\.[a-z0-9]+)?$/i.exec(name) || [];
   return { base: m[1] || name, ext: m[2] || "" };
 };
 
-function renderSetup() {
-  placeControls("setup");
-  const staged = state.items.filter((i) => i.status === "staged");
-  const n = staged.length;
-  const bytes = staged.reduce((s, i) => s + i.originalBytes, 0);
-  $("setup-title").textContent = n === 1
-    ? "1 image ready" : `${n} images ready`;
-  $("setup-sub").textContent =
-    `${human(bytes)} in total. Nothing has been compressed yet — check the list, ` +
-    `choose how you want it done, then start.`;
-  $("setup-go").textContent = n === 1 ? "Compress this image" : `Compress ${n} images`;
-  $("setup-go").disabled = n === 0;
-
-  /* Rows are built once and kept. Rebuilding the list on every render would
-     wipe out whatever someone was halfway through typing into a name field -
-     and a settings change re-renders. */
-  const list = $("setup-list");
-  const want = staged.map((i) => i.id).join(",");
-  if (list.dataset.ids !== want) {
-    list.dataset.ids = want;
-    list.textContent = "";
-    for (const it of staged) list.append(buildSetupRow(it));
+/** Move the transferred candidate buffers onto the item as blobs. Blobs are
+ *  backed by the browser's own store rather than the JS heap, which is what
+ *  makes holding every encode of every image in a large batch affordable. */
+function adoptCandidateBytes(item) {
+  item.candBlobs = new Map();
+  for (const row of item.candidates) {
+    if (!row.data) continue;
+    item.candBlobs.set(row.format, new Blob([row.data], { type: row.mime || "" }));
+    delete row.data;    // the rows are plain data from here on
   }
 }
 
-function buildSetupRow(it) {
-  const li = document.createElement("li");
-  li.className = "setup-row";
-  li.dataset.id = it.id;
-  li.innerHTML = `
-    <span class="thumb"></span>
-    <span class="setup-cell">
-      <input class="setup-name" type="text" spellcheck="false"
-             aria-label="Name for this image">
-      <span class="setup-meta num"></span>
-    </span>
-    <button class="setup-drop" title="Remove this image" aria-label="Remove this image">×</button>`;
-  if (it.thumbURL) li.querySelector(".thumb").style.backgroundImage = `url("${it.thumbURL}")`;
-  const { base, ext } = splitName(it.name);
-  const input = li.querySelector(".setup-name");
-  input.value = base;
-  // The extension is not editable: the format decides it, and letting someone
-  // type ".png" onto a JPEG would promise something untrue.
-  li.querySelector(".setup-meta").textContent = `${ext || ""} · ${human(it.originalBytes)}`;
-  const commit = () => {
-    const v = input.value.trim();
-    if (v) it.name = v + ext; else input.value = splitName(it.name).base;
+/** The engine's own answer, in the shape a view takes. */
+function autoView(r, blob) {
+  return {
+    fmt: r.fmt,
+    /* Passthrough ships the original bytes, so its name keeps the original's
+       extension - left null and resolved at download time, because the file
+       may be renamed between now and then. */
+    ext: r.passthrough ? null : (r.ext || null),
+    blob,
+    newBytes: r.newBytes,
+    level: r.level, score: r.score, lossless: !!r.lossless,
+    note: r.note || "", passthrough: !!r.passthrough,
   };
-  input.addEventListener("change", commit);
-  input.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    commit();
-    input.blur();      // Enter in a name field means "done", not "go"
-  });
-  li.querySelector(".setup-drop").addEventListener("click", () => removeItems([it.id]));
-  return li;
 }
 
-/** Leave the set-up step and actually start the work. */
-function startStagedRun() {
-  const staged = state.items.filter((i) => i.status === "staged");
-  if (!staged.length) return;
-  state.staging = false;
-  state.settings = currentSettings();   // whatever the controls now show
-  state.settingsRev++;
-  saveSettings();
-  placeControls("toolbar");
-  for (const it of staged) it.status = "queued";
-  selected = selected && state.byId.has(selected) ? selected : staged[0].id;
-  beginBatch();
+function candidateView(it, row) {
+  return {
+    fmt: row.format, ext: row.ext || null,
+    blob: it.candBlobs.get(row.format),
+    newBytes: row.bytes,
+    level: row.lossless ? null : (row.level ?? null),
+    score: row.lossless ? null : row.score,
+    lossless: !!row.lossless,
+    note: "", passthrough: false,
+  };
+}
+
+/** Keeping the file exactly as it arrived. The File object is already a Blob,
+ *  so this costs nothing and needs no encoder. */
+function originalView(it) {
+  return {
+    fmt: "original", ext: null, blob: it.file,
+    newBytes: it.originalBytes,
+    level: null, score: null, lossless: true,
+    note: "Kept exactly as it arrived — not compressed.", passthrough: true,
+  };
+}
+
+/** Point the item's live fields at one of those views. */
+function applyView(it, view) {
+  if (!view || !view.blob) return false;
+  if (it.afterURL) URL.revokeObjectURL(it.afterURL);
+  it.fmt = view.fmt;
+  it.ext = view.ext;
+  it.afterBlob = view.blob;
+  it.afterURL = URL.createObjectURL(view.blob);
+  it.newBytes = view.newBytes;
+  it.level = view.level;
+  it.score = view.score;
+  it.lossless = view.lossless;
+  it.note = view.note;
+  it.passthrough = view.passthrough;
+  return true;
+}
+
+/** Which chip is the one currently on screen. */
+function currentPick(it) {
+  if (it.pick) return it.pick;
+  if (it.auto?.passthrough) return ORIGINAL_PICK;
+  return it.auto?.fmt || "";
+}
+
+/* Lifetime totals follow the file actually kept. Choosing a different encode
+   changes what was saved, so the difference is applied rather than the image
+   being counted a second time. */
+function countLifetime(it) {
+  const saved = Math.max(0, it.originalBytes - it.newBytes);
+  if (it.countedBytes == null) { it.countedBytes = saved; bumpLifetime(1, saved); }
+  else if (saved !== it.countedBytes) {
+    bumpLifetime(0, saved - it.countedBytes);
+    it.countedBytes = saved;
+  }
+}
+
+/** Tapping a chip. The whole point of this path is that it finishes now: the
+ *  picture changes under the finger that touched it, which is how someone
+ *  finds out they had a choice without ever being told they did. */
+function chooseCandidate(format) {
+  const it = state.byId.get(selected);
+  if (!it || !isReady(it) || !it.auto) return;
+  if (currentPick(it) === format) return;    // already the one on screen
+
+  let view, said;
+  if (format === ORIGINAL_PICK) {
+    view = originalView(it);
+    said = "Keeping your original — nothing compressed";
+  } else if (format === it.auto.fmt && !it.auto.passthrough) {
+    view = it.auto;                          // the winner chip IS the way back
+    said = "Back to the smallest one that passed";
+  } else {
+    const row = it.candidates.find((c) => c.format === format);
+    view = row && candidateView(it, row);
+    said = view && `Keeping ${fmtLabel(format)} for this image`;
+  }
+  if (!applyView(it, view)) return;
+
+  it.pick = (view === it.auto) ? null : format;
+  /* A swap gets the same reveal a first result gets - the wipe over the
+     original, and the weights rolling to their new values. That response is
+     the entire reason the chips are the control: you learn what the choice
+     does by watching it happen, not by reading a label. */
+  it.wipePending = true;
+  it.justFinished = true;
+  countLifetime(it);
+  /* The Advanced dropdown is deliberately not touched. It means "run this
+     image again forcing that format", which is a different act from showing an
+     encode the run already produced, and making it echo a chip would claim a
+     re-run that never happened. */
+  toast(said);
+  dirty.inspector = dirty.queue = dirty.summary = true;
   scheduleRender();
-  dispatch();
 }
 
 /* ------------------------------ add files -------------------------------- */
@@ -579,32 +627,24 @@ async function makeThumb(item) {
     const blob = await new Promise((r) => c.toBlob(r, "image/png"));
     if (blob && state.byId.has(item.id)) {
       item.thumbURL = URL.createObjectURL(blob);
-      // Both places that show a thumbnail: the queue row, and the set-up list -
-      // where a blank square would defeat the point of showing you the images.
-      for (const row of [rowEls.get(item.id),
-                         $("setup-list").querySelector(`[data-id="${item.id}"]`)]) {
-        if (row) row.querySelector(".thumb").style.backgroundImage = `url("${item.thumbURL}")`;
-      }
+      const row = rowEls.get(item.id);
+      if (row) row.querySelector(".thumb").style.backgroundImage = `url("${item.thumbURL}")`;
     }
   } catch { /* corrupt files simply keep a blank thumb */ }
 }
 
-function addFiles(files, opts = {}) {
+function addFiles(files) {
   const usable = [...files].filter((f) => SUPPORTED.test(f.name) || /^image\//.test(f.type));
   if (!usable.length) { toast("No supported images in that drop"); return; }
   startEngine();
-  /* A drop into an empty queue pauses for setup; a drop onto a run that is
-     already configured joins it. The step exists to choose settings before
-     spending the compute, and once they are chosen, they are chosen.
-     The demo opts out: someone who pressed "see it work" asked to see it. */
-  const setup = !opts.immediate && (state.staging || state.items.length === 0);
+  const firstEver = state.items.length === 0;
   for (const file of usable) {
     const item = {
       id: uid(),
       name: file.name || "pasted image.png",
       file,
       originalBytes: file.size,
-      status: setup ? "staged" : "queued",
+      status: "queued",
       beforeURL: URL.createObjectURL(file),
       warnings: [], candidates: [],
       width: 0, height: 0, outW: 0, outH: 0,
@@ -614,20 +654,18 @@ function addFiles(files, opts = {}) {
     if (!selected) selected = item.id;
     makeThumb(item);
   }
-  if (setup) {
-    const first = !state.staging;
-    state.staging = true;
-    scheduleRender();
-    // Land the keyboard on the thing most people want next, but only on the
-    // way in - stealing focus every time a file is added would fight anyone
-    // who is partway through renaming.
-    if (first) requestAnimationFrame(() => $("setup-go").focus());
-    return;
-  }
   beginBatch();
-  toast(`Added ${usable.length} image${usable.length === 1 ? "" : "s"}`);
-  scheduleRender();
-  dispatch();
+  if (!firstEver) toast(`Added ${usable.length} image${usable.length === 1 ? "" : "s"}`);
+
+  /* The first frame belongs to the file, untouched. render() runs here rather
+     than being scheduled so the studio and the original's src are in the
+     document immediately, and the work is held until the frame after that, so
+     the browser has actually painted the picture before a single encoder is
+     asked for anything. It is a few milliseconds, and it is the difference
+     between "here is your image, now watch" and "something happened to my
+     file". */
+  renderNow();
+  requestAnimationFrame(() => dispatch());
 }
 
 /** Drops can contain folders - designers drop whole export directories. */
@@ -667,12 +705,6 @@ function removeItems(ids) {
     if (selected === id) selected = null;
   }
   if (!selected && state.items.length) selected = state.items[0].id;
-  // Emptying the set-up list drops back to the landing page rather than
-  // leaving a set-up step with nothing to set up.
-  if (state.staging && !state.items.length) {
-    state.staging = false;
-    placeControls("toolbar");
-  }
   scheduleRender();
 }
 
@@ -680,14 +712,17 @@ function requeue(ids) {
   let any = false;
   for (const id of ids) {
     const item = state.byId.get(id);
-    // "staged" is deliberately not requeued: it has never run, and starting it
-    // here would be the surprise the set-up step exists to remove.
-    if (!item || item.status === "working" || item.status === "staged") continue;
+    if (!item || item.status === "working") continue;
     item.status = "queued";
     item.error = "";
     item.warnings = [];
     item.note = "";
+    // A re-run replaces the whole bake-off, so the encodes it produced and any
+    // choice made among them go with it.
     item.candidates = [];
+    item.candBlobs = null;
+    item.auto = null;
+    item.pick = null;
     item.frac = 0;
     if (item.diffURL) { URL.revokeObjectURL(item.diffURL); item.diffURL = null; }
     any = true;
@@ -708,6 +743,12 @@ function scheduleRender(part) {
   renderQueued = true;
   requestAnimationFrame(() => { renderQueued = false; render(); });
 }
+/** Everything, in this frame. Only for the moment a file arrives, where the
+ *  point is that the original is on screen before anything else happens. */
+function renderNow() {
+  dirty.queue = dirty.inspector = dirty.summary = true;
+  render();
+}
 
 function render() {
   const wantAll = dirty.inspector || dirty.summary;
@@ -720,9 +761,7 @@ function render() {
     dirty.inspector = false;
   }
   $("app-empty").hidden = state.items.length > 0;
-  $("app-stage").hidden = !state.staging;
-  $("app-full").hidden = state.items.length === 0 || state.staging;
-  if (state.staging) renderSetup();
+  $("app-full").hidden = state.items.length === 0;
   renderBatchProgress();
   renderTitle();
 }
@@ -749,7 +788,6 @@ function statusLine(it) {
 function phaseLine(it) {
   if (it.status === "cancelled") return "Stopped";
   if (it.status === "failed") return "";
-  if (it.status === "staged") return "Not started yet";
   if (it.status === "queued") return "Waiting";
   if (it.status === "working") return it.progress || "Working";
   const took = it.elapsedMs != null ? ` · ${duration(it.elapsedMs)}` : "";
@@ -906,20 +944,79 @@ function fmtScore(score, lossless, metric) {
   return metric === "ssim" ? score.toFixed(4) : score.toFixed(1);
 }
 
-/** One plain sentence explaining why this candidate won. */
+/* ------------------------------ narration -------------------------------- *
+ * The one line in this app that has to land without being read carefully. It
+ * says the same thing the landing page promised, in the same words, while the
+ * promise is actually being kept - and when it has been kept, it ends in a
+ * real action rather than a full stop, because the thing worth discovering
+ * next is the row of encodes underneath it. */
+
+/** Frame 2. This sentence is the landing page's claim, in the present tense,
+ *  said while it is happening. It is not a status message and must not be
+ *  reduced to one. */
+const WORKING_LINE =
+  "Trying a few ways to shrink this, keeping only the one that still looks right.";
+
+/** Returns HTML: the invitation at the end is a button, not decoration. */
+function narrationFor(it) {
+  if (!it) return "";
+  if (it.status === "failed") {
+    return `That file couldn't be read${it.error ? ` — ${escapeHtml(it.error)}` : ""}. ` +
+           `Your original is untouched.`;
+  }
+  if (it.status === "cancelled") return "Stopped. Your original is untouched.";
+  if (!isReady(it)) return escapeHtml(WORKING_LINE);
+
+  const ask = (action, words) =>
+    ` <button class="narr-link" type="button" data-narr="${action}">${words}</button>`;
+
+  if (it.pick === ORIGINAL_PICK) {
+    return `Keeping your original, exactly as it arrived.` +
+           ask("auto", "Go back to the smallest one that passed?");
+  }
+  if (it.pick) {
+    return `Showing <b>${escapeHtml(fmtLabel(it.fmt))}</b> because you picked it — ` +
+           `${human(it.newBytes)}.` + ask("auto", "Back to the automatic choice?");
+  }
+  if (it.auto?.passthrough) {
+    return `This was already smaller than anything we could make, so it was left ` +
+           `exactly as it is.` + ask("chips", "See what we tried?");
+  }
+  return `Went with <b>${escapeHtml(fmtLabel(it.fmt))}</b> — smallest option that ` +
+         `still passes.` + ask("chips", "Prefer something else?");
+}
+
+/** The invitation's other half: put the chips under the eye that just asked
+ *  for them. Not a tour and not a tooltip - it is the answer to a click. */
+function surfaceChips() {
+  const cands = $("cands");
+  const first = cands.querySelector(".cand");
+  if (!first) return;
+  cands.classList.remove("calling");
+  void cands.offsetWidth;
+  cands.classList.add("calling");
+  first.focus({ preventScroll: true });
+  cands.scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
+}
+
+/** The numbers behind the sentence: how the winner compares to the runner-up
+ *  and where it landed against the floor. The narration says which one won, so
+ *  this no longer repeats it. */
 function verdictFor(it) {
+  if (it.pick === ORIGINAL_PICK) return "";
   if (it.passthrough) {
-    return `This file was already smaller than anything we could produce, so it was <b>passed through untouched</b>.`;
+    return `Every encode came out <b>larger than the file you gave us</b>, which is ` +
+           `what already-well-compressed looks like.`;
   }
   if (!it.candidates?.length) return "";
   const pct = it.originalBytes ? 100 * (it.originalBytes - it.newBytes) / it.originalBytes : 0;
   const sorted = [...it.candidates].sort((a, b) => a.bytes - b.bytes);
-  const runner = sorted[1];
+  const runner = sorted.find((c) => c.format !== it.fmt);
   const quality = it.lossless
     ? "and it is <b>pixel-identical</b> to the original"
     : `at SSIMULACRA 2 <b>${it.score?.toFixed(1)}</b>, above your ${Number(
         it.override?.qualityTarget ?? state.settings.qualityTarget).toFixed(0)} floor`;
-  let line = `<b>${escapeHtml(fmtLabel(it.fmt))}</b> won: <b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
+  let line = `<b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
   if (runner && runner.bytes > it.newBytes) {
     const gap = 100 * (runner.bytes - it.newBytes) / runner.bytes;
     line += ` It beat ${escapeHtml(fmtLabel(runner.format))} by ${gap.toFixed(0)}%.`;
@@ -931,7 +1028,19 @@ function renderInspector(it) {
   if (!it) { showInspector(false); return; }
   showInspector(true);
 
-  $("insp-name").textContent = it.name;
+  /* Only reseed the name field when the selection changes: this render runs
+     several times a second while a batch is in flight, and overwriting the
+     field every frame would eat what someone is halfway through typing. */
+  const nameField = $("insp-name");
+  if (nameField.dataset.for !== it.id) {
+    nameField.dataset.for = it.id;
+    const { base, ext } = splitName(it.name);
+    nameField.value = base;
+    // The field is sized to its content so the extension stays beside the name
+    // it belongs to rather than at the far end of the heading.
+    nameField.size = Math.max(4, base.length);
+    $("insp-ext").textContent = ext;
+  }
   const dims = it.width ? `${it.width}×${it.height}` : "";
   const out = it.outW && (it.outW !== it.width || it.outH !== it.height)
     ? ` → ${it.outW}×${it.outH}` : "";
@@ -986,13 +1095,19 @@ function renderInspector(it) {
   $("tag-l").textContent = `Original · ${human(it.originalBytes)}`;
   $("tag-r").textContent = `Compressed · ${human(it.newBytes)}`;
   const badge = $("stage-badge");
-  badge.hidden = splitting || !ready;
+  /* Frame 1's label. While the work runs there is exactly one image on the
+     stage and it is the person's own file, so the badge says so out loud -
+     an unlabelled picture during an action nobody asked for is the whole
+     anxiety this sequence exists to answer. */
+  badge.hidden = splitting || (!ready && (it.status === "failed" || it.status === "cancelled"));
   if (!badge.hidden) {
-    badge.textContent = diffOn
-      ? (it.diffInfo
-          ? `Difference ×${it.diffInfo.gain} · peak ${it.diffInfo.peak}/255 · avg ${it.diffInfo.mean}`
-          : "Difference")
-      : `Compressed · ${human(it.newBytes)}`;
+    badge.textContent = !ready
+      ? `Your original · ${human(it.originalBytes)} · untouched`
+      : diffOn
+        ? (it.diffInfo
+            ? `Difference ×${it.diffInfo.gain} · peak ${it.diffInfo.peak}/255 · avg ${it.diffInfo.mean}`
+            : "Difference")
+        : `Compressed · ${human(it.newBytes)}`;
   }
   $("mode-diff").setAttribute("aria-pressed", String(diffOn));
   $("mode-diff").disabled = !ready;
@@ -1036,6 +1151,17 @@ function renderInspector(it) {
         ? ` <small>${it.candidates.length} candidate${it.candidates.length === 1 ? "" : "s"}</small>` : ""}`
     : (it.status === "working" ? `<span class="skel w-sm"></span>` : "—");
 
+  // The narration is rewritten only when it actually changes: it carries a
+  // focusable button, and replacing the node every frame would throw the
+  // keyboard off it mid-batch.
+  const narr = $("narration");
+  const ntext = narrationFor(it);
+  if (narr.dataset.said !== ntext) {
+    narr.dataset.said = ntext;
+    narr.innerHTML = ntext;
+  }
+  narr.classList.toggle("working", !ready && it.status !== "failed" && it.status !== "cancelled");
+
   const verdict = $("s-verdict");
   const vtext = ready ? verdictFor(it) : "";
   verdict.hidden = !vtext;
@@ -1067,68 +1193,68 @@ function renderInspector(it) {
   applyZoom();
 }
 
-/** Leaderboard: every candidate ranked, with the original as the yardstick.
- *  Each row is a button — clicking it forces that format for this image, which
- *  is the direct route to what the old "override" drawer did in three steps. */
+/** Every encode that was tried, ranked smallest first, as things you can touch.
+ *  This is the app's primary format control: not because it is labelled as one,
+ *  but because tapping one changes the picture immediately, which is the only
+ *  way a control teaches itself. The Original sits at the end as the yardstick
+ *  and is selectable too — keeping the file exactly as it arrived is a real
+ *  answer, and it is the one that makes "your original is one action away"
+ *  literally true. */
 function renderCandidates(it) {
   const cands = $("cands");
   if (!it.candidates?.length) {
-    cands.innerHTML = `<div class="note m0">${
-      it.status === "failed" ? "This file could not be read." :
-      it.status === "cancelled" ? "Stopped before this one finished." :
-      it.passthrough ? "Passed through unchanged." : "Testing formats…"}</div>`;
+    const waiting = !isReady(it) && it.status !== "failed" && it.status !== "cancelled";
+    // Never a bare spinner: this sits directly under the sentence that explains
+    // what the app is doing, and it names the format being measured right now.
+    cands.innerHTML = waiting
+      ? `<span class="cand-wait">${escapeHtml(it.progress || "Testing formats…")}</span>`
+      : "";
     return;
   }
   const rows = [...it.candidates].sort((a, b) => a.bytes - b.bytes);
-  const winner = rows[0].bytes;
+  const smallest = rows[0].bytes;
   const max = Math.max(it.originalBytes, ...rows.map((c) => c.bytes));
-  const forced = it.override?.formats?.[0] || "";
+  const now = currentPick(it);
+  const autoFmt = it.auto && !it.auto.passthrough ? it.auto.fmt : "";
 
   const pct = (bytes) => it.originalBytes
     ? Math.round(100 * (it.originalBytes - bytes) / it.originalBytes) : 0;
 
-  cands.innerHTML = rows.map((c) => {
-    const isWinner = c.bytes === winner;
-    const saving = pct(c.bytes);
+  const chip = (key, label, bytes, mark, title) => {
+    const saving = pct(bytes);
+    const current = now === key;
     return `
-    <button class="cand ${isWinner ? "win" : ""} ${forced === c.format ? "forced" : ""}"
-            data-bytes="${c.bytes}" data-format="${escapeHtml(c.format)}"
-            title="Keep the ${escapeHtml(fmtLabel(c.format))} version for this image">
-      <span class="bar"></span>
-      <span class="f">${escapeHtml(fmtLabel(c.format))}</span>
-      <span class="b">${human(c.bytes)}</span>
-      <span class="p">${saving > 0 ? `−${saving}%` : "—"}</span>
-      <span class="${isWinner ? "badge" : "s"}">${
-        isWinner ? (forced ? "chosen" : "winner") : (c.lossless ? "lossless" : c.score.toFixed(3))}</span>
+    <button class="cand${key === autoFmt ? " win" : ""}${current ? " current" : ""}"
+            type="button" data-bytes="${bytes}" data-format="${escapeHtml(key)}"
+            aria-pressed="${current}" title="${escapeHtml(title)}">
+      <span class="meter"></span>
+      <span class="f">${escapeHtml(label)}</span>
+      <span class="mark">${mark}</span>
+      <span class="b num">${human(bytes)}</span>
+      <span class="p num">${saving > 0 ? `−${saving}%` : "—"}</span>
     </button>`;
-  }).join("") + `
-    <div class="cand orig" data-bytes="${it.originalBytes}">
-      <span class="bar"></span>
-      <span class="f">Original</span>
-      <span class="b">${human(it.originalBytes)}</span>
-      <span class="p"></span>
-      <span class="s">—</span>
-    </div>`;
+  };
+
+  cands.innerHTML = rows.map((c) => {
+    const quality = c.lossless ? "pixel-identical to the original"
+      : `SSIMULACRA 2 ${c.score?.toFixed(1)}`;
+    const mark = c.format === autoFmt ? "winner"
+      : now === c.format ? "showing"
+      : c.bytes === smallest ? "smallest" : "";
+    return chip(c.format, fmtLabel(c.format), c.bytes, mark,
+      `${fmtLabel(c.format)} · ${human(c.bytes)} · ${quality}${
+        c.rejected ? " · failed the colour check" : ""} — tap to show this one`);
+  }).join("") + chip(
+    ORIGINAL_PICK, "Original", it.originalBytes,
+    now === ORIGINAL_PICK ? "showing" : "",
+    `Your file exactly as it arrived · ${human(it.originalBytes)} — tap to keep this instead`);
 
   // Widths go through the CSSOM: a style="" attribute in markup would (rightly)
-  // be refused by the page's style-src CSP, leaving every bar at zero.
+  // be refused by the page's style-src CSP, leaving every meter at zero.
   for (const el of cands.querySelectorAll(".cand")) {
     const w = Math.max(2, (Number(el.dataset.bytes) / max) * 100);
     el.style.setProperty("--w", `${w.toFixed(1)}%`);
   }
-}
-
-/** Force a format from a candidate card, or unforce it by clicking it again. */
-function chooseCandidate(format) {
-  const it = state.byId.get(selected);
-  if (!it) return;
-  const already = it.override?.formats?.[0] === format;
-  const override = { ...(it.override || {}) };
-  if (already) delete override.formats; else override.formats = [format];
-  it.override = Object.keys(override).length ? override : null;
-  $("ov-format").value = it.override?.formats?.[0] || "";
-  toast(already ? "Back to the best of all candidates" : `Keeping ${fmtLabel(format)} for this image`);
-  requeue([it.id]);
 }
 
 /* --------------------------- difference heatmap --------------------------- */
@@ -1328,8 +1454,10 @@ const stepZoom = (dir) => zoomAt(dir, null, null);
 
 function outputName(it, used) {
   let base = it.name.replace(/\.[a-z0-9]+$/i, "");
-  const ext = (it.passthrough || !it.result?.ext)
-    ? (it.name.match(/\.[a-z0-9]+$/i) || [""])[0] : it.result.ext;
+  // it.ext follows whichever encode is currently on screen, and is null when
+  // the bytes are the original's - then the source name's own extension is the
+  // honest one, read now rather than at result time so a rename is respected.
+  const ext = it.ext || (it.name.match(/\.[a-z0-9]+$/i) || [""])[0];
   if (state.suffix) base += "-min";
   let name = base + ext;
   if (used) {
@@ -1618,9 +1746,9 @@ function pushSettings() {
     state.settings = currentSettings();
     state.settingsRev++;
     saveSettings();
-    // During set-up the whole point is that nothing has started yet: record
-    // the choice and leave it at that.
-    if (state.staging) { scheduleRender(); return; }
+    // The toolbar is the whole-queue control: changing it means everything is
+    // redone to match, which is what makes it the power-user surface rather
+    // than the discoverable one.
     requeue(state.items.filter((i) => i.status !== "working").map((i) => i.id));
   }, 350);
 }
@@ -1753,7 +1881,7 @@ async function addSamples() {
     addFiles([
       new File([photo], "sample-photo.png", { type: "image/png" }),
       new File([ui], "sample-ui.png", { type: "image/png" }),
-    ], { immediate: true });
+    ]);
   } catch {
     toast("Could not build the demo — try dropping your own image");
   } finally {
@@ -1843,10 +1971,43 @@ function bind() {
     if (row) selectItem(row.dataset.id);
   });
 
-  // A candidate card is the direct way to keep a different format.
+  // A candidate chip is the direct way to see and keep a different encode.
   $("cands").addEventListener("click", (e) => {
     const card = e.target.closest(".cand[data-format]");
     if (card) chooseCandidate(card.dataset.format);
+  });
+  // The end of the narration is a real action, so it is handled like one.
+  $("narration").addEventListener("click", (e) => {
+    const act = e.target.closest("[data-narr]")?.dataset.narr;
+    if (act === "chips") surfaceChips();
+    else if (act === "auto") {
+      const it = state.byId.get(selected);
+      if (it?.auto) chooseCandidate(it.auto.passthrough ? ORIGINAL_PICK : it.auto.fmt);
+    }
+  });
+
+  /* Renaming, which used to live in the set-up step. The extension is not
+     editable: the encode that is on screen decides it. */
+  const commitName = () => {
+    const it = state.byId.get(selected);
+    if (!it) return;
+    const field = $("insp-name"), { base, ext } = splitName(it.name);
+    const v = field.value.trim();
+    if (v && v !== base) {
+      it.name = v + ext;
+      field.size = Math.max(4, v.length);
+      rowEls.get(it.id)?.querySelector(".name")?.replaceChildren(it.name);
+      scheduleRender("summary");
+    } else if (!v) {
+      field.value = base;
+    }
+  };
+  $("insp-name").addEventListener("change", commitName);
+  $("insp-name").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    commitName();
+    $("insp-name").blur();
   });
 
   // Collapse the detail panel to give the comparison the whole pane.
@@ -1987,20 +2148,6 @@ function bind() {
   $("empty-add").addEventListener("click", () => $("file-input").click());
   $("sample-btn").addEventListener("click", addSamples);
   $("stop-btn").addEventListener("click", cancelAll);
-
-  $("setup-go").addEventListener("click", startStagedRun);
-  $("setup-add").addEventListener("click", () => $("file-input").click());
-  /* Enter starts the run from anywhere in the step except a control that owns
-     the key itself - a name field commits the rename, and a select is being
-     used. Without this the only way on is to find the button with a mouse. */
-  $("app-stage").addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || e.target.matches("input, select, button")) return;
-    startStagedRun();
-  });
-  $("setup-cancel").addEventListener("click", () => {
-    removeItems(state.items.map((i) => i.id));
-    toast("Cleared — nothing was compressed");
-  });
 
   $("clear-btn").addEventListener("click", () => {
     if (!state.items.length) return;

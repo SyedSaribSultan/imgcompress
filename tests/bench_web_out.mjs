@@ -95,15 +95,9 @@ try {
 
     const input = await pg.$("#file-input");
     await input.uploadFile(...files);
-    // Since v2.5.0 a drop into an empty queue waits on the set-up step, so the
-    // run has to be started the way a person starts it.
+    // A drop starts the run on its own; there is nothing to press.
     await pg.waitForFunction((n) => typeof state !== "undefined" && state.items.length >= n,
       { timeout: 120_000, polling: 100 }, files.length);
-    if (await pg.evaluate(() => state.staging)) {
-      await pg.waitForFunction(() => !document.getElementById("setup-go").disabled,
-        { timeout: 60_000, polling: 100 });
-      await pg.click("#setup-go");
-    }
     await pg.waitForFunction(
       (n) => state.items.length === n &&
              state.items.every((i) => ["done", "saved", "failed"].includes(i.status)),

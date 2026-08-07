@@ -3,6 +3,52 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] - 2026-08-07
+
+### Changed
+- **The set-up step is gone; dropping a file starts the work immediately.**
+  2.5.0 added a step between "here are your images" and "here is the work"
+  because starting unasked spends someone's laptop before they have been told
+  they had a choice. That diagnosis was right and the remedy was wrong: a gate
+  answers the question "may I?" by making everybody answer it, including the
+  overwhelming majority who only ever wanted the default. The two real fears —
+  *is this safe* and *would I ever find out I had a say* — are now answered by
+  what is on screen and what happens when you touch it:
+  - The **untouched original is painted first**, full size and labelled as
+    such, and the encoders are not asked for anything until the frame after
+    the browser has actually painted it.
+  - A **plain sentence** says what is happening while it happens — "Trying a
+    few ways to shrink this, keeping only the one that still looks right" —
+    which is the landing page's promise in the present tense rather than a
+    spinner.
+  - The result **arrives beside the original**, not over it. The split
+    comparison is the state you land in, not a tab to be discovered.
+  - The sentence then **ends in a real action**: "Went with WebP — smallest
+    option that still passes. *Prefer something else?*"
+- **Every encode that was tried is a chip beside the picture, and tapping one
+  swaps the preview instantly.** The bake-off already produced those files and
+  used to throw all but one away, so changing format meant running the whole
+  search again — seconds of waiting for work already done. The candidates now
+  travel home with the result, and a tap is a relabel: the picture, the
+  weights, the split view, the heatmap and the download all follow inside the
+  click. That immediacy is the point. A control that answers the moment you
+  touch it teaches that it exists; a dropdown pre-filled with what already
+  happened reads as status, and nobody pulls it.
+- **Keeping your original is one of the chips.** It sits at the end as the
+  yardstick and is selectable, so "the original is one action away from being
+  the only thing kept" is literally true rather than reassuring copy.
+- **Renaming moved to the filename in the result view**, editable in place. It
+  was only ever possible inside the set-up step.
+- The per-image **Format and Quality overrides are still there**, in the
+  detail panel, as a dropdown — where a dropdown belongs. It can name a format
+  the bake-off never tried, which no chip can, and anything set there is a
+  genuine re-run rather than a swap.
+
+### Fixed
+- Lifetime savings followed the file you actually kept. Choosing a different
+  encode after the fact used to leave the total describing a file you no
+  longer had.
+
 ## [2.5.0] - 2026-08-06
 
 ### Added

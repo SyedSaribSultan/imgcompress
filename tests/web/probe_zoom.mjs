@@ -19,8 +19,6 @@ try {
   await pg.goto("http://127.0.0.1:8192/", { waitUntil: "networkidle0" });
   const input = await pg.$("#file-input");
   await input.uploadFile(path.join(FIX, "photo.png"));
-  await new Promise((r) => setTimeout(r, 700));
-  await pg.click("#setup-go");
   await pg.waitForFunction(() => state.items.every((i) =>
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   await new Promise((r) => setTimeout(r, 600));

@@ -74,24 +74,46 @@ try {
   const files = ["photo.png", "photo5mp.png", "ui.png", "logo.png", "static.gif", "anim.gif",
                  "small.jpg", "corrupt.png", "chromanoise.png"].map((f) => path.join(FIX, f));
 
-  /* Dropping files lands on the set-up step and waits. That is the promise:
-     no compute is spent until it is asked for. */
+  /* Dropping files starts the work at once — but the untouched original is on
+     screen before any of it runs. That ordering is the promise now, so it is
+     asserted at the only moment it is observable: the frame the drop lands. */
   await page.waitForFunction(() => typeof state !== "undefined");
+  // Freeze dispatch for one beat so the anchor frame can be inspected. The app
+  // holds it for a frame by design; this holds it long enough to look.
+  await page.evaluate(() => {
+    window.__realDispatch = dispatch;
+    window.dispatch = async () => { window.__dispatched = true; };
+  });
   const inputEl = await page.$("#file-input");
   await inputEl.uploadFile(...files);
-  await new Promise((r) => setTimeout(r, 800));
-  const paused = await page.evaluate(() => ({
-    staging: state.staging,
-    started: state.items.some((i) => i.status !== "staged"),
-    listed: document.querySelectorAll("#setup-list .setup-row").length,
-  }));
-  ok(paused.staging && !paused.started,
-     `a drop waits for set-up instead of compressing (${JSON.stringify(paused)})`);
-  ok(paused.listed === files.length,
-     `every dropped image is shown first (${paused.listed}/${files.length})`);
-  ok(await page.evaluate(() => document.activeElement?.id) === "setup-go",
-     "the keyboard lands on the start button");
-  await page.click("#setup-go");
+  await new Promise((r) => setTimeout(r, 400));
+
+  const anchor = await page.evaluate(() => {
+    const before = document.getElementById("img-before");
+    return {
+      dispatched: !!window.__dispatched,
+      studio: !document.getElementById("app-full").hidden,
+      showingOriginal: before.getAttribute("src") === state.items[0].beforeURL,
+      afterSrc: document.getElementById("img-after").getAttribute("src"),
+      badge: document.getElementById("stage-badge").textContent,
+      narration: document.getElementById("narration").textContent,
+      listed: state.items.length,
+    };
+  });
+  console.log("  anchor frame:", JSON.stringify(anchor));
+  ok(anchor.studio && anchor.showingOriginal,
+     "the drop paints the untouched original first");
+  ok(!anchor.afterSrc, "nothing compressed is on the stage yet");
+  ok(/untouched/i.test(anchor.badge), `the original is labelled as such (${anchor.badge})`);
+  // Frame 2's sentence is the landing page's promise, in the present tense.
+  // It is copy that ships, not copy that gets approximated.
+  ok(anchor.narration ===
+     "Trying a few ways to shrink this, keeping only the one that still looks right.",
+     `the narration mirrors the promise (${JSON.stringify(anchor.narration)})`);
+  ok(anchor.listed === files.length,
+     `every dropped image is queued (${anchor.listed}/${files.length})`);
+
+  await page.evaluate(() => { window.dispatch = window.__realDispatch; dispatch(); });
 
   await page.waitForFunction(
     (n) => typeof state !== "undefined" && state.items.length === n &&
@@ -242,29 +264,56 @@ try {
   }));
   ok(/from/.test(statText.size), "stats panel shows sizes");
 
-  // ---- override: force jpeg on the ui screenshot ---------------------------
+  /* ---- the candidate chips ARE the format control -----------------------
+   * And they answer instantly: every encode came home with the run, so a tap
+   * is a relabel, not another bake-off. Measured, because "immediately" is the
+   * whole reason this control teaches itself. */
   await page.evaluate(() => selectItem(state.items.find((i) => i.name === "ui.png").id));
-  // A candidate card IS the format control now: click the jpeg row.
-  const cardClicked = await page.evaluate(() => {
-    const card = [...document.querySelectorAll('#cands .cand[data-format="jpeg"]')][0];
-    if (!card) return false;
+  await new Promise((r) => setTimeout(r, 200));
+  const swap = await page.evaluate(() => {
+    const it = () => state.items.find((i) => i.name === "ui.png");
+    const was = { fmt: it().fmt, bytes: it().newBytes, url: it().afterURL };
+    const card = document.querySelector('#cands .cand[data-format="jpeg"]');
+    if (!card) return { found: false };
+    const t0 = performance.now();
     card.click();
-    return true;
+    return {
+      found: true, was, ms: performance.now() - t0,
+      fmt: it().fmt, bytes: it().newBytes, status: it().status,
+      urlChanged: it().afterURL !== was.url,
+      pick: it().pick,
+    };
   });
-  ok(cardClicked, "jpeg candidate card is present and clickable");
-  await page.waitForFunction(
-    () => { const it = state.items.find((i) => i.name === "ui.png");
-            return it.status === "done" && it.fmt === "jpeg"; },
-    { timeout: 600_000 });
-  ok(true, "clicking a candidate card forces that format");
+  console.log("  chip swap:", JSON.stringify(swap));
+  ok(swap.found, "the jpeg chip is present and clickable");
+  ok(swap.fmt === "jpeg" && swap.status === "done",
+     `tapping a chip shows that encode at once (${swap.fmt}/${swap.status})`);
+  ok(swap.ms < 250, `and it happens in the click, not after a re-run (${swap.ms?.toFixed(0)} ms)`);
+  ok(swap.urlChanged && swap.bytes === (await page.evaluate(() =>
+      state.items.find((i) => i.name === "ui.png").candidates
+        .find((c) => c.format === "jpeg").bytes)),
+     "the shown bytes are that candidate's own");
+  await new Promise((r) => setTimeout(r, 200));
   ok(await page.evaluate(() =>
-      !!document.querySelector('#cands .cand.forced[data-format="jpeg"]')),
-     "the chosen card is marked as forced");
+      !!document.querySelector('#cands .cand.current[data-format="jpeg"]')),
+     "the chosen chip is marked as the one on screen");
+  ok(/because you picked it/.test(await page.evaluate(() =>
+      document.getElementById("narration").textContent)),
+     "the narration says why this one is showing");
+
+  // And the winner chip is the way back to the automatic answer.
+  const back = await page.evaluate(() => {
+    const it = () => state.items.find((i) => i.name === "ui.png");
+    document.querySelector("#cands .cand.win")?.click();
+    return { fmt: it().fmt, pick: it().pick };
+  });
+  ok(back.pick === null, `the winner chip restores the automatic choice (${JSON.stringify(back)})`);
+
   const uiForced = await page.evaluate(() => {
     const it = state.items.find((i) => i.name === "ui.png");
     return { fmt: it.fmt, n: it.newBytes, o: it.originalBytes };
   });
-  ok(uiForced.n <= uiForced.o, "forced jpeg still never bigger");
+  ok(uiForced.n <= uiForced.o, "the automatic answer is still never bigger");
 
   /* ---- the two decisions the toolbar offers ------------------------------
    * Quality is words on top of one number, and Format spans "let the app

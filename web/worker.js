@@ -1277,6 +1277,12 @@ async function runJob(msg) {
 
   let done = 0;
   const candidates = [];
+  /* Every candidate's encoded bytes, kept until the result is posted. Only the
+     winner used to survive the job, so switching format in the UI meant running
+     the whole bake-off again - seconds of wait for work that had already been
+     done once. The encodes all exist here at this moment anyway; carrying them
+     home is what lets a tap on a candidate chip change the picture at once. */
+  const candidateData = new Map();
   let bestPassing = null;  // smallest candidate that clears the floor
   let bestFailing = null;  // otherwise: highest score, smaller file breaks ties
   const passing = [];      // every candidate that cleared it, for the post-passes
@@ -1295,7 +1301,14 @@ async function runJob(msg) {
       if (encoder.exactOnly && !encoders._hasExact()) { done++; continue; }
       const found = await searchOne(job, encoder, target, report);
       const { data, level, score } = found;
-      candidates.push({ format: encoder.name, bytes: data.length, score, lossless: !!(encoder.lossless || data._exact) });
+      const exact = !!(encoder.lossless || data._exact);
+      // ext and mime ride along so the UI can name and serve a candidate the
+      // person picks later without a table of its own to keep in step.
+      candidates.push({
+        format: encoder.name, bytes: data.length, score, lossless: exact,
+        level: exact ? null : level, ext: encoder.ext, mime: encoder.mime,
+      });
+      candidateData.set(encoder.name, data);
       const entry = { ...found, encoder };
       if (score >= target) {
         passing.push(entry);
@@ -1352,7 +1365,11 @@ async function runJob(msg) {
     }
     const row = candidates.find((c) => c.format === best.encoder.name);
     if (escalated) {
-      if (row) { row.bytes = best.data.length; row.score = best.score; }
+      if (row) {
+        row.bytes = best.data.length; row.score = best.score;
+        if (!row.lossless) row.level = best.level;
+      }
+      candidateData.set(best.encoder.name, best.data);
     } else {
       warnings.push(`${best.encoder.name} could not clear the colour check at any setting`);
       rejected.add(best.encoder.name);
@@ -1385,6 +1402,7 @@ async function runJob(msg) {
       cand.data = await timedAsync("oxipng", () => oxiPass(cand.data));
       const row = candidates.find((c) => c.format === cand.encoder.name);
       if (row) row.bytes = cand.data.length;
+      candidateData.set(cand.encoder.name, cand.data);
       if (cand.data.length < bestSize) { best = cand; bestSize = cand.data.length; }
       else if (cand === best) bestSize = Math.min(bestSize, cand.data.length);
       if (PERF && before === cand.data.length) PERF.oxiNoGain = (PERF.oxiNoGain || 0) + 1;
@@ -1395,6 +1413,7 @@ async function runJob(msg) {
       best.data = await timedAsync("oxipng", () => oxiPass(best.data, 4));
       const row = candidates.find((c) => c.format === best.encoder.name);
       if (row) row.bytes = best.data.length;
+      candidateData.set(best.encoder.name, best.data);
     }
   }
 
@@ -1406,6 +1425,8 @@ async function runJob(msg) {
   // Never ship a bigger file. (Stricter than the desktop rule: any regrowth
   // without a resize passes the original through, whatever the container.)
   if (best.data.length >= originalBytes && !job.resized) {
+    const transfer = [buffer];
+    attachCandidateBytes(candidates, candidateData, transfer);
     post({
       type: "done",
       result: {
@@ -1418,12 +1439,14 @@ async function runJob(msg) {
         outW: job.originalW, outH: job.originalH,
         candidates, warnings, alpha: sourceAlpha,
       },
-    }, [buffer]);
+    }, transfer);
     return;
   }
 
   const payload = best.data._rgba ? new Uint8Array(best.data) : best.data; // detach helpers
   const isLossless = !!(best.encoder.lossless || best.data._exact);
+  const transfer = [payload.buffer];
+  attachCandidateBytes(candidates, candidateData, transfer);
   post({
     type: "done",
     engines: engineFlags(),
@@ -1439,7 +1462,22 @@ async function runJob(msg) {
       outW: job.width, outH: job.height,
       candidates, warnings, alpha: sourceAlpha,
     },
-  }, [payload.buffer]);
+  }, transfer);
+}
+
+/** Hang each candidate's encoded bytes on its row and list them for transfer.
+ *  Copied rather than handed over in place: the winner's buffer is already in
+ *  the transfer list, and two candidates can be views over one buffer - moving
+ *  such a buffer detaches every other view of it. A copy of already-compressed
+ *  bytes is cheap, and it makes each row independent of the search's scratch. */
+function attachCandidateBytes(candidates, dataByFormat, transfer) {
+  for (const row of candidates) {
+    const data = dataByFormat.get(row.format);
+    if (!data) continue;
+    const copy = new Uint8Array(data);
+    row.data = copy.buffer;
+    transfer.push(copy.buffer);
+  }
 }
 
 function engineFlags() {

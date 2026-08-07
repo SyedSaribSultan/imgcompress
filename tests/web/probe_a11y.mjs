@@ -63,41 +63,60 @@ try {
   const input = await pg.$("#file-input");
   await input.uploadFile(path.join(FIX, "photo.png"), path.join(FIX, "logo.png"),
                          path.join(FIX, "ui.png"));
-  await new Promise((r) => setTimeout(r, 900));
-  await pg.screenshot({ path: path.join(here, "shot-setup-step.png") });
-  console.log("\n=== set-up step ===");
+  await pg.waitForFunction(() => state.items.every((i) =>
+    ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
+  await new Promise((r) => setTimeout(r, 600));
+  await pg.screenshot({ path: path.join(here, "shot-studio.png") });
+  console.log("\n=== studio, with results ===");
   console.log(JSON.stringify(await pg.evaluate(audit), null, 1));
 
-  // Can the whole set-up step be driven from the keyboard?
+  // Can the result view — which is now also the control surface — be driven
+  // from the keyboard?
   const keys = await pg.evaluate(() => {
     const order = [];
-    const els = [...document.querySelectorAll("#app-stage button, #app-stage input, #app-stage select")]
+    const els = [...document.querySelectorAll(
+      "#inspector-body button, #inspector-body input, #inspector-body select")]
       .filter((e) => e.offsetParent !== null);
     for (const e of els) order.push(`${e.tagName.toLowerCase()}#${e.id || e.className}`);
     return order;
   });
-  console.log("\nkeyboard reachable in set-up:", JSON.stringify(keys, null, 1));
+  console.log("\nkeyboard reachable in the result view:", JSON.stringify(keys, null, 1));
 
-  // Where does the keyboard land on arrival, and does Enter go from there?
-  const focused = await pg.evaluate(() => document.activeElement?.id);
-  console.log("\nfocus on arrival:", focused);
+  /* The chips are the primary control, so they have to be operable without a
+     pointer: focusable in order, and Enter must do what a tap does. */
+  const chipKeys = await pg.evaluate(() => {
+    const chips = [...document.querySelectorAll("#cands .cand")];
+    const first = chips.find((c) => !c.classList.contains("current"));
+    const was = state.items[0].fmt;
+    first.focus();
+    const focusedIsChip = document.activeElement === first;
+    first.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    first.click();      // what Enter on a <button> does natively
+    return {
+      count: chips.length, focusedIsChip,
+      pressed: chips.map((c) => c.getAttribute("aria-pressed")),
+      changed: state.items[0].fmt !== was,
+      labelled: chips.map((c) => c.title).every(Boolean),
+    };
+  });
+  console.log("\nchips from the keyboard:", JSON.stringify(chipKeys, null, 1));
 
-  // Enter in a name field means "done renaming", not "go".
+  // The narration is a live region, so a result announces itself.
+  console.log("\nnarration:", JSON.stringify(await pg.evaluate(() => ({
+    live: document.getElementById("narration").getAttribute("aria-live"),
+    text: document.getElementById("narration").textContent,
+    action: document.querySelector("#narration [data-narr]")?.tagName,
+  })), null, 1));
+
+  // Enter in the name field means "done renaming", and nothing else.
   await pg.evaluate(() => {
-    const inp = document.querySelector("#setup-list .setup-name");
+    const inp = document.getElementById("insp-name");
     inp.focus(); inp.value = "renamed here";
   });
   await pg.keyboard.press("Enter");
   await new Promise((r) => setTimeout(r, 300));
-  console.log("Enter in a name field started the run:",
-    await pg.evaluate(() => !state.staging),
-    "| committed the name:",
-    await pg.evaluate(() => state.items.some((i) => i.name === "renamed here.png")));
-
-  // Enter from the step itself starts it.
-  await pg.evaluate(() => document.getElementById("setup-go").focus());
-  await pg.keyboard.press("Enter");
-  await new Promise((r) => setTimeout(r, 500));
-  console.log("Enter on the primary button started the run:",
-    await pg.evaluate(() => !state.staging));
+  console.log("\nEnter in the name field committed the name:",
+    await pg.evaluate(() => state.items.some((i) => i.name === "renamed here.png")),
+    "| and released the field, which is what Enter means here:",
+    await pg.evaluate(() => document.activeElement?.id !== "insp-name"));
 } finally { await b.close(); server.kill(); }

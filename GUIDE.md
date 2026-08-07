@@ -236,25 +236,59 @@ download), `ss2.js` (the metric), `worker.js` (the engine: ladder bisection,
 the bake-off, dual-backdrop transparency scoring, the never-bigger rule — a
 port of `quality.py` + `core.py` + `encoders.py`).
 
-### The set-up step
+### The first five seconds after a drop
 
-`#app-stage` sits between the landing page and the dashboard. A drop into an
-empty queue creates items at status **`staged`** — neither busy nor ready, so
-nothing dispatches and no result is claimed — and `startStagedRun()` is the
-only thing that promotes them to `queued`.
+There are two pages, not three: landing → studio. A drop starts the work with
+nothing to press. The sequence that makes that acceptable is an ordering, and
+the ordering is load-bearing — `probe_flow.mjs` asserts each step, because
+every one of them is a thing someone will later be tempted to collapse.
 
-* `placeControls()` **moves** `#bar-controls` and `#advanced` between the
-  set-up panel and the dashboard toolbar. Do not clone them: two live copies
-  of a control the engine reads from is the floor-99 bug waiting to happen.
-* `pushSettings()` records the choice but **does not requeue** while staging,
-  and `requeue()` skips `staged` items outright. Between them, nothing can
-  start the work except the button.
-* A drop onto a queue that already has items joins that run instead of asking
-  again, and `addFiles(files, {immediate: true})` opts out entirely — the demo
-  uses it.
-* Set-up rows are built once and reused (`list.dataset.ids`); rebuilding them
-  on every render would wipe out a half-typed rename, and a settings change
-  triggers a render.
+1. **The untouched original is painted first.** `addFiles()` calls
+   `renderNow()` — synchronously, not `scheduleRender()` — so the studio and
+   the original's `src` are in the document immediately, and then holds
+   `dispatch()` until the *next* animation frame so the browser has actually
+   painted before an encoder is asked for anything. It costs a frame. Do not
+   "optimise" it away: the difference between *here is your image, now watch*
+   and *something happened to my file* is entirely in that ordering.
+2. **A sentence, not a spinner.** `WORKING_LINE` in `app.js` is the landing
+   page's promise in the present tense. It is copy that ships verbatim — the
+   E2E compares it character for character — because its whole job is to be
+   recognisably the same claim that got the person to click *Choose images*.
+3. **The result appears beside the original.** `mode` starts at `"split"` and
+   the `.wipe` animation sweeps the compressed half in over the original.
+   The original never leaves the stage.
+4. **The result state is the control surface.** See below.
+
+### Candidates: the chips are the format control
+
+`worker.js` used to throw away every encode but the winner. It now carries all
+of them home — `attachCandidateBytes()` copies each into its own buffer and
+adds it to the transfer list — so `chooseCandidate()` is a relabel and a new
+object URL rather than another run of the whole bake-off.
+
+* Copied, not transferred in place. The winner's buffer is already in the
+  transfer list and two candidates can be views over one buffer; moving such a
+  buffer detaches every other view of it.
+* `adoptCandidateBytes()` turns those buffers into **Blobs** on arrival and
+  deletes the raw field. Blobs are backed by the browser's own store rather
+  than the JS heap, which is what makes holding every encode of every image in
+  a large batch affordable. It also keeps `item.candidates` plain JSON, which
+  the benchmark and the E2E both serialise.
+* Three fields carry the state: `item.auto` (the engine's answer, kept whole
+  so it can always be returned to), `item.candBlobs`, and `item.pick` (what
+  the person chose to look at instead — `null` while the engine's answer
+  stands). `applyView()` points the live fields at one of them, so every
+  number, the split view, the heatmap and the download follow from one swap.
+* `ORIGINAL_PICK` is a real candidate: keeping the file exactly as it arrived.
+  It is what makes "your original is one action away" true rather than
+  reassuring.
+* **`#ov-format` is deliberately not kept in sync with the chips.** It means
+  "run this image again forcing that format", which is a different act from
+  showing an encode the run already produced. Making it echo a chip would
+  claim a re-run that never happened.
+* `countLifetime()` applies the *difference* when a pick changes. Counting the
+  image twice, or leaving the total describing a file the person no longer
+  has, are both wrong.
 
 ### Zoom
 

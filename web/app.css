@@ -29,8 +29,15 @@
      opacity use `--oz-spring-effects-*`; transform and size use
      `--oz-spring-spatial-*`. Backwards is what "bouncy and cheap" actually is.
 
-   The interface stays achromatic: brand orange is spent on the primary action
-   and the badge on the winning encode, and nowhere else.
+   The interface stays achromatic. Brand orange is spent in exactly three
+   places, and each is the single most important thing in its region: the
+   primary action, the badge on the winning encode, and the invitation at the
+   end of the narration — which is the one action the result state is trying to
+   get someone to notice, and the reason the chips get discovered at all. The
+   chips' own size meters are deliberately neutral: the selected ring already
+   says which encode is showing and the badge already says which one won, so a
+   coloured meter would be a fourth voice adding nothing. Adding a fourth use
+   of the accent means taking one of these away.
 
    **Weight ceiling: 600.** Nothing in this app renders above semibold, in any
    instance. Two of the system's steps carry heavier defaults —
@@ -443,77 +450,6 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .app > .bar, .app > .advanced, .app > .batch, .app > .summary { flex: none; }
 .app > .body { flex: 1 1 auto; min-height: 0; }
-/* ====================== 1b. THE SET-UP STEP ============================== *
-   Between "here are your images" and "here is the work". It is a page, not a
-   dialog: the decision is not urgent, there is nothing to dismiss, and the
-   list of what was picked up is the main content. job: staging */
-.setup {
-  display: grid; gap: var(--oz-space-6); align-content: start;
-  padding: var(--oz-space-10) var(--oz-space-7) var(--oz-space-12);
-  max-width: 840px; margin: 0 auto; width: 100%;
-  overflow-y: auto;
-}
-.setup-head { display: grid; gap: var(--oz-space-2); }
-.setup h2 {
-  font-family: var(--oz-font-heading);
-  font-size: var(--oz-text-heading-md); line-height: var(--oz-leading-heading-md);
-  letter-spacing: var(--oz-tracking-heading-md);
-  font-weight: var(--oz-default-weight-heading); margin: 0;
-}
-.setup-sub, .setup-foot {
-  margin: 0; color: var(--oz-color-content-secondary);
-  font-size: var(--oz-text-body-sm); line-height: var(--oz-leading-body-sm);
-}
-.setup-foot { color: var(--oz-color-content-tertiary); }
-/* The moved settings bar sits on its own rung so it reads as a panel of
-   choices rather than a strip of chrome. */
-.setup-controls {
-  border-radius: var(--app-radius-lg); overflow: hidden;
-  background: var(--oz-color-surface-secondary);
-}
-.setup-list {
-  list-style: none; margin: 0; padding: 0;
-  display: grid; gap: var(--oz-space-2);
-  max-height: 46vh; overflow-y: auto;
-}
-.setup-row {
-  display: flex; align-items: center; gap: var(--oz-space-4);
-  padding: var(--oz-space-3) var(--oz-space-4);
-  border-radius: var(--app-radius-md);
-  background: var(--oz-color-surface-primary);
-}
-.setup-row .thumb {
-  width: 44px; height: 44px; flex: none; border-radius: var(--app-radius-md);
-  background-color: var(--oz-color-fill-tertiary);
-  background-size: cover; background-position: center;
-}
-.setup-cell { display: grid; gap: var(--oz-space-1); min-width: 0; flex: 1; }
-/* Editable, but it should not look like a form until you reach for it - the
-   name is content here, and most people will never touch it. */
-.setup-name {
-  font: inherit; font-size: var(--oz-text-body-sm); color: var(--oz-color-content-primary);
-  background: transparent; border: var(--oz-stroke-1) solid transparent;
-  border-radius: var(--app-radius-sm); padding: var(--oz-space-1) var(--oz-space-2);
-  width: 100%; min-width: 0;
-}
-.setup-name:hover { border-color: var(--oz-color-border-primary); }
-.setup-name:focus {
-  outline: none; background: var(--oz-color-fill-tertiary);
-  border-color: var(--oz-color-border-selected);
-}
-.setup-meta {
-  font-size: var(--oz-text-label-xs); color: var(--oz-color-content-tertiary);
-  padding-inline: var(--oz-space-2);
-}
-.setup-drop {
-  flex: none; width: 28px; height: 28px; border-radius: var(--app-radius-pill);
-  border: none; background: transparent; cursor: pointer;
-  color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-md);
-  line-height: 1;
-}
-.setup-drop:hover { background: var(--oz-color-fill-secondary); color: var(--oz-color-content-primary); }
-.setup-actions { display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap; }
-
 .bar {
   display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap;
   padding: var(--oz-space-3) var(--oz-space-5); min-height: 52px;
@@ -722,11 +658,14 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   display: flex; flex-direction: column;
   min-height: 0; min-width: 0; height: 100%;
 }
-#inspector-body > .insp-head, #inspector-body > .canvas-bar { flex: none; }
+#inspector-body > .insp-head, #inspector-body > .canvas-bar,
+#inspector-body > .readout { flex: none; }
 #inspector-body > .stage { flex: 1 1 auto; }
 /* The evidence panel is capped as a share of the pane so the image always
-   keeps the majority of the height. */
-#inspector-body > .details { flex: none; max-height: 38%; }
+   keeps the majority of the height. Tightened from 38% when the readout band
+   arrived between them: the sentence and the chips are what the result state
+   is for, and the numbers below were the part that could afford the room. */
+#inspector-body > .details { flex: none; max-height: 30%; }
 .insp-head {
   display: flex; align-items: baseline; gap: var(--oz-space-4); flex-wrap: wrap;
   padding: var(--oz-space-4) var(--oz-space-6);
@@ -739,6 +678,27 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   font-weight: var(--oz-default-weight-heading);
   margin: 0; overflow-wrap: anywhere;
 }
+/* The filename is editable in place. It should read as the heading it is until
+   someone reaches for it - most people never will - so the field carries no
+   chrome until hover or focus. The extension rides beside it, unowned by the
+   field, because the encode decides it. */
+.insp-title { display: flex; align-items: baseline; min-width: 0; max-width: 44ch; }
+/* Width comes from the `size` attribute, set in JS from the name's own length.
+   A percentage width made the field span the whole title and parked the
+   extension a hand's width from the name it belongs to. */
+.insp-title #insp-name {
+  font: inherit; color: inherit; width: auto; max-width: 100%; min-width: 4ch;
+  background: transparent; border: var(--oz-stroke-1) solid transparent;
+  border-radius: var(--app-radius-sm);
+  padding: var(--oz-space-1) var(--oz-space-2); margin-left: calc(var(--oz-space-2) * -1);
+  text-overflow: ellipsis;
+}
+.insp-title #insp-name:hover { border-color: var(--oz-color-border-primary); }
+.insp-title #insp-name:focus {
+  outline: none; background: var(--oz-color-fill-tertiary);
+  border-color: var(--oz-color-border-selected);
+}
+.insp-ext { flex: none; color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-sm); }
 .insp-head .dims { color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs); }
 
 /* A plain ground, not a checkerboard. The checker belongs to the image's own
@@ -968,56 +928,135 @@ kbd {
 .note { color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm); margin-top: var(--oz-space-3); }
 .note.m0 { margin: 0; }
 
-/* Candidate leaderboard. Each row is a real button: clicking it keeps that
-   format for this image, so choosing a format is one action on the thing you
-   are looking at rather than a trip through a separate control. */
-.cands { display: grid; gap: var(--app-gap-tight); }
+/* ========================== 3b. THE READOUT ============================== *
+   The band between the picture and the numbers: one sentence, and every
+   encode that was tried as something you can touch. It is `flex: none` so it
+   never takes height from the stage - the image stays the subject. */
+.readout {
+  display: grid; gap: var(--oz-space-3);
+  padding: var(--oz-space-4) var(--oz-space-6);
+  background: var(--oz-color-surface-primary);
+}
+/* Body size, not label size. This line is the one thing on the screen that has
+   to be read by someone who is not looking for it, so it is set at reading
+   size in the reading face and given the primary content colour - a muted
+   caption here would be a caption, and this is not one. */
+.narration {
+  margin: 0; min-height: var(--oz-leading-body-md);
+  font-size: var(--oz-text-body-md); line-height: var(--oz-leading-body-md);
+  color: var(--oz-color-content-primary);
+}
+.narration b { color: var(--oz-color-content-primary); }
+/* While the work runs the sentence is a promise, not a result: it steps back a
+   rung so the picture above it keeps the eye. */
+.narration.working { color: var(--oz-color-content-secondary); }
+/* The invitation. A real button that looks like the link it is: underlined, in
+   the reading face, on the same baseline as the sentence it finishes. */
+.narr-link {
+  font: inherit; padding: 0; color: var(--oz-color-content-brand);
+  text-decoration: underline;
+  text-decoration-color: var(--oz-color-border-brand);
+  text-underline-offset: 3px;
+  transition: color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
+}
+.narr-link:hover {
+  color: var(--oz-color-content-brand-hover);
+  text-decoration-color: var(--oz-color-border-brand-hover);
+}
+
+/* Every encode that was tried, smallest first, as chips. Horizontal and
+   scrolling rather than a stacked table: a row of touchable things next to the
+   picture reads as a set of choices, where a column of rows under a heading
+   reads as a report. The meter along the bottom edge carries the size
+   comparison without competing with the label for the eye. */
+.cands {
+  display: flex; gap: var(--oz-space-2); align-items: stretch;
+  overflow-x: auto; overflow-y: hidden;
+  padding-bottom: var(--oz-space-2); margin-bottom: calc(var(--oz-space-2) * -1);
+  scrollbar-width: thin;
+}
+/* Equal width, always: `flex: 1 0 <basis>` gives every chip the same basis and
+   the same share of any slack, and forbids shrinking. That is not a tidiness
+   preference — the meter along the bottom edge is a percentage of the chip, so
+   on ragged widths two meters of the same length would mean two different
+   sizes. Equal chips are what make the meter honest. Long labels ellipsis
+   rather than widening their chip; the full name is in the title. */
 .cand {
-  position: relative; overflow: hidden; width: 100%; text-align: left;
-  display: grid; grid-template-columns: 1fr auto 4.2em auto;
-  gap: var(--oz-space-3); align-items: center;
-  padding: var(--oz-space-3); border-radius: var(--app-radius-sm);
-  font-size: var(--oz-text-body-sm); color: var(--oz-color-content-primary);
-  transition: box-shadow var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
+  position: relative; overflow: hidden; flex: 1 0 10.5rem; max-width: 16rem;
+  text-align: left;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
+  gap: var(--oz-space-1) var(--oz-space-3);
+  padding: var(--oz-space-3) var(--oz-space-4) var(--oz-space-4);
+  border-radius: var(--app-radius-md);
+  background: var(--oz-color-fill-tertiary);
+  color: var(--oz-color-content-primary);
+  font-size: var(--oz-text-body-sm); cursor: pointer;
+  transition-property: background-color, box-shadow, transform;
+  transition-duration: var(--oz-spring-effects-fast-ms);
+  transition-timing-function: var(--oz-spring-effects-fast);
 }
-button.cand { cursor: pointer; }
-button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-border-secondary); }
-/* Forced is a state, so an inset ring is legal and costs no layout. */
-.cand.forced { box-shadow: inset 0 0 0 var(--oz-stroke-4) var(--oz-color-border-selected); }
-.cand .p {
-  position: relative; font-family: var(--oz-font-mono);
-  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-success);
-  text-align: right;
-}
-.cand .bar {
-  position: absolute; inset: 0 auto 0 0; width: var(--w, 0%);
-  background: var(--oz-color-fill-tertiary); border-radius: var(--app-radius-sm);
-  transition: width var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
-}
-.cand.win .bar { background: var(--oz-color-fill-brand-secondary); }
-/* The original is the yardstick, not a failure. A critical tint here rendered
-   pink over the light page and read as an error state. */
-.cand.orig .bar { background: var(--oz-color-fill-tertiary); }
+.cand:hover { background: var(--oz-color-fill-tertiary-hover); }
+.cand:active { transform: translateY(1px); }
+/* Current is a state, so an inset ring is legal and costs no layout. */
+.cand.current { box-shadow: inset 0 0 0 var(--oz-stroke-4) var(--oz-color-border-selected); }
 .cand > span { position: relative; }
-.cand .f { font-weight: var(--oz-weight-medium); }
-.cand .b, .cand .s {
-  font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
-  color: var(--oz-color-content-secondary);
+.cand .f {
+  font-weight: var(--oz-weight-medium); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
-.cand .badge {
+.cand .mark {
+  justify-self: end;
   font-family: var(--oz-font-label);
   font-size: var(--oz-text-label-xs); font-weight: var(--oz-weight-semibold);
   letter-spacing: var(--oz-tracking-label-xs); text-transform: uppercase;
-  color: var(--oz-color-content-brand);
+  color: var(--oz-color-content-tertiary); white-space: nowrap;
 }
-.cand.orig .f, .cand.orig .b { color: var(--oz-color-content-tertiary); }
+/* The one brand mark down here. The winning encode is the app's answer, and
+   this is the same job the badge did in the old leaderboard. */
+.cand.win .mark { color: var(--oz-color-content-brand); }
+.cand .b {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-secondary);
+  white-space: nowrap;
+}
+.cand .p {
+  justify-self: end; font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-success); white-space: nowrap;
+}
+/* Size, as a rule along the bottom edge. Absolute, so it cannot add height, and
+   neutral in every chip — the ring says which one is showing and the badge says
+   which one won, so a coloured meter would be a third voice saying nothing new. */
+.cand .meter {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: var(--w, 0%);
+  background: var(--oz-color-border-tertiary);
+  transition: width var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
+}
+.cand-wait {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
+  font-family: var(--oz-font-mono); align-self: center;
+}
+/* The answer to clicking "prefer something else?". One pass, on an effects
+   spring so it cannot overshoot, and it is a response to an action rather than
+   an ambient loop - so it is not marked `.oz-ambient` and does not need to be
+   switched off; reduced motion keeps the colour change and drops nothing that
+   carries meaning. */
+.cands.calling .cand {
+  animation: chip-call var(--oz-spring-effects-slow-ms) var(--oz-spring-effects-slow) 2;
+}
+@keyframes chip-call {
+  50% { background-color: var(--oz-color-fill-brand-secondary); }
+}
 
-/* The one per-image control the candidate cards cannot express. */
-.ov-floor {
-  display: flex; align-items: center; gap: var(--oz-space-3); flex-wrap: wrap;
-  margin-top: var(--oz-space-5);
+/* The manual overrides. A form, laid out as one. */
+.ov-grid {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--oz-space-3) var(--oz-space-4); align-items: center;
 }
-.ov-floor label { color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm); }
+.ov-grid label { color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm); }
+.ov-grid .num-input { width: 100%; }
+.ov-actions {
+  display: flex; align-items: center; gap: var(--oz-space-3);
+  flex-wrap: wrap; margin-top: var(--oz-space-4);
+}
 
 /* ========================= 4. RESULTS SUMMARY ============================ */
 /* Two slots and a fixed height. Left to wrap, this bar grew to 130px and ate
@@ -1291,7 +1330,16 @@ html.theming body, html.theming body * {
   .insp-head .dims { display: none; }
   .insp-head .spacer { display: none; }
   .insp-head .btn { padding: 0 var(--oz-space-3); font-size: var(--oz-text-body-sm); }
+  .insp-title { flex: 1 1 100%; max-width: none; }
   .stage { min-height: 320px; }
+  /* The readout keeps its size on a phone - it is the part that explains what
+     happened, and the chips are the control. The band scrolls sideways within
+     itself rather than shrinking, so a chip stays a finger-sized target. */
+  .readout { padding: var(--oz-space-4); gap: var(--oz-space-3); }
+  .narration { font-size: var(--oz-text-body-sm); line-height: var(--oz-leading-body-sm); }
+  /* Stacked, the panel needs a real cap rather than a share of a pane whose
+     height is now the page's. */
+  #inspector-body > .details { max-height: 320px; }
   .body { gap: var(--oz-space-2); padding: var(--oz-space-2); }
   .canvas-bar { padding: var(--oz-space-2) var(--oz-space-3); gap: var(--oz-space-2); }
   .segmented button { padding: var(--oz-space-1) var(--oz-space-3); font-size: var(--oz-text-body-xs); }

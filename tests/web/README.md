@@ -61,19 +61,26 @@ E2E does not cover (the E2E takes the keep-as-PNG branch).
 ## Focused probes
 
 ```
-node tests/web/probe_setup.mjs      # set-up step, copy button, zoom anchoring
+node tests/web/probe_flow.mjs       # the drop sequence, candidate chips, copy, zoom
 node tests/web/probe_controls.mjs   # Format/Quality controls, transparency dialog
 node tests/web/probe_a11y.mjs       # accessible names, live regions, focus, Enter
 node tests/web/probe_mobile.mjs     # 390px: does anything overhang the viewport
 node tests/web/probe_zoom.mjs       # traces stage/frame geometry through zoom steps
 ```
 
-`drive.mjs` holds `uploadAndStart` / `uploadAndFinish`. Since v2.5.0 a drop
-into an empty queue lands on the set-up step and waits, so **any harness that
-uploads files must press the start button too** — use these rather than
-hand-rolling it.
+`drive.mjs` holds `uploadAndStart` / `uploadAndFinish`. Since v2.6.0 a drop
+starts the run on its own, so there is nothing to press — but **dispatch is
+held for one animation frame** so the untouched original is painted first, and
+these helpers wait on the frames rather than on a status. Use them rather than
+hand-rolling it: "the items exist" is one frame too early to call the run
+started, and a small file can finish before the first poll.
 
-Two things worth knowing before writing a probe here:
+Three things worth knowing before writing a probe here:
+
+- **To see the anchor frame, stub `dispatch`.** The app only holds it for a
+  frame, which is not long enough to inspect; `probe_flow.mjs` and the E2E
+  both swap in a no-op, assert the original-only state, then restore and call
+  it. Both live in the page's global scope, so plain assignment works.
 
 - **Chrome refuses clipboard writes to an automated browser** whatever you pass
   to `overridePermissions`. Grant `clipboardReadWrite` and
