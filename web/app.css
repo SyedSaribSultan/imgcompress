@@ -7,6 +7,13 @@
    computed in OKLCH upstream and gated for contrast there, so restating one
    here would put it outside the engine.
 
+   One layer sits between the tokens and the call sites: a short block of
+   `--app-*` aliases for the decisions this app makes *within* the system —
+   which three of the eleven radius steps it uses, and how tall a control is.
+   The system offers a range; picking the same members of it every time is
+   what makes a set of screens look like one product. Add to that block rather
+   than reaching past it for a raw step.
+
    Three of the system's rules shape this file in ways worth knowing:
 
    * **Borders do one of two jobs.** `affordance` (the stroke *is* the control —
@@ -49,6 +56,37 @@
      tracks the theme instead of being a pair of greys. */
   --checker-a: var(--oz-color-surface-secondary);
   --checker-b: var(--oz-color-surface-tertiary);
+
+  /* ---- corner scale -------------------------------------------------------
+     The system ships eleven radius steps. This app was reaching for nine of
+     them, which is not a scale but a shrug: 2px and 4px and 6px corners sat
+     side by side where nobody could tell them apart, and a 32px hero panel
+     shared a page with 16px cards. Three steps carry every surface here, and
+     each says what it is for rather than how big it is. Changing a corner is
+     now one edit in one place.
+
+     Prefix is `--app-`, not `--ui-`: verify_tokens.mjs reads `--ui*` as a
+     leftover from the pre-system palette and fails the build on it. */
+  --app-radius-sm: var(--oz-radius-3);       /* 6px  — controls, chips, thumbs */
+  --app-radius-md: var(--oz-radius-4);       /* 8px  — rows, cards, tiles      */
+  --app-radius-lg: var(--oz-radius-8);       /* 16px — panels, dialogs, hero   */
+  --app-radius-pill: var(--oz-radius-full);  /* tracks, dots, badges           */
+
+  /* ---- control height -----------------------------------------------------
+     Buttons were 38px, selects 32px, and they sit on the same toolbar row, so
+     every control was a couple of pixels out from its neighbour. Two heights:
+     one for anything on a normal row, one for dense clusters. `.btn.big` keeps
+     the system's own touch target. */
+  --app-control-h: 36px;
+  --app-control-h-sm: 28px;
+
+  /* ---- sub-scale gap ------------------------------------------------------
+     Deliberately below the system's floor (`--oz-space-1` is 4px). Two things
+     need to sit *inside* something without reading as separated: the thumb in
+     a segmented track, and rows in a dense list. Five call sites were using
+     2px and one 3px, which is not a decision, it is a typo with a long life.
+     Named here so the next one does not invent a seventh value. */
+  --app-gap-tight: 2px;
 }
 
 * { box-sizing: border-box; }
@@ -77,7 +115,7 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
 :focus-visible {
   outline: var(--oz-focus-ring-width) solid var(--oz-color-border-focus);
   outline-offset: var(--oz-focus-ring-offset);
-  border-radius: var(--oz-radius-1);
+  border-radius: var(--app-radius-sm);
 }
 /* On a brand fill an offset ring fills the gap with the page colour and
    vanishes, so those get the inset inverse ring instead. */
@@ -102,7 +140,7 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
   position: absolute; left: -9999px; top: 0; z-index: var(--oz-layer-tooltip);
   background: var(--oz-color-fill-brand); color: var(--oz-color-content-on-brand);
   padding: var(--oz-space-3) var(--oz-space-5);
-  border-radius: 0 0 var(--oz-radius-4) 0;
+  border-radius: 0 0 var(--app-radius-md) 0;
   font-weight: var(--oz-weight-semibold);
 }
 .skip:focus { left: 0; }
@@ -155,7 +193,7 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
   padding: var(--oz-space-5) var(--oz-space-6);
   background: var(--oz-color-fill-brand-secondary);
   border: var(--oz-stroke-2) solid var(--oz-color-border-brand);  /* job: state */
-  border-radius: var(--oz-radius-4);
+  border-radius: var(--app-radius-md);
 }
 
 /* ------------------------------- controls -------------------------------- */
@@ -163,9 +201,9 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
    control. The primary button gets its shape from the fill, so it has none. */
 .btn {
   display: inline-flex; align-items: center; gap: var(--oz-space-2);
-  padding: 0 var(--oz-space-4); min-height: 32px;
+  padding: 0 var(--oz-space-4); min-height: var(--app-control-h);
   border: var(--oz-stroke-2) solid var(--oz-color-border-primary);
-  border-radius: var(--oz-radius-3);
+  border-radius: var(--app-radius-sm);
   background: var(--oz-color-fill-secondary);
   color: var(--oz-color-content-primary);
   font-size: var(--oz-text-label-md);
@@ -193,7 +231,10 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
 .btn.primary {
   background: var(--oz-color-fill-brand); color: var(--oz-color-content-on-brand);
   border-color: transparent; font-weight: var(--oz-weight-semibold);
-  min-height: 38px; padding: 0 var(--oz-space-6);
+  /* Height comes from .btn. A primary that was 6px taller than the secondary
+     beside it made every row it appeared in look misaligned; the emphasis is
+     carried by the fill and the weight, which is what emphasis is for. */
+  padding: 0 var(--oz-space-6);
 }
 .btn.primary:hover { background: var(--oz-color-fill-brand-hover); }
 .btn.primary:active { background: var(--oz-color-fill-brand-active); }
@@ -202,7 +243,7 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
   color: var(--oz-color-content-on-brand-disabled);
 }
 .btn.big { min-height: var(--oz-target-min); padding: 0 var(--oz-space-7); font-size: var(--oz-text-body-md); }
-.btn.sm { min-height: 28px; padding: 0 var(--oz-space-3); font-size: var(--oz-text-body-xs); }
+.btn.sm { min-height: var(--app-control-h-sm); padding: 0 var(--oz-space-3); font-size: var(--oz-text-body-xs); }
 /* Shortcut hints ride on the button that performs the action, which is where
    people actually learn them. */
 .btn kbd, .segmented kbd {
@@ -215,14 +256,14 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
 /* One control, not three loose buttons: the options are mutually exclusive, so
    they read as one thing with a moving selection. */
 .segmented {
-  display: inline-flex; padding: 2px; gap: 2px;
+  display: inline-flex; padding: var(--app-gap-tight); gap: var(--app-gap-tight);
   background: var(--oz-color-fill-tertiary);
-  border-radius: var(--oz-radius-4);
+  border-radius: var(--app-radius-md);
 }
 .segmented button {
   display: inline-flex; align-items: center;
-  padding: var(--oz-space-1) var(--oz-space-4); min-height: 28px;
-  border-radius: var(--oz-radius-3);
+  padding: var(--oz-space-1) var(--oz-space-4); min-height: var(--app-control-h-sm);
+  border-radius: var(--app-radius-sm);
   color: var(--oz-color-content-secondary);
   font-size: var(--oz-text-body-sm); font-weight: var(--oz-weight-medium);
   white-space: nowrap;
@@ -244,7 +285,7 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
 }
 .overflow .menu a {
   text-align: left; padding: var(--oz-space-3) var(--oz-space-4);
-  border-radius: var(--oz-radius-3); text-decoration: none;
+  border-radius: var(--app-radius-sm); text-decoration: none;
   font-size: var(--oz-text-body-sm); color: var(--oz-color-content-secondary);
 }
 .overflow .menu a:hover { background: var(--oz-color-fill-tertiary-hover); color: var(--oz-color-content-primary); }
@@ -259,8 +300,8 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
 select, .num-input {
   background: var(--oz-color-surface-secondary);
   border: var(--oz-stroke-2) solid var(--oz-color-border-secondary);
-  border-radius: var(--oz-radius-3);
-  padding: var(--oz-space-1) var(--oz-space-3); min-height: 32px;
+  border-radius: var(--app-radius-sm);
+  padding: var(--oz-space-1) var(--oz-space-3); min-height: var(--app-control-h);
   font-size: var(--oz-text-body-sm);
   transition: border-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
@@ -278,22 +319,22 @@ input[type="range"] {
   background: none; height: 20px; width: 150px; margin: 0;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px; border-radius: var(--oz-radius-full); background: var(--oz-color-fill-tertiary);
+  height: 3px; border-radius: var(--app-radius-pill); background: var(--oz-color-fill-tertiary);
 }
 input[type="range"]::-moz-range-track {
-  height: 3px; border-radius: var(--oz-radius-full); background: var(--oz-color-fill-tertiary);
+  height: 3px; border-radius: var(--app-radius-pill); background: var(--oz-color-fill-tertiary);
 }
 /* Neutral thumb: the accent means "this is the answer", and a settings control
    is not an answer. */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 14px; height: 14px; border-radius: var(--oz-radius-full);
+  width: 14px; height: 14px; border-radius: var(--app-radius-pill);
   background: var(--oz-color-content-primary); margin-top: -5.5px;
   transition: transform var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast);
 }
 input[type="range"]::-moz-range-thumb {
   width: 14px; height: 14px; border: none;
-  border-radius: var(--oz-radius-full); background: var(--oz-color-content-primary);
+  border-radius: var(--app-radius-pill); background: var(--oz-color-content-primary);
 }
 input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 
@@ -327,7 +368,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    file", so it is a legal border. */
 .empty .drop-target {
   border: var(--oz-stroke-3) dashed var(--oz-color-border-primary);
-  border-radius: var(--oz-radius-11);
+  border-radius: var(--app-radius-lg);
   padding: var(--oz-space-13) var(--oz-space-14);
   display: grid; gap: var(--oz-space-6); justify-items: center; text-align: center;
   max-width: 780px; width: 100%;
@@ -362,7 +403,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .size-demo {
   display: flex; align-items: center; gap: var(--oz-space-4);
   padding: var(--oz-space-3) var(--oz-space-5);
-  border-radius: var(--oz-radius-full);
+  border-radius: var(--app-radius-pill);
   background: var(--oz-color-surface-secondary);
   font-size: var(--oz-text-body-md);
 }
@@ -382,7 +423,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   font-size: var(--oz-text-label-xs); letter-spacing: var(--oz-tracking-label-xs);
   color: var(--oz-color-content-tertiary);
   background: var(--oz-color-surface-secondary);
-  border-radius: var(--oz-radius-full); padding: var(--oz-space-1) var(--oz-space-4);
+  border-radius: var(--app-radius-pill); padding: var(--oz-space-1) var(--oz-space-4);
 }
 .privacy-line {
   display: flex; align-items: center; gap: var(--oz-space-3);
@@ -427,7 +468,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 /* The moved settings bar sits on its own rung so it reads as a panel of
    choices rather than a strip of chrome. */
 .setup-controls {
-  border-radius: var(--oz-radius-8); overflow: hidden;
+  border-radius: var(--app-radius-lg); overflow: hidden;
   background: var(--oz-color-surface-secondary);
 }
 .setup-list {
@@ -438,11 +479,11 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .setup-row {
   display: flex; align-items: center; gap: var(--oz-space-4);
   padding: var(--oz-space-3) var(--oz-space-4);
-  border-radius: var(--oz-radius-6);
+  border-radius: var(--app-radius-md);
   background: var(--oz-color-surface-primary);
 }
 .setup-row .thumb {
-  width: 44px; height: 44px; flex: none; border-radius: var(--oz-radius-4);
+  width: 44px; height: 44px; flex: none; border-radius: var(--app-radius-md);
   background-color: var(--oz-color-fill-tertiary);
   background-size: cover; background-position: center;
 }
@@ -452,7 +493,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .setup-name {
   font: inherit; font-size: var(--oz-text-body-sm); color: var(--oz-color-content-primary);
   background: transparent; border: var(--oz-stroke-1) solid transparent;
-  border-radius: var(--oz-radius-3); padding: var(--oz-space-1) var(--oz-space-2);
+  border-radius: var(--app-radius-sm); padding: var(--oz-space-1) var(--oz-space-2);
   width: 100%; min-width: 0;
 }
 .setup-name:hover { border-color: var(--oz-color-border-primary); }
@@ -465,7 +506,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   padding-inline: var(--oz-space-2);
 }
 .setup-drop {
-  flex: none; width: 28px; height: 28px; border-radius: var(--oz-radius-full);
+  flex: none; width: 28px; height: 28px; border-radius: var(--app-radius-pill);
   border: none; background: transparent; cursor: pointer;
   color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-md);
   line-height: 1;
@@ -530,7 +571,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    dark the surface step already does it and the shadow is barely visible. */
 .card {
   background: var(--oz-color-surface-primary);
-  border-radius: var(--oz-radius-8);
+  border-radius: var(--app-radius-lg);
   overflow: hidden;
   box-shadow: var(--oz-elevation-x-small);
 }
@@ -566,22 +607,27 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   display: grid; grid-template-columns: 46px minmax(0,1fr) auto;
   gap: var(--oz-space-4); align-items: center;
   width: 100%; text-align: left;
-  padding: var(--oz-space-3); border-radius: var(--oz-radius-4);
+  padding: var(--oz-space-3); border-radius: var(--app-radius-md);
   background: transparent;
   transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
-.row + .row { margin-top: 2px; }
+.row + .row { margin-top: var(--app-gap-tight); }
 .row:hover { background: var(--oz-color-fill-secondary-hover); }
 /* Selected is a state, so it may carry a stroke - drawn as an inset rail so it
    costs no layout and cannot shift the row. The fill stays neutral: brand at
    15% over a white page renders pink, which reads destructive rather than
-   selected, and the accent has two jobs already. */
+   selected, and the accent has two jobs already. (That rules out
+   `--oz-color-fill-selected` here, which is exactly that 15% brand.)
+
+   The rail is 2px, not 4px. At 4px it was the loudest thing in the queue and
+   competed with the primary action for attention; the surface step already
+   says "this row", and the rail only has to confirm it. */
 .row[aria-selected="true"] {
   background: var(--oz-color-fill-secondary-active);
-  box-shadow: inset var(--oz-stroke-6) 0 0 var(--oz-color-border-selected);
+  box-shadow: inset var(--oz-stroke-4) 0 0 var(--oz-color-border-selected);
 }
 .row .thumb {
-  width: 46px; height: 46px; border-radius: var(--oz-radius-3);
+  width: 46px; height: 46px; border-radius: var(--app-radius-sm);
   background-color: var(--oz-color-surface-tertiary);
   background-size: cover; background-position: center;
 }
@@ -608,7 +654,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .row .meta .err { color: var(--oz-color-content-critical); }
 .row .tail { display: flex; align-items: center; gap: var(--oz-space-2); }
 .dot {
-  width: 6px; height: 6px; border-radius: var(--oz-radius-full);
+  width: 6px; height: 6px; border-radius: var(--app-radius-pill);
   background: var(--oz-color-content-tertiary); flex: none;
 }
 .dot.done, .dot.saved { background: var(--oz-color-fill-success); }
@@ -626,7 +672,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 
 .row .track {
-  display: none; height: 2px; border-radius: var(--oz-radius-full);
+  display: none; height: 2px; border-radius: var(--app-radius-pill);
   background: var(--oz-color-fill-tertiary); overflow: hidden; margin-top: var(--oz-space-1);
 }
 .row.working .track { display: block; }
@@ -634,7 +680,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    like three failures. */
 .track i {
   display: block; height: 100%; width: 0;
-  background: var(--oz-color-border-tertiary); border-radius: var(--oz-radius-full);
+  background: var(--oz-color-border-tertiary); border-radius: var(--app-radius-pill);
   transition: width var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .row.enter { animation: oz-enter-rise var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default) both; }
@@ -643,7 +689,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .inspector {
   display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0;
   background: var(--oz-color-surface-primary);
-  border-radius: var(--oz-radius-8); overflow: hidden;
+  border-radius: var(--app-radius-lg); overflow: hidden;
   box-shadow: var(--oz-elevation-x-small);
 }
 
@@ -654,13 +700,13 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   background: var(--oz-color-surface-secondary);
 }
 .zoomer {
-  display: inline-flex; align-items: center; gap: 2px;
+  display: inline-flex; align-items: center; gap: var(--app-gap-tight);
   background: var(--oz-color-fill-tertiary);
-  border-radius: var(--oz-radius-4); padding: 2px;
+  border-radius: var(--app-radius-md); padding: var(--app-gap-tight);
 }
 .zoomer button {
-  min-width: 28px; min-height: 28px; padding: 0 var(--oz-space-3);
-  border-radius: var(--oz-radius-3);
+  min-width: var(--app-control-h-sm); min-height: var(--app-control-h-sm); padding: 0 var(--oz-space-3);
+  border-radius: var(--app-radius-sm);
   color: var(--oz-color-content-secondary); font-size: var(--oz-text-body-sm);
   transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
@@ -760,7 +806,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .divider::after {
   content: ""; position: absolute; top: 50%; left: 50%;
   width: 30px; height: 30px; margin: -15px 0 0 -15px;
-  border-radius: var(--oz-radius-full);
+  border-radius: var(--app-radius-pill);
   background: var(--oz-color-border-inverse);
   box-shadow: var(--oz-elevation-small);
   transition: transform var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast);
@@ -790,7 +836,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    resolves to the dark value inside it whatever the page is doing. */
 .tag {
   position: absolute; top: var(--oz-space-4);
-  padding: var(--oz-space-1) var(--oz-space-3); border-radius: var(--oz-radius-full);
+  padding: var(--oz-space-1) var(--oz-space-3); border-radius: var(--app-radius-pill);
   background: var(--oz-overlay-dimness);
   color: var(--oz-color-content-primary);
   font-family: var(--oz-font-label);
@@ -814,7 +860,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .hint {
   position: absolute; left: 50%; bottom: var(--oz-space-6);
   transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
-  padding: var(--oz-space-3) var(--oz-space-5); border-radius: var(--oz-radius-full);
+  padding: var(--oz-space-3) var(--oz-space-5); border-radius: var(--app-radius-pill);
   background: var(--oz-color-surface-overlay);
   box-shadow: var(--oz-elevation-medium);
   font-size: var(--oz-text-body-sm); color: var(--oz-color-content-secondary);
@@ -833,7 +879,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 kbd {
   font-family: var(--oz-font-mono); font-size: var(--oz-text-label-xs);
   background: var(--oz-color-fill-tertiary);
-  border-radius: var(--oz-radius-2); padding: 1px var(--oz-space-2);
+  border-radius: var(--app-radius-sm); padding: 1px var(--oz-space-2);
 }
 
 .details {
@@ -870,7 +916,7 @@ kbd {
    marker for a decorative loop, so reduced motion switches the pulse off. */
 .skel {
   display: inline-block; width: 3.6em; height: .78em;
-  border-radius: var(--oz-radius-2);
+  border-radius: var(--app-radius-sm);
   background: var(--oz-color-fill-tertiary);
   vertical-align: baseline;
 }
@@ -925,12 +971,12 @@ kbd {
 /* Candidate leaderboard. Each row is a real button: clicking it keeps that
    format for this image, so choosing a format is one action on the thing you
    are looking at rather than a trip through a separate control. */
-.cands { display: grid; gap: 3px; }
+.cands { display: grid; gap: var(--app-gap-tight); }
 .cand {
   position: relative; overflow: hidden; width: 100%; text-align: left;
   display: grid; grid-template-columns: 1fr auto 4.2em auto;
   gap: var(--oz-space-3); align-items: center;
-  padding: var(--oz-space-3); border-radius: var(--oz-radius-3);
+  padding: var(--oz-space-3); border-radius: var(--app-radius-sm);
   font-size: var(--oz-text-body-sm); color: var(--oz-color-content-primary);
   transition: box-shadow var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
@@ -945,7 +991,7 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
 }
 .cand .bar {
   position: absolute; inset: 0 auto 0 0; width: var(--w, 0%);
-  background: var(--oz-color-fill-tertiary); border-radius: var(--oz-radius-3);
+  background: var(--oz-color-fill-tertiary); border-radius: var(--app-radius-sm);
   transition: width var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
 }
 .cand.win .bar { background: var(--oz-color-fill-brand-secondary); }
@@ -995,7 +1041,7 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
   font-family: var(--oz-font-mono); font-size: var(--oz-text-label-xs);
   color: var(--oz-color-content-secondary);
   background: var(--oz-color-fill-tertiary);
-  border-radius: var(--oz-radius-full);
+  border-radius: var(--app-radius-pill);
   padding: var(--oz-space-1) var(--oz-space-3);
   cursor: help; white-space: nowrap;
 }
@@ -1004,14 +1050,14 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
 .menu {
   position: absolute; right: 0; bottom: calc(100% + var(--oz-space-2));
   background: var(--oz-color-surface-overlay);
-  border-radius: var(--oz-radius-4); box-shadow: var(--oz-elevation-large);
+  border-radius: var(--app-radius-md); box-shadow: var(--oz-elevation-large);
   display: grid; min-width: 190px; padding: var(--oz-space-1);
   z-index: var(--oz-layer-popover);
   animation: oz-enter-pop var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast) both;
 }
 .menu button {
   text-align: left; padding: var(--oz-space-3) var(--oz-space-4);
-  border-radius: var(--oz-radius-3);
+  border-radius: var(--app-radius-sm);
   font-size: var(--oz-text-body-sm); color: var(--oz-color-content-secondary);
   transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
@@ -1029,7 +1075,7 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
 .veil.on { opacity: 1; }
 .veil .box {
   border: var(--oz-stroke-4) dashed var(--oz-color-border-brand);   /* job: affordance */
-  border-radius: var(--oz-radius-10);
+  border-radius: var(--app-radius-lg);
   padding: var(--oz-space-12) var(--oz-space-14); text-align: center;
   background: var(--oz-color-surface-overlay);
   box-shadow: var(--oz-elevation-large);
@@ -1048,15 +1094,20 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
    controls in the evidence pane - a toast that covers the thing you just used
    is worse than no toast - and briefly overlaying the settings row costs
    nothing, because nobody reads it while a confirmation is up. */
-/* Bottom, not top. At 68px it sat exactly on the toolbar and covered the
-   Quality control while telling you something about the file you had just
-   saved - the confirmation obscuring the control you might act on next. Down
-   here it clears the results bar and is out of every control's way. */
+/* Placement is the whole problem here, and it took three tries. Centred at the
+   top it sat on the Format and Quality selects; at bottom 84px it sat on the
+   per-image quality floor input; hard left it would ride over the queue rows
+   as soon as the list filled. Every band of this workspace is clickable except
+   one - the middle of the results bar, which holds the totals on the left and
+   the download actions on the right and nothing in between. The toast sits in
+   that gap. `probe_theme.mjs` asserts it covers no control, because the next
+   person to move it will not know any of the above. */
 .toast {
-  position: fixed; left: 50%; bottom: 84px; top: auto;
+  position: fixed; left: 50%; bottom: var(--oz-space-4); top: auto;
+  max-width: min(46ch, calc(100vw - var(--oz-space-7)));
   transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
   z-index: var(--oz-layer-toast);
-  padding: var(--oz-space-4) var(--oz-space-5); border-radius: var(--oz-radius-full);
+  padding: var(--oz-space-4) var(--oz-space-5); border-radius: var(--app-radius-pill);
   background: var(--oz-color-surface-overlay);
   box-shadow: var(--oz-elevation-large);
   font-size: var(--oz-text-body-sm);
@@ -1068,7 +1119,7 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
 
 dialog#keys, dialog#alpha-ask {
   background: var(--oz-color-surface-overlay); color: var(--oz-color-content-primary);
-  border: none; border-radius: var(--oz-radius-8);
+  border: none; border-radius: var(--app-radius-lg);
   box-shadow: var(--oz-elevation-large);
   padding: var(--oz-space-6) var(--oz-space-7); min-width: 340px;
   animation: oz-enter-pop var(--oz-spring-spatial-fast-ms) var(--oz-spring-spatial-fast) both;
@@ -1120,17 +1171,17 @@ dialog#keys td:first-child { color: var(--oz-color-content-secondary); white-spa
 .learn code {
   font-family: var(--oz-font-mono); font-size: .92em;
   background: var(--oz-color-surface-secondary);
-  border-radius: var(--oz-radius-2); padding: 1px var(--oz-space-2);
+  border-radius: var(--app-radius-sm); padding: 1px var(--oz-space-2);
 }
 
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--oz-space-4); margin-top: var(--oz-space-7); }
 .step {
   background: var(--oz-color-surface-primary);
-  border-radius: var(--oz-radius-8); padding: var(--oz-space-5);
+  border-radius: var(--app-radius-lg); padding: var(--oz-space-5);
 }
 .step-n {
   display: inline-grid; place-content: center;
-  width: 26px; height: 26px; border-radius: var(--oz-radius-full);
+  width: 26px; height: 26px; border-radius: var(--app-radius-pill);
   background: var(--oz-color-fill-brand-secondary); color: var(--oz-color-content-brand);
   font-size: var(--oz-text-label-sm); font-weight: var(--oz-weight-semibold);
 }
@@ -1171,7 +1222,7 @@ td.win::before {
 
 .code {
   background: var(--oz-color-surface-primary);
-  border-radius: var(--oz-radius-4); padding: var(--oz-space-5) var(--oz-space-6);
+  border-radius: var(--app-radius-md); padding: var(--oz-space-5) var(--oz-space-6);
   overflow-x: auto; margin: var(--oz-space-5) 0;
 }
 .code code {
@@ -1181,7 +1232,7 @@ td.win::before {
 
 .learn details {
   background: var(--oz-color-surface-primary);
-  border-radius: var(--oz-radius-4); margin-top: var(--oz-space-3);
+  border-radius: var(--app-radius-md); margin-top: var(--oz-space-3);
   transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
 .learn details:hover { background: var(--oz-color-surface-secondary); }
@@ -1268,9 +1319,11 @@ html.theming body, html.theming body * {
 /* Fingers need bigger targets than cursors - the system names the floor. */
 @media (pointer: coarse) {
   .btn, select, .num-input { min-height: var(--oz-target-min); }
-  .btn.sm { min-height: 36px; }
+  /* Dense clusters grow to the normal row height on touch, where 28px is
+     under the finger target. */
+  .btn.sm { min-height: var(--app-control-h); }
   .btn.primary { min-height: var(--oz-target-comfortable); }
-  .segmented button, .zoomer button { min-height: 36px; padding: var(--oz-space-2) var(--oz-space-4); }
+  .segmented button, .zoomer button { min-height: var(--app-control-h); padding: var(--oz-space-2) var(--oz-space-4); }
   input[type="range"] { height: 32px; }
   input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9.5px; }
   input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }
