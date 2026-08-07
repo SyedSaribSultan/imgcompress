@@ -52,6 +52,7 @@ PNG8_COLORS = [16, 24, 32, 48, 64, 96, 128, 192, 256]
 # cost at most one more probe.
 JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96, 97, 98, 99]
 WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96, 98]
+AVIF_QUALITY = [30, 38, 45, 52, 58, 64, 70, 76, 82, 88, 93, 96]
 
 
 def _zopfli_png(data: bytes, enabled: bool = True) -> bytes:
@@ -203,30 +204,44 @@ class WebpLosslessEncoder(Encoder):
         return buf.getvalue()
 
 
+class AvifEncoder(Encoder):
+    """AVIF, where Pillow was built with one.
+
+    Pillow gained native AVIF support in 11.3, but only where the wheel was
+    built against libavif - which most Windows wheels are not, and the plugin
+    (`pillow-avif-plugin`) is a separate install. The browser engine has had
+    AVIF since the WASM codec tier landed, so the destination table lists it
+    either way and this reports honestly whether this machine can write one.
+    A destination that offers a format nobody here can encode simply loses it,
+    the same way `png8` falls back when libimagequant is missing.
+    """
+
+    name = "avif"
+    extension = ".avif"
+    supports_alpha = True
+    levels = AVIF_QUALITY
+
+    def available(self) -> bool:
+        return "AVIF" in Image.SAVE
+
+    def encode(self, img: Image.Image, level: int, fast: bool = False) -> bytes:
+        buf = io.BytesIO()
+        img.save(buf, "AVIF", quality=level, speed=8 if fast else 4)
+        return buf.getvalue()
+
+
 ALL = {
     "jpeg": JpegEncoder,
     "png8": Png8Encoder,
     "png": PngEncoder,
     "webp": WebpEncoder,
     "webp-lossless": WebpLosslessEncoder,
-}
-
-# Which candidates each target is allowed to emit.
-#
-# figma: Figma's own docs say uploads are accepted as JPG, PNG, HEIC, WebP, GIF
-#        and TIFF - but its plugin API only knows PNG/JPEG/GIF, and the standing
-#        community answer is that WebP gets transcoded to PNG on import. If that
-#        is right, shipping WebP to Figma turns a small file into a large PNG.
-#        The downside is bad and the upside is small, so this target sticks to
-#        JPEG and PNG.
-TARGETS = {
-    "figma": ["jpeg", "png8", "png"],
-    "web": ["jpeg", "png8", "png", "webp", "webp-lossless"],
-    "lossless": ["png", "webp-lossless"],
+    "avif": AvifEncoder,
 }
 
 
 def build(names, zopfli: bool = True, background=(255, 255, 255)) -> list[Encoder]:
+    """Instantiate the named encoders, dropping any this machine cannot run."""
     out = []
     for name in names:
         cls = ALL[name]
@@ -234,6 +249,16 @@ def build(names, zopfli: bool = True, background=(255, 255, 255)) -> list[Encode
         if enc.available():
             out.append(enc)
     return out
+
+
+def usable(names) -> list:
+    """Of `names`, the ones that exist and this machine can actually write.
+
+    Which formats a destination *offers* and which it can *emit here* are
+    different questions, and conflating them is how a destination table that
+    lists AVIF turns into a KeyError on a machine without an AVIF encoder.
+    """
+    return [n for n in names if n in ALL and ALL[n](zopfli=False).available()]
 
 
 def capabilities() -> dict:

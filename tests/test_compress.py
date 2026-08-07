@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PIL import Image, ImageDraw  # noqa: E402
 
 from imgcompress import Settings, compress_file, compress_tree  # noqa: E402
+from imgcompress import destinations as dest  # noqa: E402
 from imgcompress import encoders as enc  # noqa: E402
 from imgcompress.quality import (  # noqa: E402
     HAVE_SSIMULACRA2,
@@ -96,10 +97,85 @@ class EncoderTests(unittest.TestCase):
             self.assertEqual(out.mode, "P")
             self.assertLessEqual(len(out.getcolors(maxcolors=1024)), 32)
 
-    def test_figma_target_never_offers_webp(self):
-        self.assertNotIn("webp", enc.TARGETS["figma"])
-        self.assertNotIn("webp-lossless", enc.TARGETS["figma"])
-        self.assertIn("webp", enc.TARGETS["web"])
+    def test_every_named_format_has_an_encoder(self):
+        """A destination may only offer formats the engine knows how to write.
+
+        `available()` decides whether this machine can actually run one; this
+        is the earlier question, and getting it wrong is a KeyError at the
+        moment somebody's image is being compressed.
+        """
+        for d in dest.DESTINATIONS.values():
+            for name in d.formats:
+                self.assertIn(name, enc.ALL, f"{d.name} offers unknown format {name}")
+
+
+class DestinationTests(unittest.TestCase):
+    """The table is a promise about where an image is going. Pin all of it.
+
+    These same five entries are duplicated in `web/worker.js`, `web/app.js` and
+    the desktop UI, which cannot be checked from here - but the Python side is
+    the reference, so at least it cannot drift on its own.
+    """
+
+    EXPECTED = {
+        # name:        (formats,                  max_dimension, hard_cap, ss2)
+        "web":         (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
+                        2560, 0, 90.0),
+        "documents":   (("jpeg", "png8", "png"), 4096, 4096, 90.0),
+        "email":       (("jpeg", "png8", "png"), 1920, 0, 88.0),
+        "thumbnail":   (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
+                        512, 0, 85.0),
+        "original":    (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
+                        0, 0, 95.0),
+    }
+
+    def test_every_destination_matches_the_brief(self):
+        for name, (formats, max_dim, cap, ss2) in self.EXPECTED.items():
+            with self.subTest(destination=name):
+                d = dest.get(name)
+                self.assertEqual(d.formats, formats)
+                self.assertEqual(d.max_dimension, max_dim)
+                self.assertEqual(d.hard_cap, cap)
+                self.assertEqual(d.ss2_target, ss2)
+
+    def test_the_five_are_the_ones_offered(self):
+        self.assertEqual(dest.names(), list(self.EXPECTED))
+
+    def test_the_default_is_the_web(self):
+        """Not a design tool. The old default silently refused WebP to everyone."""
+        self.assertEqual(dest.DEFAULT, "web")
+        self.assertEqual(Settings().target, "web")
+        self.assertIn("webp", dest.formats_for(Settings().target))
+
+    def test_documents_never_offers_webp_or_avif(self):
+        formats = dest.formats_for("documents")
+        for lossy_modern in ("webp", "webp-lossless", "avif"):
+            self.assertNotIn(lossy_modern, formats)
+
+    def test_documents_is_capped_at_4096(self):
+        self.assertEqual(dest.get("documents").hard_cap, 4096)
+        self.assertEqual(dest.get("documents").max_dimension, 4096)
+
+    def test_only_documents_enforces_a_hard_cap(self):
+        capped = [d.name for d in dest.DESTINATIONS.values() if d.hard_cap]
+        self.assertEqual(capped, ["documents"])
+
+    def test_old_names_still_resolve(self):
+        """Scripts written against 2.6 keep working."""
+        self.assertEqual(dest.resolve("figma"), "documents")
+        self.assertEqual(dest.resolve("archive"), "original")
+        self.assertEqual(dest.get("figma").formats, dest.get("documents").formats)
+
+    def test_unknown_destination_is_rejected_not_guessed(self):
+        self.assertFalse(dest.exists("nowhere"))
+        with self.assertRaises(KeyError):
+            dest.get("nowhere")
+
+    def test_hidden_destinations_are_reachable_but_not_offered(self):
+        self.assertIn("lossless", dest.DESTINATIONS)
+        self.assertNotIn("lossless", dest.names())
+        for name in dest.formats_for("lossless"):
+            self.assertTrue(enc.ALL[name].lossless, f"{name} is not pixel-exact")
 
 
 class CompressTests(unittest.TestCase):
@@ -138,12 +214,35 @@ class CompressTests(unittest.TestCase):
         with Image.open(res.output) as out:
             self.assertEqual(max(out.size), 1000)
 
-    def test_figma_target_caps_at_4096_even_when_unlimited(self):
+    def test_documents_caps_at_4096_even_when_unlimited(self):
+        """Design tools rescale above this destructively, so asking for more is
+        not a request the destination can honour."""
         path = self.src / "huge.png"
         sample((5000, 1200)).save(path)
-        res = compress_file(path, self.dst, Settings(max_dimension=0, **FAST))
+        res = compress_file(path, self.dst,
+                            Settings(target="documents", max_dimension=0, **FAST))
         with Image.open(res.output) as out:
             self.assertLessEqual(max(out.size), 4096)
+
+    def test_the_cap_belongs_to_documents_and_not_to_everything(self):
+        """`original` means what it says. The 4096 ceiling was a Figma fact that
+        used to apply to the default and therefore to everyone."""
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        res = compress_file(path, self.dst,
+                            Settings(target="original", max_dimension=0, **FAST))
+        with Image.open(res.output) as out:
+            self.assertEqual(max(out.size), 5000)
+
+    def test_documents_ships_no_webp_even_on_artwork_that_would_win_with_it(self):
+        path = self.src / "alpha.png"
+        img = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+        ImageDraw.Draw(img).ellipse([40, 40, 360, 360], fill=(255, 0, 0, 255))
+        img.save(path)
+        res = compress_file(path, self.dst, Settings(target="documents", **FAST))
+        tried = {c[0] for c in res.candidates}
+        self.assertFalse(tried & {"webp", "webp-lossless", "avif"})
+        self.assertIn(res.output.suffix, (".png", ".jpg"))
 
     def test_transparency_survives(self):
         path = self.src / "alpha.png"

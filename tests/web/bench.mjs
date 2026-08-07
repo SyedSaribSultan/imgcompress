@@ -6,8 +6,8 @@
  * may not move the results.
  *
  *   node tests/web/setup_bench.mjs            # once, to build bench/
- *   node tests/web/bench.mjs <label>          # gate against snap-figma.json
- *   BENCH_TARGET=web node tests/web/bench.mjs <label>
+ *   node tests/web/bench.mjs <label>          # gate against snap-documents.json
+ *   BENCH_TARGET=web node tests/web/bench.mjs <label>   # or email, thumbnail, original
  *   BENCH_DIR=batch SNAP=batch node tests/web/bench.mjs <label>
  *   BENCH_WRITE=1 ...                         # rewrite a snapshot on purpose
  */
@@ -22,7 +22,7 @@ import { uploadAndStart } from "./drive.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BENCH = path.join(here, process.env.BENCH_DIR || "bench");
 const label = process.argv[2] || "run";
-const target = process.env.BENCH_TARGET || "figma";
+const target = process.env.BENCH_TARGET || "documents";
 
 if (!existsSync(BENCH)) {
   console.error(`${BENCH} missing — run: node tests/web/setup_bench.mjs`);
@@ -42,11 +42,25 @@ try {
   await pg.setViewport({ width: 1600, height: 1000 });
   pg.on("pageerror", (e) => console.log("[pageerror]", String(e)));
   await pg.goto("http://127.0.0.1:8171/", { waitUntil: "networkidle0" });
-  if (target !== "figma") {
+  if (target !== "web") {
     await pg.select("#target", target);
     await pg.evaluate(() => document.getElementById("target").dispatchEvent(new Event("change")));
     await new Promise((r) => setTimeout(r, 500));
   }
+  /* Pin the size cap rather than taking the destination's.
+   *
+   * Since 2.7 a destination carries its own dimension, which is right for a
+   * person and wrong for this gate: camera-12mp.jpg is 4000x3000, so switching
+   * destination would change both the format list AND the frame, and a moved
+   * byte would no longer say which one moved it. The snapshot exists to catch
+   * engine changes, so it holds every other variable still. Measure a
+   * destination's real dimension with speed_by_choice.mjs, not here. */
+  await pg.evaluate(() => {
+    const md = document.getElementById("maxdim");
+    md.value = "2560";
+    md.dispatchEvent(new Event("change"));
+  });
+  await new Promise((r) => setTimeout(r, 500));
   // Warm the codecs first so the measurement is steady-state, not first-load.
   await pg.evaluate(() => addSamples());
   await pg.waitForFunction(() => state.items.length === 2 &&

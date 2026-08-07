@@ -3,6 +3,85 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Presets are now destinations, and the default is no longer a design tool.**
+  There used to be two overlapping settings — `--preset` chose size and
+  quality, `--target` chose which formats were allowed — and both defaulted to
+  `figma`. That meant a person compressing a photograph for their website got
+  a 4096px ceiling and no WebP, for a reason that is true of Figma and of
+  nothing they were doing. The restriction was researched and correct; making
+  it everyone's default was not.
+
+  One list replaces both, named after the only question somebody can answer
+  without knowing anything about compression — where is this image going?
+
+  | `--for` | Formats | Size | Visual match |
+  | --- | --- | --- | --- |
+  | `web` *(new default)* | all, incl. WebP and AVIF | 2560px | 90 |
+  | `documents` | JPEG / PNG only | 4096px, enforced | 90 |
+  | `email` | JPEG / PNG only | 1920px | 88 |
+  | `thumbnail` | all | 512px | 85 |
+  | `original` | all | never resized | 95 |
+
+  `--preset` still works as a synonym and the old names (`figma` → `documents`,
+  `archive` → `original`) still resolve, so existing scripts do not break. The
+  CLI says out loud when you have used one.
+- **`documents` keeps every restriction `figma` had**, because the restriction
+  is the feature: those tools re-encode WebP to PNG on import, so a beautifully
+  compressed 40 KB file becomes a multi-megabyte one inside the saved document.
+  What changed is who pays for it — the people actually sending images there.
+- **Choosing a destination applies all three of its numbers**, in both
+  interfaces. Setting only the format list would make "Thumbnail or avatar"
+  mean nothing but a shorter list, and leave the person to work out that two
+  more controls in Advanced needed changing for it to do what it says. Both
+  remain editable afterwards; this moves the starting point, it does not lock
+  it.
+- **The desktop app builds its destination list from the server's table**
+  rather than carrying its own copy of five numbers that have to agree.
+- **`imgcompress --help` no longer names a specific product**, and prints what
+  each destination actually does. Its output is ASCII, because a middot that
+  arrives as a replacement character on a cp1252 console undoes the point of
+  writing readable help.
+
+### Added
+- **The two engines are held together by CI on every pull request.** The claim
+  that the browser scores an image the way the Python reference does had
+  nothing enforcing it — `ss2_validate.mjs` existed and had to be remembered.
+  A drift there is the worst kind of break: the app keeps working, it just
+  stops being right. The job runs on every PR rather than only ones touching
+  `ss2.js`, because the case that actually worries us is `quality.py` or a
+  pinned dependency moving the numbers out from under a file nobody edited.
+- **AVIF is a Python encoder**, feature-detected. Pillow only carries AVIF
+  where the wheel was built against libavif, so on most machines this changes
+  nothing; where it is present, AVIF now competes in the bake-off on the same
+  terms as everything else — it ships only if it is both smaller and still
+  clears the floor. This is what lets the destination table be literally the
+  same in all four places rather than "the same except Python."
+- Nine tests pinning every destination's formats, size cap and minimum visual
+  match, that only `documents` enforces a ceiling, and that the old names still
+  resolve. Previously the 4096px cap was tested but *only* the half that fires
+  — nothing asserted that `original` leaves an image alone.
+
+### Fixed
+- `make_ss2_vectors.py` no longer dies on a Pillow built without libavif. It
+  says the twelve AVIF pairs are missing instead of quietly shrinking the
+  corpus and still printing VALIDATED.
+
+### Notes for anyone measuring this
+- **Output is byte-identical at matched settings.** `bench.mjs` passes clean on
+  both `documents` and `web`. It now pins the size cap rather than taking the
+  destination's, because `camera-12mp.jpg` is 4000×3000: letting the
+  destination move the frame would mean a moved byte no longer said which
+  change moved it.
+- **`--for documents` resizes to 4096px where `--preset figma` resized to
+  2560px.** This follows the destination table and is a real behaviour change
+  for CLI users. Worth knowing: this project's own README argues the 2560 cap
+  saves more than the encoder does, so if your images are bound for a canvas
+  rather than a print, `-m 2560` is still the better setting.
+- **`--preset thumbnail` changed** from 800px/80 to 512px/85.
+
 ## [2.6.0] - 2026-08-07
 
 ### Changed

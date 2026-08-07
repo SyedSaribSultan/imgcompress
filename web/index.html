@@ -188,17 +188,21 @@
            surface: change it and the whole queue is redone to match. -->
       <div class="bar" id="bar-controls">
         <!-- Two decisions, both the person's to make, both defaulting to
-             "let the app work it out". The groups say which is which, and
-             the single-format group says out loud what it buys: speed.
-             Values keep the original target names so a saved setting, and
-             every test that drives this control, still mean what they did. -->
+             "let the app work it out". The first is the only one that can be
+             answered without knowing anything about compression: where is this
+             image going? Everything else - which formats are allowed, how
+             large the frame may be, how close it has to look - follows from
+             that, and the app.js DESTINATIONS table holds the numbers.
+             Mirrors imgcompress/destinations.py; keep them in step. -->
         <div class="field">
-          <label for="target">Format</label>
-          <select id="target" title="Which format to produce">
-            <optgroup label="Let the app choose — it tries these and keeps the smallest that passes">
-              <option value="figma">Best for design tools — JPEG or PNG</option>
-              <option value="web">Best for the web — adds WebP and AVIF</option>
-              <option value="lossless">Lossless only — pixel-perfect</option>
+          <label for="target">Going to</label>
+          <select id="target" title="Where these images are going">
+            <optgroup label="Let the app choose the format — it tries several and keeps the smallest that still looks right">
+              <option value="web">Website or app</option>
+              <option value="documents">Design tool or document</option>
+              <option value="email">Email or chat</option>
+              <option value="thumbnail">Thumbnail or avatar</option>
+              <option value="original">Keep full quality</option>
             </optgroup>
             <!-- Not labelled "faster". Measured on the benchmark corpus,
                  restricting to JPEG saves only 1.1-1.4x against the design-tool
@@ -206,7 +210,7 @@
                  cost; and the choices that ARE ~2x quicker get there partly by
                  failing to reach the floor. Promising speed here would be
                  selling a number the engine does not owe. -->
-            <optgroup label="Use one format — skips the comparison">
+            <optgroup label="Always use one format — skips the comparison">
               <option value="one-jpeg">JPEG only</option>
               <option value="one-webp">WebP only</option>
               <option value="one-png">PNG only</option>

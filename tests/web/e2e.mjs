@@ -178,7 +178,22 @@ try {
      `chroma-noise ships only if verified (${cn.fmt} ${cn.lossless ? "lossless" : cn.score?.toFixed(1)})`);
 
   ok(by["ui.png"].status === "done" && by["ui.png"].newBytes < by["ui.png"].originalBytes, "ui compressed smaller");
-  ok(by["ui.png"].fmt === "png8", `ui winner is png8 (got ${by["ui.png"].fmt})`);
+  /* This used to assert png8 outright, which quietly pinned the old default
+     rather than the promise: flat UI artwork wins on a palette or lossless
+     format, and *which* one depends on what the destination allows. Under the
+     design-tool set it is png8; with the web set on the table webp-lossless
+     takes it, which is exactly what moving the default to `web` was for.
+     What must hold either way is that the smallest version that still looks
+     right is the one that ships, and that flat artwork never lands in a
+     photographic codec. */
+  {
+    const ui = by["ui.png"];
+    const passing = ui.candidates.filter((c) => c.lossless || c.score >= 90);
+    const smallest = Math.min(...passing.map((c) => c.bytes));
+    ok(ui.fmt !== "jpeg", `flat UI artwork does not go to a lossy photo codec (${ui.fmt})`);
+    ok(ui.newBytes === smallest,
+       `ui winner is the smallest version that passed (${ui.fmt} ${ui.newBytes} vs ${smallest})`);
+  }
 
   ok(by["logo.png"].status === "done", "alpha logo compressed");
   ok(by["logo.png"].fmt !== "jpeg", "alpha never routed to jpeg");
@@ -395,7 +410,7 @@ try {
     const rev2 = await page.evaluate(() => state.settingsRev);
     await page.evaluate(() => {
       const t = document.getElementById("target");
-      t.value = "figma";
+      t.value = "documents";
       t.dispatchEvent(new Event("change"));
     });
     await page.waitForFunction((r) => state.settingsRev > r &&

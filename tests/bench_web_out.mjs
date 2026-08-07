@@ -74,7 +74,7 @@ const browser = await puppeteer.launch({
   executablePath: CHROME, headless: true, protocolTimeout: 3_600_000,
 });
 try {
-  for (const target of ["figma", "web"]) {
+  for (const target of ["documents", "web"]) {
     const dir = path.join(OUT, target);
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });

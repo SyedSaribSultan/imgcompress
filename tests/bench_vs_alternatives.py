@@ -301,8 +301,8 @@ def main() -> int:
         ref_bytes = ref_path.stat().st_size
 
         web: dict[str, bytes] = {}
-        for target_dir, label in (("figma", "imgcompress web (Figma target)"),
-                                  ("web", "imgcompress web (Web target)")):
+        for target_dir, label in (("documents", "imgcompress web (documents)"),
+                                  ("web", "imgcompress web (web)")):
             d = web_root / target_dir
             if not d.is_dir():
                 continue

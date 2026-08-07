@@ -41,7 +41,10 @@ const JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96, 97
 const WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96, 98];
 const AVIF_QUALITY = [30, 38, 45, 52, 58, 64, 70, 76, 82, 88, 93, 96];
 
-const FIGMA_MAX_DIMENSION = 4096;
+/* Design tools rescale anything above this on import, destructively and with no
+ * control over the resampling, so the `documents` destination enforces it even
+ * when asked for more - better our Lanczos than theirs. */
+const DOCUMENTS_MAX_DIMENSION = 4096;
 
 // SSIM constants for 8-bit data (Wang et al. 2004)
 const C1 = (0.01 * 255) ** 2;
@@ -56,11 +59,29 @@ const TILE_BUDGET = 1_200_000;
 // worse of the two wins — a halo you cannot see on white is still a defect.
 const BACKDROPS = [[26, 26, 26], [230, 230, 230]];
 
+/* Where the image is going. Mirrors imgcompress/destinations.py - same names,
+ * same format lists, same numbers. If you change one, change both; the Python
+ * side is the reference and its tests pin these values. */
+const EVERY_FORMAT = ["jpeg", "png8", "png", "webp", "webp-lossless", "avif"];
+const STORED_AS_GIVEN = ["jpeg", "png8", "png"];
+
 const TARGETS = {
-  figma: ["jpeg", "png8", "png"],
-  web: ["jpeg", "png8", "png", "webp", "webp-lossless", "avif"],
+  web: EVERY_FORMAT,
+  documents: STORED_AS_GIVEN,
+  email: STORED_AS_GIVEN,
+  thumbnail: EVERY_FORMAT,
+  original: EVERY_FORMAT,
   lossless: ["png", "png8x", "webp-lossless"], // png8x = palette PNG only when pixel-exact
 };
+
+/* Pre-2.7 names. A queued job carrying one - from a saved setting, or an older
+ * tab still open against a new deploy - still lands somewhere real. */
+const OLD_TARGET_NAMES = { figma: "documents", archive: "original" };
+
+function destinationOf(name) {
+  const resolved = OLD_TARGET_NAMES[name] || name;
+  return TARGETS[resolved] ? resolved : "web";
+}
 
 /** Formats with no alpha channel at all - not "loses quality on alpha", but
  *  has nowhere to put it. Only jpeg, among everything here. */
@@ -1141,8 +1162,8 @@ let DCACHE = null;
 
 function limitFor(settings) {
   let limit = settings.maxDimension || 0;
-  if (settings.target === "figma") {
-    limit = limit ? Math.min(limit, FIGMA_MAX_DIMENSION) : FIGMA_MAX_DIMENSION;
+  if (destinationOf(settings.target) === "documents") {
+    limit = limit ? Math.min(limit, DOCUMENTS_MAX_DIMENSION) : DOCUMENTS_MAX_DIMENSION;
   }
   return limit;
 }
@@ -1235,7 +1256,7 @@ async function runJob(msg) {
   const encoders = makeEncoders(job);
   let names = settings.formats && settings.formats.length
     ? settings.formats
-    : TARGETS[settings.target] || TARGETS.figma;
+    : TARGETS[destinationOf(settings.target)];
   // Codecs load lazily, but availability gating needs them resolved first.
   // The first job of a session pays for the download; say so out loud.
   onCodecStatus = (codec) => post({ type: "progress", stage: "codec", detail: codec, frac: 0 });
@@ -1258,7 +1279,7 @@ async function runJob(msg) {
      saying why it is not the format they picked. Silence is the one option
      that is never right here. */
   if (!names.length && chosen) {
-    names = (TARGETS[settings.target] || TARGETS.figma).filter((n) => {
+    names = TARGETS[destinationOf(settings.target)].filter((n) => {
       const e = encoders[n];
       return e && !(alpha && !e.supportsAlpha) && !(e.available && !e.available());
     });

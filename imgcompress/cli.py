@@ -7,17 +7,10 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from . import destinations as dest
 from . import encoders as enc
 from .core import CompressionResult, Settings, compress_tree
 from .quality import HAVE_SSIMULACRA2, get_metric
-
-PRESETS = {
-    # name: (max_dimension, ssimulacra2 target, ssim target)
-    "figma": (2560, 90.0, 0.97),
-    "web": (1920, 85.0, 0.96),
-    "thumbnail": (800, 80.0, 0.95),
-    "archive": (0, 95.0, 0.99),
-}
 
 
 def human(n: int) -> str:
@@ -55,45 +48,75 @@ def describe(res: CompressionResult, verbose: bool = False) -> str:
     return line
 
 
+def destination_help() -> str:
+    """The five destinations, spelled out, for the bottom of --help.
+
+    Deliberately ASCII: this prints to a Windows console under cp1252 as often
+    as not, and a middot that arrives as a replacement character undoes the
+    point of writing readable help.
+    """
+    lines = ["where the image is going:"]
+    for d in dest.visible():
+        head = f"  --for {d.name}"
+        size = f"up to {d.max_dimension}px" if d.max_dimension else "never resized"
+        lines.append(f"{head.ljust(20)} {d.label}")
+        lines.append(f"{' ' * 20} {d.help}")
+        lines.append(f"{' ' * 20} {', '.join(d.formats)}"
+                     f" | {size} | visual match {d.ss2_target:g}")
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     here = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(
-        prog="compress",
+        prog="imgcompress",
         description=(
-            "Shrink images hard while holding a measured perceptual quality floor. "
-            "Encodes each image several ways, decodes and scores every candidate, "
-            "and keeps the smallest one that still looks right."
+            "Make images as small as they go without you being able to see the "
+            "difference. Each image is written several ways, every version is "
+            "measured against the original, and the smallest one that still "
+            "looks close enough is the one you get."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
+            destination_help() + "\n\n"
             "examples:\n"
-            "  python compress.py                         ./input -> ./output\n"
-            "  python compress.py photos/ -o small/       compress a folder\n"
-            "  python compress.py input/ --target web     allow WebP output\n"
-            "  python compress.py input/ -q 95            near-lossless\n"
-            "  python compress.py input/ --fast           quicker, slightly bigger\n"
-            "  python compress.py --check                 show which engines are active\n"
+            "  imgcompress                           ./input -> ./output\n"
+            "  imgcompress photos/ -o small/         compress a folder\n"
+            "  imgcompress hero.png --for documents  safe to import into a design tool\n"
+            "  imgcompress input/ --for email        small enough to attach\n"
+            "  imgcompress input/ -q 95              hold a higher visual match\n"
+            "  imgcompress input/ --fast             quicker, slightly bigger\n"
+            "  imgcompress --check                   show which engines are active\n"
         ),
     )
     parser.add_argument("source", nargs="?", default=str(here / "input"),
                         help="file or folder to compress (default: ./input)")
     parser.add_argument("-o", "--output", default=str(here / "output"),
-                        help="destination folder (default: ./output)")
-    parser.add_argument("--preset", choices=sorted(PRESETS), default="figma",
-                        help="starting point for size and quality (default: figma)")
-    parser.add_argument("--target", choices=["figma", "web", "lossless"], default=None,
-                        help="which output formats are allowed. figma = JPEG/PNG only "
-                             "(default), web adds WebP, lossless is pixel-exact")
+                        help="where to write the results (default: ./output)")
+    # Validated by hand rather than with `choices`, so that the older names go
+    # on working without argparse listing them back at anyone who mistypes.
+    parser.add_argument("--for", "--preset", dest="destination",
+                        default=dest.DEFAULT, metavar="DESTINATION",
+                        help="where the image is going: "
+                             + " | ".join(dest.names())
+                             + f" (default: {dest.DEFAULT}). Sets the formats, the size "
+                               "cap and the minimum visual match; see the list below")
+    # Kept working for scripts written against 2.6 and earlier, where `--target`
+    # chose the format list and `--preset` chose size and quality. Both now name
+    # the same thing, so both land here. Not advertised.
+    parser.add_argument("--target", dest="legacy_target", default=None,
+                        help=argparse.SUPPRESS)
     parser.add_argument("-m", "--max-dimension", type=int,
-                        help="cap the longest edge in pixels. 0 keeps original dimensions")
+                        help="cap the longest edge in pixels. 0 keeps the original size")
     parser.add_argument("-q", "--quality-target", type=float,
-                        help="perceptual floor. SSIMULACRA2 scale 0-100 (90 = visually "
-                             "lossless), or 0-1 if using --metric ssim")
+                        help="minimum visual match, 0-100 where 100 is indistinguishable "
+                             "(90 = you will not see the difference), or 0-1 with "
+                             "--metric ssim")
     parser.add_argument("--metric", choices=["ssimulacra2", "ssim"], default=None,
                         help="quality metric (default: ssimulacra2 when installed)")
     parser.add_argument("-f", "--format", dest="formats", action="append",
                         choices=sorted(enc.ALL),
-                        help="force a candidate format; repeat to allow several")
+                        help="always use this format; repeat to allow several")
     parser.add_argument("--fast", action="store_true",
                         help="skip the slowest final passes; a few percent bigger")
     parser.add_argument("--no-zopfli", action="store_true",
@@ -105,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-j", "--workers", type=int, default=0,
                         help="parallel workers (default: auto)")
     parser.add_argument("-v", "--verbose", action="store_true",
-                        help="show every candidate encoding, not just the winner")
+                        help="show every version that was tried, not just the winner")
     parser.add_argument("--check", action="store_true",
                         help="report which optional engines are installed, then exit")
     parser.add_argument("--version", action="version", version=f"imgcompress {__version__}")
@@ -142,8 +165,19 @@ def main(argv=None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    max_dim, ss2_target, ssim_target = PRESETS[args.preset]
-    target = ss2_target if metric.name == "ssimulacra2" else ssim_target
+    # `--target` is the pre-2.7 spelling of the same idea and wins when given,
+    # so a script that says `--target figma` keeps landing on the design-tool
+    # rules under their new name.
+    asked_for = args.legacy_target or args.destination
+    if not dest.exists(asked_for):
+        print(f"There's no destination called '{asked_for}'. "
+              f"Choose one of: {', '.join(dest.names())}.", file=sys.stderr)
+        return 2
+    going_to = dest.get(asked_for)
+    renamed = asked_for if asked_for != going_to.name else ""
+
+    max_dim = going_to.max_dimension
+    target = going_to.ss2_target if metric.name == "ssimulacra2" else going_to.ssim_target
     if args.max_dimension is not None:
         max_dim = args.max_dimension
     if args.quality_target is not None:
@@ -155,7 +189,7 @@ def main(argv=None) -> int:
         return 2
 
     settings = Settings(
-        target=args.target or ("web" if args.formats else "figma"),
+        target=going_to.name,
         max_dimension=max_dim,
         metric=metric.name,
         quality_target=target,
@@ -165,13 +199,20 @@ def main(argv=None) -> int:
         formats=args.formats,
     )
 
-    destination = Path(args.output).expanduser()
-    allowed = settings.formats or enc.TARGETS[settings.target]
+    # `destination` is the folder; `going_to` is the kind of place the image is
+    # headed. Naming both of them the same thing is how this got confusing in
+    # the first place.
+    out_dir = Path(args.output).expanduser()
+    allowed = settings.formats or enc.usable(going_to.formats)
+    match = f"{target:g}" if metric.name == "ssimulacra2" else f"{target:g} ({metric.name})"
     print(f"source      {source}")
-    print(f"destination {destination}")
-    print(f"preset      {args.preset}  (max {max_dim or 'unlimited'}px, "
-          f"{metric.name} >= {target:g})")
-    print(f"candidates  {', '.join(allowed)}")
+    print(f"writing to  {out_dir}")
+    print(f"going to    {going_to.name} - {going_to.label.lower()}")
+    size = f"up to {max_dim}px" if max_dim else "never resized"
+    print(f"            {size}, visual match at least {match}")
+    if renamed:
+        print(f"            ('{renamed}' is the old name for this; both work)")
+    print(f"formats     {', '.join(allowed)}")
     missing = [k for k, v in enc.capabilities().items() if not v]
     if missing:
         print(f"note        not installed: {', '.join(missing)} "
@@ -179,7 +220,7 @@ def main(argv=None) -> int:
     print()
 
     results = compress_tree(
-        source, destination, settings,
+        source, out_dir, settings,
         recursive=not args.no_recursive,
         workers=args.workers,
         on_result=lambda r: print(describe(r, args.verbose), flush=True),

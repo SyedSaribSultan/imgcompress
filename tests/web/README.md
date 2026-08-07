@@ -27,7 +27,7 @@ corrupt files fail gracefully; the console stays clean under the strict CSP.
 
 ```
 node tests/web/setup_bench.mjs            # once: builds bench/ from committed fixtures
-node tests/web/bench.mjs mylabel          # figma target, gated on snap-figma.json
+node tests/web/bench.mjs mylabel          # documents, gated on snap-documents.json
 BENCH_TARGET=web node tests/web/bench.mjs mylabel
 node tests/web/make_batch.mjs             # builds batch/ (the 4 fixtures × 6)
 BENCH_DIR=batch SNAP=batch node tests/web/bench.mjs mylabel

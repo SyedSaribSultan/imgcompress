@@ -28,6 +28,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from PIL import Image
 
 from . import __version__
+from . import destinations as dest
 from . import encoders as enc
 from .core import (
     SUPPORTED_SUFFIXES,
@@ -100,9 +101,9 @@ class Session:
         self.results: dict[str, CompressionResult] = {}
         self.previews: dict[str, bytes] = {}
         self.settings = {
-            "target": "figma",
+            "target": dest.DEFAULT,
             "quality_target": 90.0 if HAVE_SSIMULACRA2 else 0.97,
-            "max_dimension": 2560,
+            "max_dimension": dest.get(dest.DEFAULT).max_dimension,
             "metric": "ssimulacra2" if HAVE_SSIMULACRA2 else "ssim",
             "fast": False,
             "keep_metadata": False,
@@ -144,6 +145,19 @@ class Session:
                 "version": __version__,
                 "items": items,
                 "settings": dict(self.settings),
+                # The interface builds its destination list from this rather
+                # than carrying its own copy. One table, no drift.
+                #
+                # `formats` is what this machine can actually write, not what
+                # the destination would like to - a tooltip promising AVIF on a
+                # Pillow built without libavif is a promise the engine cannot
+                # keep, and the person would only find out by its absence.
+                "destinations": [
+                    {"name": d.name, "label": d.label, "help": d.help,
+                     "formats": enc.usable(d.formats), "max_dimension": d.max_dimension,
+                     "quality_target": d.ss2_target if HAVE_SSIMULACRA2 else d.ssim_target}
+                    for d in dest.visible()
+                ],
                 "watch_folder": self.watch_folder,
                 "last_folder": self.last_folder,
                 "engines": {**enc.capabilities(), "ssimulacra2 (perceptual metric)": HAVE_SSIMULACRA2},
@@ -224,8 +238,13 @@ class Session:
         merged = dict(self.settings)
         merged.update(item.override or {})
         formats = merged.pop("formats", None) or None
+        # An older session's saved target may be a pre-2.7 name; resolve it
+        # rather than letting `figma` reach the engine as an unknown place.
+        going_to = dest.resolve(merged.get("target") or dest.DEFAULT)
+        if not dest.exists(going_to):
+            going_to = dest.DEFAULT
         return Settings(
-            target=merged.get("target", "figma"),
+            target=going_to,
             max_dimension=int(merged.get("max_dimension", 2560)),
             metric=merged.get("metric", ""),
             quality_target=float(merged["quality_target"]) if merged.get("quality_target") is not None else None,

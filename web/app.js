@@ -89,7 +89,7 @@ const state = {
      person did. `alphaPolicy` only matters when that choice cannot hold the
      image's transparency, and is only ever set by answering the dialog. */
   settings: {
-    target: "figma", metric: "ss2", qualityTarget: 90, maxDimension: 2560,
+    target: "web", metric: "ss2", qualityTarget: 90, maxDimension: 2560,
     formats: null, alphaPolicy: "png",
   },
   settingsRev: 0,
@@ -97,17 +97,35 @@ const state = {
   suffix: false,
 };
 
+/* Where the image is going. Mirrors imgcompress/destinations.py and the table
+   in worker.js - same names, same numbers. The Python side is the reference
+   and its tests pin these; if you change one, change all three. */
+const DESTINATIONS = {
+  web:       { label: "Website or app",         maxDimension: 2560, qualityTarget: 90 },
+  documents: { label: "Design tool or document", maxDimension: 4096, qualityTarget: 90 },
+  email:     { label: "Email or chat",          maxDimension: 1920, qualityTarget: 88 },
+  thumbnail: { label: "Thumbnail or avatar",    maxDimension: 512,  qualityTarget: 85 },
+  original:  { label: "Keep full quality",      maxDimension: 0,    qualityTarget: 95 },
+};
+
+/* Pre-2.7 names, so a stored setting from an older visit still resolves. */
+const OLD_TARGET_NAMES = { figma: "documents", archive: "original", lossless: "original" };
+function destinationOf(name) {
+  const resolved = OLD_TARGET_NAMES[name] || name;
+  return DESTINATIONS[resolved] ? resolved : "web";
+}
+
 /* The Format control is one list spanning "you choose" to "I choose", so its
-   value carries both facts. Single-format picks leave the design-tool preset
-   behind, and with it that preset's dimension cap - the same rule the
-   per-image format override has always used. */
+   value carries both facts. Single-format picks leave the destination's format
+   list behind but keep its size cap - a person who picked "Email or chat" and
+   then said "JPEG only" still wants it to fit in an email. */
 const ONE = "one-";
-function parseFormatChoice(value) {
-  if (!value.startsWith(ONE)) return { target: value, formats: null };
-  return { target: "web", formats: [value.slice(ONE.length)] };
+function parseFormatChoice(value, current) {
+  if (!value.startsWith(ONE)) return { target: destinationOf(value), formats: null };
+  return { target: destinationOf(current), formats: [value.slice(ONE.length)] };
 }
 function formatChoiceValue(s) {
-  return s.formats && s.formats.length ? ONE + s.formats[0] : s.target;
+  return s.formats && s.formats.length ? ONE + s.formats[0] : destinationOf(s.target);
 }
 
 /* Words first, number behind Advanced. The floor is still the single source of
@@ -142,7 +160,9 @@ const isBusy = (i) => i.status === "queued" || i.status === "working";
 function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("imgc-settings") || "{}");
-    if (saved.target) state.settings.target = saved.target;
+    // A target saved before 2.7 is a pre-destination name; map it rather than
+    // letting `figma` reach the engine as somewhere that no longer exists.
+    if (saved.target) state.settings.target = destinationOf(saved.target);
     // Stored floors from before the metric change were SSIM fractions (<= 1);
     // they mean nothing on the SSIMULACRA 2 scale, so they reset to default.
     // v2: an init-scaling bug once pinned the slider to 99 and pushSettings
@@ -166,8 +186,8 @@ function loadSettings() {
   // recommended automatic set instead of pretending.
   if (!$("target").value) {
     state.settings.formats = null;
-    state.settings.target = "figma";
-    $("target").value = "figma";
+    state.settings.target = "web";
+    $("target").value = "web";
   }
   // qualityTarget is ALREADY on the slider's 0-100 scale. The old SSIM floor
   // was a fraction and was scaled here; doing that to 90 pinned the slider to
@@ -1690,7 +1710,7 @@ function toast(message) {
 /* ------------------------------- settings --------------------------------- */
 
 function currentSettings() {
-  const { target, formats } = parseFormatChoice($("target").value);
+  const { target, formats } = parseFormatChoice($("target").value, state.settings.target);
   return {
     target, formats,
     metric: "ss2",
@@ -1714,7 +1734,20 @@ function alphaItemCount() {
 let alphaAnswered = false;   // distinguishes a decision from a dismissal
 
 function onFormatChoice() {
-  const { formats } = parseFormatChoice($("target").value);
+  const value = $("target").value;
+  const { formats } = parseFormatChoice(value, state.settings.target);
+  // Choosing a destination is choosing all three of its numbers. Leaving size
+  // and quality behind would make "Thumbnail or avatar" mean nothing but a
+  // shorter format list, and the person would have to know to open Advanced
+  // and change two more things for it to do what it says. Still editable
+  // afterwards - this moves the starting point, it does not lock it.
+  const d = DESTINATIONS[value];
+  if (d) {
+    $("maxdim").value = d.maxDimension;
+    $("quality").value = d.qualityTarget;
+    $("quality-out").textContent = d.qualityTarget;
+    reflectQualityHint();
+  }
   const one = formats && formats[0];
   const n = alphaItemCount();
   if (!one || CARRIES_ALPHA[one] !== false || !n) { pushSettings(); return; }

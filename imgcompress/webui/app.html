@@ -427,12 +427,12 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
     <div class="sep"></div>
 
     <div class="field">
-      <label for="target">Target</label>
-      <select id="target" title="Which output formats are allowed">
-        <option value="figma">Figma (JPEG / PNG)</option>
-        <option value="web">Web (adds WebP)</option>
-        <option value="lossless">Lossless only</option>
-      </select>
+      <label for="target">Going to</label>
+      <!-- Filled from the server's destination table, which is the same table
+           the engine reads. A hardcoded list here would be a second copy of
+           five numbers that must agree, which is a copy that eventually will
+           not. -->
+      <select id="target" title="Where these images are going"></select>
     </div>
 
     <div class="field">
@@ -627,6 +627,9 @@ let localSettings = null; // pending edits not yet pushed
 function render(next) {
   const firstPaint = state.rev === -1;
   state = next;
+  // Options before values: setting .value against an empty select is silently
+  // a no-op, and the control would sit blank until something else touched it.
+  renderDestinations(state.destinations);
   if (!localSettings) applySettingsToControls(state.settings);
 
   renderQueue();
@@ -835,8 +838,31 @@ function toast(message) {
 }
 
 /* ------------------------------- settings -------------------------------- */
+
+/* Pre-2.7 names, so a session saved by an older build still selects something.
+   The server resolves these too; this only keeps the control from going blank
+   in the moment before the first snapshot lands. */
+const OLD_DESTINATION_NAMES = { figma: "documents", archive: "original" };
+let destinationsRendered = false;
+
+function renderDestinations(list) {
+  if (destinationsRendered || !list || !list.length) return;
+  const sel = $("target");
+  sel.innerHTML = "";
+  for (const d of list) {
+    const opt = document.createElement("option");
+    opt.value = d.name;
+    opt.textContent = d.label;
+    opt.title = `${d.help}  (${d.formats.join(", ")}; ` +
+                `${d.max_dimension ? "up to " + d.max_dimension + "px" : "never resized"})`;
+    sel.appendChild(opt);
+  }
+  destinationsRendered = true;
+}
+
 function applySettingsToControls(s) {
-  $("target").value = s.target || "figma";
+  const name = OLD_DESTINATION_NAMES[s.target] || s.target || "web";
+  if ($("target").querySelector(`option[value="${name}"]`)) $("target").value = name;
   const isSsim = s.metric === "ssim";
   const q = $("quality");
   q.min = isSsim ? 80 : 60; q.max = isSsim ? 100 : 99;
@@ -864,7 +890,22 @@ function pushSettings() {
 }
 
 /* -------------------------------- events --------------------------------- */
-$("target").addEventListener("change", pushSettings);
+/* Picking a destination is picking all three of its numbers. Leaving the size
+   and quality where the last destination left them would make "Thumbnail"
+   mean nothing but a shorter format list, and the person would have to know
+   to go and change two more controls for it to do what it says. Both remain
+   editable afterwards - this sets a starting point, it does not lock it. */
+$("target").addEventListener("change", () => {
+  const d = (state.destinations || []).find((x) => x.name === $("target").value);
+  if (d) {
+    $("maxdim").value = d.max_dimension;
+    const q = $("quality");
+    q.value = state.settings.metric === "ssim"
+      ? Math.round(d.quality_target * 100) : d.quality_target;
+    $("quality-out").textContent = q.value;
+  }
+  pushSettings();
+});
 $("maxdim").addEventListener("change", pushSettings);
 $("quality").addEventListener("input", () => { $("quality-out").textContent = $("quality").value; });
 $("quality").addEventListener("change", pushSettings);
