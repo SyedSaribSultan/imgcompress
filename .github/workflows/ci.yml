@@ -52,6 +52,43 @@ jobs:
           imgcompress --check
           python -m unittest discover -s tests -v
 
+  engine-parity:
+    # The product's central claim is that the browser scores an image the same
+    # way the Python reference does. Every unvalidated edit to ss2.js is a slow
+    # leak in that claim, and a leak nobody would notice: the app keeps working,
+    # it just stops being right. This job regenerates the vectors from the
+    # reference implementation and holds the JS port to them.
+    #
+    # It runs on every pull request rather than only on ones touching ss2.js.
+    # Path filters would miss the case that actually worries us - a change to
+    # quality.py, or to the reference package's pinned version, moving the
+    # numbers out from under a file nobody edited.
+    name: JS scorer matches the Python reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install the reference implementation
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[full]"
+      - name: Add an AVIF encoder if one is installable
+        # Only affects how many distorted pairs the corpus contains. Pillow
+        # ships AVIF support only where the wheel was built against libavif, so
+        # this is allowed to fail; make_ss2_vectors.py says out loud when the
+        # AVIF pairs are missing rather than quietly shrinking the corpus.
+        continue-on-error: true
+        run: python -m pip install pillow-avif-plugin
+      - name: Build the validation vectors from the Python reference
+        run: python tests/web/make_ss2_vectors.py
+      - name: The JS port must match them
+        run: node tests/web/ss2_validate.mjs
+
   lint:
     runs-on: ubuntu-latest
     steps:
