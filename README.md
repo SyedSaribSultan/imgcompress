@@ -124,9 +124,9 @@ to look.
 | `--for` | For | Formats | Size | Visual match |
 | --- | --- | --- | --- | --- |
 | `web` | **Default.** Anything that loads in a browser | all, incl. WebP + AVIF | 2560px | 90 |
-| `documents` | Design tools, office suites, docs | JPEG / PNG only | 4096px, enforced | 90 |
+| `documents` | Design tools, office suites, docs | JPEG / PNG only | 2560px, hard ceiling 4096px | 90 |
 | `email` | Attachments and chat | JPEG / PNG only | 1920px | 88 |
-| `thumbnail` | Avatars, list icons, previews | all | 512px | 85 |
+| `thumbnail` | Avatars, list icons, previews | all | 512px | 80 |
 | `original` | Print, masters, archives | all | never resized | 95 |
 
 `--preset` is accepted as a synonym, and the older names (`figma`, `archive`)
@@ -177,12 +177,15 @@ severe and the upside is a few percent, so `--for documents` sticks to formats
 those tools are documented to store byte-for-byte. AVIF isn't supported by
 Figma at all, and neither is JPEG XL.
 
-`--for documents` also enforces a **4096px** ceiling even when you ask for more:
-anything above it is downscaled destructively on import, with no control over
-the resampling, so the choice is between our Lanczos and theirs. Memory pressure
-in these tools comes from pixel dimensions more than from bytes, so if your
-images are bound for a canvas rather than a print, `-m 2560` is usually doing
-more work than the encoder is.
+`documents` carries two size numbers, doing two different jobs. **2560px** is
+the everyday downscale, the same as `web` — memory pressure in these tools comes
+from pixel dimensions more than from bytes, and no codec recovers what a 6000px
+export wastes when it renders at 1200px. **4096px** is a ceiling, not a setting:
+it clamps even an explicit `-m 8000`, because anything above it is downscaled
+destructively on import with no control over the resampling, so the choice is
+between our Lanczos and theirs. Asking for more is not refused, just quietly
+brought down — the intent is reasonable, the destination simply cannot carry
+it.
 
 Every other destination allows the modern formats, which is why `web` is the
 default: the restriction is a fact about design tools, not about images.

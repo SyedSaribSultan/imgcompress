@@ -7,9 +7,8 @@ be, and how close the result has to look.
 
 This replaces two older ideas that overlapped and were both named after the
 wrong thing. `--preset` used to set size and quality; `--target` used to set the
-format list; and the default for both was `figma`, which capped every image at
-4096px and refused WebP for a reason that applies to design tools and nobody
-else. Someone compressing a photograph for their website silently got no WebP
+format list; and the default for both was `figma`, which refused WebP for a
+reason that applies to design tools and nobody else. Someone compressing a photograph for their website silently got no WebP
 and was never told why. One list, named after destinations, is the fix.
 
 This table is the single source of truth for the Python side. `web/worker.js`,
@@ -74,10 +73,20 @@ DESTINATIONS = {
             name="documents",
             label="Design tool or document",
             formats=STORED_AS_GIVEN,
-            # Design tools rescale destructively above this on import, with no
-            # control over the resampling, so the cap is enforced even when the
-            # caller asks for more - better Lanczos here than whatever they do.
-            max_dimension=4096,
+            # Two numbers doing two different jobs, and collapsing them into
+            # one is a real bug this file shipped with for exactly one commit.
+            #
+            # 2560 is the everyday downscale, the same as `web`, and it is
+            # where most of the saving on a design asset actually comes from -
+            # no codec recovers the bytes wasted on a 6000px export that
+            # renders at 1200px.
+            #
+            # 4096 is a safety clamp, not a setting. Design tools rescale
+            # above it destructively on import with no control over the
+            # resampling, so an explicit `-m 8000` is quietly brought down to
+            # 4096 rather than honoured or rejected: the intent is fine, the
+            # destination simply cannot carry it.
+            max_dimension=2560,
             hard_cap=4096,
             ss2_target=90.0,
             ssim_target=0.97,
@@ -98,7 +107,13 @@ DESTINATIONS = {
             label="Thumbnail or avatar",
             formats=EVERY_FORMAT,
             max_dimension=512,
-            ss2_target=85.0,
+            # 512 covers a 2x display at 256px, which is the change that can
+            # be argued for. The quality target stays at the 80 it has always
+            # been: artefacts are *less* visible at a smaller size, so if
+            # anything it could fall, and moving it up was a second change
+            # with no reason behind it. Nothing in the history records why the
+            # original 800px was chosen - it arrived in the initial import.
+            ss2_target=80.0,
             ssim_target=0.95,
             help="For small display sizes - profile pictures, list icons, previews.",
         ),

@@ -179,20 +179,37 @@ try {
 
   ok(by["ui.png"].status === "done" && by["ui.png"].newBytes < by["ui.png"].originalBytes, "ui compressed smaller");
   /* This used to assert png8 outright, which quietly pinned the old default
-     rather than the promise: flat UI artwork wins on a palette or lossless
-     format, and *which* one depends on what the destination allows. Under the
-     design-tool set it is png8; with the web set on the table webp-lossless
-     takes it, which is exactly what moving the default to `web` was for.
-     What must hold either way is that the smallest version that still looks
-     right is the one that ships, and that flat artwork never lands in a
-     photographic codec. */
+     rather than the promise: which format wins flat UI artwork depends on what
+     the destination allows, and the whole thesis of this project is that the
+     winner is content-dependent. An assertion naming a format is an assertion
+     about a fixture.
+
+     What replaces it is two guards that are deliberately orthogonal, because
+     each one is blind to the other's failure:
+
+       1. the search PICKS correctly - the winner is the smallest version that
+          cleared the target;
+       2. the search HAD EVERYTHING TO PICK FROM - every format this
+          destination permits actually ran.
+
+     (2) is the one that is easy to miss. If an encoder silently stops running,
+     (1) still passes with flying colours: the smallest of four candidates is
+     still the smallest of four. You would have lost a whole format and nothing
+     would say so. */
   {
     const ui = by["ui.png"];
     const passing = ui.candidates.filter((c) => c.lossless || c.score >= 90);
     const smallest = Math.min(...passing.map((c) => c.bytes));
-    ok(ui.fmt !== "jpeg", `flat UI artwork does not go to a lossy photo codec (${ui.fmt})`);
     ok(ui.newBytes === smallest,
        `ui winner is the smallest version that passed (${ui.fmt} ${ui.newBytes} vs ${smallest})`);
+
+    /* `ui.png` is opaque, so nothing is filtered out for want of an alpha
+       channel and the full permitted set must be present. The default
+       destination is `web`. */
+    const got = [...new Set(ui.candidates.map((c) => c.format))].sort();
+    const want = ["avif", "jpeg", "png", "png8", "webp", "webp-lossless"];
+    ok(want.every((f) => got.includes(f)) && got.length === want.length,
+       `web tried every format it permits (got ${got.join(", ")})`);
   }
 
   ok(by["logo.png"].status === "done", "alpha logo compressed");
@@ -416,6 +433,23 @@ try {
     await page.waitForFunction((r) => state.settingsRev > r &&
       state.items.every((i) => ["done", "failed", "saved"].includes(i.status)),
       { timeout: 900_000, polling: 300 }, rev2);
+
+    /* The other half of the completeness guard, and the half that carries the
+       product's most consequential promise: `documents` must try exactly the
+       three formats those tools store byte-for-byte, and must NOT try WebP or
+       AVIF. A missing format here is a silently dead encoder; an extra one is
+       a file that quietly balloons when somebody imports it. */
+    const docs = await page.evaluate(() => {
+      const it = state.items.find((i) => i.name === "ui.png");
+      return { fmt: it.fmt, cands: [...new Set(it.candidates.map((c) => c.format))].sort() };
+    });
+    console.log("  documents ui.png:", JSON.stringify(docs));
+    ok(docs.cands.join(",") === "jpeg,png,png8",
+       `documents tried exactly the formats it permits (got ${docs.cands.join(", ")})`);
+    for (const banned of ["webp", "webp-lossless", "avif"]) {
+      ok(!docs.cands.includes(banned),
+         `documents did not reach for ${banned}`);
+    }
   }
 
   /* ---- copy to clipboard --------------------------------------------------

@@ -101,11 +101,14 @@ const state = {
    in worker.js - same names, same numbers. The Python side is the reference
    and its tests pin these; if you change one, change all three. */
 const DESTINATIONS = {
-  web:       { label: "Website or app",         maxDimension: 2560, qualityTarget: 90 },
-  documents: { label: "Design tool or document", maxDimension: 4096, qualityTarget: 90 },
-  email:     { label: "Email or chat",          maxDimension: 1920, qualityTarget: 88 },
-  thumbnail: { label: "Thumbnail or avatar",    maxDimension: 512,  qualityTarget: 85 },
-  original:  { label: "Keep full quality",      maxDimension: 0,    qualityTarget: 95 },
+  web:       { label: "Website or app",          maxDimension: 2560, qualityTarget: 90 },
+  // 2560 is the everyday frame, same as web; the 4096 ceiling that clamps an
+  // explicit larger request lives in worker.js as DOCUMENTS_MAX_DIMENSION.
+  // They are two different numbers doing two different jobs.
+  documents: { label: "Design tool or document", maxDimension: 2560, qualityTarget: 90 },
+  email:     { label: "Email or chat",           maxDimension: 1920, qualityTarget: 88 },
+  thumbnail: { label: "Thumbnail or avatar",     maxDimension: 512,  qualityTarget: 80 },
+  original:  { label: "Keep full quality",       maxDimension: 0,    qualityTarget: 95 },
 };
 
 /* Pre-2.7 names, so a stored setting from an older visit still resolves. */

@@ -62,7 +62,7 @@
         "Encodes each image with mozjpeg, palette PNG, lossless PNG (oxipng), WebP, lossless WebP and AVIF, and keeps the smallest that passes",
         "Quality is measured with SSIMULACRA 2 — the community's perceptual metric — running in-browser, validated against the reference implementation",
         "Before/after split comparison with zoom, a difference heatmap and a hold-to-flicker test",
-        "Figma-safe defaults: JPEG and PNG only, capped at 4096px"
+        "Pick where the image is going — website, design tool, email, thumbnail or untouched original — and the formats, size and quality follow"
       ]
     },
     {
@@ -75,8 +75,8 @@
         },
         {
           "@type": "Question",
-          "name": "Why does it default to JPEG and PNG instead of WebP?",
-          "acceptedAnswer": { "@type": "Answer", "text": "The default target is Figma. Figma's plugin API only accepts PNG, JPEG and GIF, and the standing community answer is that WebP uploads are decoded and re-encoded as PNG on import — turning a small WebP into a large PNG inside the .fig file. Switch the target to the web to allow WebP and AVIF output." }
+          "name": "When does it avoid WebP and AVIF?",
+          "acceptedAnswer": { "@type": "Answer", "text": "It does not — the default is Website or app, which uses WebP and AVIF. Only the Design tool or document destination restricts output to JPEG and PNG, because Figma's plugin API accepts PNG, JPEG and GIF and the standing community answer is that WebP uploads are decoded and re-encoded as PNG on import, turning a small WebP into a large PNG inside the .fig file." }
         },
         {
           "@type": "Question",
@@ -518,16 +518,19 @@
        a lot on the table — so this tool doesn't pick. It tries them all.</p>
 
     <details class="deep">
-      <summary>Why the default target is Figma, not WebP</summary>
+      <summary>Why "Design tool or document" refuses WebP</summary>
       <p>"Just use WebP" is the standard advice, and it's wrong if your images
          are going into Figma. Figma's plugin API only knows PNG, JPEG and GIF,
          and the standing community answer is that a WebP dropped onto the
          canvas is decoded and <b>re-encoded as PNG</b> — turning your
          beautifully compressed 40&nbsp;KB WebP into a multi-megabyte PNG inside
-         the <code>.fig</code>. The Figma target therefore sticks to formats
-         Figma stores byte-for-byte, and caps dimensions at 4096px — beyond
-         that, Figma rescales destructively on import. Pick <b>the web</b> for
-         anything not bound for Figma.</p>
+         the <code>.fig</code>. Office suites and document editors behave much
+         the same way. That destination therefore sticks to formats those tools
+         store byte-for-byte, and clamps anything above 4096px — beyond that
+         they rescale destructively on import, so the choice is between our
+         resampling and theirs. Every other destination allows the modern
+         formats, which is why <b>Website or app</b> is the default: the
+         restriction is a fact about design tools, not about images.</p>
     </details>
   </section>
 
@@ -562,12 +565,14 @@ imgcompress photos/        # or the command line</code></pre>
          analytics.</p>
     </details>
     <details>
-      <summary>Why does it default to JPEG and PNG instead of WebP?</summary>
-      <p>The default target is Figma. Figma's plugin API only accepts PNG, JPEG
-         and GIF, and the standing community answer is that WebP uploads are
-         decoded and re-encoded as PNG on import — turning a small WebP into a
-         large PNG inside the <code>.fig</code> file. Switch the target to
-         <b>the web</b> to allow WebP and AVIF output.</p>
+      <summary>When does it avoid WebP and AVIF?</summary>
+      <p>Only when you tell it the image is going into a design tool or a
+         document. Figma's plugin API accepts PNG, JPEG and GIF, and the
+         standing community answer is that WebP uploads are decoded and
+         re-encoded as PNG on import — turning a small WebP into a large PNG
+         inside the <code>.fig</code> file. Choosing <b>Design tool or
+         document</b> sticks to the formats those tools store as they were
+         given them. The default, <b>Website or app</b>, uses everything.</p>
     </details>
     <details>
       <summary>How is quality measured?</summary>

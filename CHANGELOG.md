@@ -10,7 +10,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   There used to be two overlapping settings — `--preset` chose size and
   quality, `--target` chose which formats were allowed — and both defaulted to
   `figma`. That meant a person compressing a photograph for their website got
-  a 4096px ceiling and no WebP, for a reason that is true of Figma and of
+  JPEG or PNG and nothing else, for a reason that is true of Figma and of
   nothing they were doing. The restriction was researched and correct; making
   it everyone's default was not.
 
@@ -20,9 +20,9 @@ This project follows [Semantic Versioning](https://semver.org/).
   | `--for` | Formats | Size | Visual match |
   | --- | --- | --- | --- |
   | `web` *(new default)* | all, incl. WebP and AVIF | 2560px | 90 |
-  | `documents` | JPEG / PNG only | 4096px, enforced | 90 |
+  | `documents` | JPEG / PNG only | 2560px, ceiling 4096px | 90 |
   | `email` | JPEG / PNG only | 1920px | 88 |
-  | `thumbnail` | all | 512px | 85 |
+  | `thumbnail` | all | 512px | 80 |
   | `original` | all | never resized | 95 |
 
   `--preset` still works as a synonym and the old names (`figma` → `documents`,
@@ -59,10 +59,28 @@ This project follows [Semantic Versioning](https://semver.org/).
   terms as everything else — it ships only if it is both smaller and still
   clears the floor. This is what lets the destination table be literally the
   same in all four places rather than "the same except Python."
-- Nine tests pinning every destination's formats, size cap and minimum visual
-  match, that only `documents` enforces a ceiling, and that the old names still
-  resolve. Previously the 4096px cap was tested but *only* the half that fires
-  — nothing asserted that `original` leaves an image alone.
+- **A parity test for the destination table**, `tests/test_destination_parity.py`.
+  The table now exists in Python, in `worker.js`, in `app.js` and in the
+  markup, and nothing checked that they agreed — the same hazard `ss2.js` had
+  before the CI job above, and it bit immediately: `app.js` was already
+  claiming 4096px for `documents` and quality 85 for `thumbnail` while Python
+  said 2560 and 80, so every browser compression would have used numbers the
+  reference had already rejected, silently. The test parses each file and
+  compares every value, and it fails loudly if a parser matches nothing rather
+  than passing because it checked nothing.
+- **`tests/web/check_ss2_corpus.py`**, wired into CI. `make_ss2_vectors.py`
+  skips AVIF where Pillow cannot write it, which is right on a Windows laptop
+  and wrong in CI: a failed plugin install would run 48 vectors instead of 60,
+  print VALIDATED, and show the same green tick with AVIF parity untested from
+  then on. The plugin install is no longer allowed to fail, and the vector
+  count and codec coverage are asserted rather than merely reported.
+- Tests pinning every destination's formats, size cap and minimum visual
+  match, that only `documents` enforces a ceiling, that an explicit `-m 8000`
+  is clamped to 4096 rather than refused, that a smaller request is never
+  inflated, and that the old names still resolve. Previously the 4096px cap was
+  tested but *only* the half that fires — nothing asserted that `original`
+  leaves an image alone. The Python suite goes from 24 tests to 48; the browser
+  suite from 72 assertions to 76.
 
 ### Fixed
 - `make_ss2_vectors.py` no longer dies on a Pillow built without libavif. It
@@ -71,16 +89,34 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Notes for anyone measuring this
 - **Output is byte-identical at matched settings.** `bench.mjs` passes clean on
-  both `documents` and `web`. It now pins the size cap rather than taking the
-  destination's, because `camera-12mp.jpg` is 4000×3000: letting the
-  destination move the frame would mean a moved byte no longer said which
-  change moved it.
-- **`--for documents` resizes to 4096px where `--preset figma` resized to
-  2560px.** This follows the destination table and is a real behaviour change
-  for CLI users. Worth knowing: this project's own README argues the 2560 cap
-  saves more than the encoder does, so if your images are bound for a canvas
-  rather than a print, `-m 2560` is still the better setting.
-- **`--preset thumbnail` changed** from 800px/80 to 512px/85.
+  both `documents` and `web`, at the real defaults — it takes the destination's
+  own frame rather than a pinned one, which it can do because `documents` and
+  `web` agree on 2560 and the format list is genuinely the only difference.
+- **`--preset thumbnail` changed** from 800px to 512px. The quality target
+  stays at 80. Nothing in the history records why 800 was chosen — it arrived
+  in the initial import — so 512 is the change that can be argued for and the
+  target was left alone: artefacts are *less* visible at a smaller size, so if
+  anything it could fall, and raising it would have been a second change with
+  no reason behind it.
+
+### A bug this branch introduced and then removed
+Recorded because the shape of it is worth remembering, not because it shipped.
+
+`documents` briefly carried **one** size number where the old `figma` preset
+had two. `figma` downscaled to 2560 and separately clamped at 4096 — the clamp
+being the thing that fires when somebody explicitly asks for more, which is why
+the original code described it as applying *regardless*. Collapsing them handed
+the ceiling over as the everyday setting, so every design-asset compression
+would have shipped roughly 2.5× the pixels it should, and downscaling saves
+more than the encoder does.
+
+`bench.mjs` caught the resulting byte change immediately, and it was
+misdiagnosed as a test-isolation problem: the fix applied was to pin the frame
+size so the comparison stayed clean. That was a correct testing instinct
+reached for at the wrong moment. It isolated the variable and certified a
+configuration no user would ever run — a green gate over a setting that does
+not exist, which is worse than a red one. The pin is gone and the two numbers
+are back to doing two jobs.
 
 ## [2.6.0] - 2026-08-07
 

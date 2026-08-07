@@ -77,15 +77,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[full]"
-      - name: Add an AVIF encoder if one is installable
-        # Only affects how many distorted pairs the corpus contains. Pillow
-        # ships AVIF support only where the wheel was built against libavif, so
-        # this is allowed to fail; make_ss2_vectors.py says out loud when the
-        # AVIF pairs are missing rather than quietly shrinking the corpus.
-        continue-on-error: true
+      - name: Add an AVIF encoder
+        # NOT allowed to fail. This job runs on Linux, where AVIF is available,
+        # and the graceful skip that make_ss2_vectors.py performs on a Pillow
+        # without libavif is meant for a developer's Windows laptop - not here.
+        # If it were tolerated here, an install failure would drop twelve AVIF
+        # pairs, print VALIDATED, and show the same green tick with AVIF parity
+        # untested from then on. A weaker check that looks identical to a strong
+        # one is the thing this whole job exists to prevent.
         run: python -m pip install pillow-avif-plugin
       - name: Build the validation vectors from the Python reference
         run: python tests/web/make_ss2_vectors.py
+      - name: The corpus must be the full one
+        # The count is asserted, not merely printed. Reporting a shortfall only
+        # helps somebody who reads a passing job's logs, which nobody does.
+        run: python tests/web/check_ss2_corpus.py --expect 60
       - name: The JS port must match them
         run: node tests/web/ss2_validate.mjs
 

@@ -121,13 +121,22 @@ class DestinationTests(unittest.TestCase):
         # name:        (formats,                  max_dimension, hard_cap, ss2)
         "web":         (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
                         2560, 0, 90.0),
-        "documents":   (("jpeg", "png8", "png"), 4096, 4096, 90.0),
+        # 2560 is the everyday downscale; 4096 is a clamp that only fires when
+        # somebody explicitly asks for more. Two numbers, two jobs.
+        "documents":   (("jpeg", "png8", "png"), 2560, 4096, 90.0),
         "email":       (("jpeg", "png8", "png"), 1920, 0, 88.0),
         "thumbnail":   (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
-                        512, 0, 85.0),
+                        512, 0, 80.0),
         "original":    (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
                         0, 0, 95.0),
     }
+
+    def test_documents_downscales_to_2560_by_default(self):
+        """The clamp is not the setting. Defaulting to the ceiling would ship
+        roughly 2.5x the pixels on every design asset."""
+        self.assertEqual(dest.get("documents").max_dimension, 2560)
+        self.assertEqual(dest.get("documents").max_dimension,
+                         dest.get("web").max_dimension)
 
     def test_every_destination_matches_the_brief(self):
         for name, (formats, max_dim, cap, ss2) in self.EXPECTED.items():
@@ -153,8 +162,10 @@ class DestinationTests(unittest.TestCase):
             self.assertNotIn(lossy_modern, formats)
 
     def test_documents_is_capped_at_4096(self):
+        """The ceiling, which is a different number from the default."""
         self.assertEqual(dest.get("documents").hard_cap, 4096)
-        self.assertEqual(dest.get("documents").max_dimension, 4096)
+        self.assertNotEqual(dest.get("documents").max_dimension,
+                            dest.get("documents").hard_cap)
 
     def test_only_documents_enforces_a_hard_cap(self):
         capped = [d.name for d in dest.DESTINATIONS.values() if d.hard_cap]
@@ -223,6 +234,47 @@ class CompressTests(unittest.TestCase):
                             Settings(target="documents", max_dimension=0, **FAST))
         with Image.open(res.output) as out:
             self.assertLessEqual(max(out.size), 4096)
+
+    def test_documents_clamps_an_explicit_oversized_request(self):
+        """`-m 8000` is the only way to reach the ceiling now that the default
+        sits at 2560, so this is the branch that would otherwise go untested.
+
+        It must *clamp*, not refuse. The person's intent is perfectly
+        reasonable; the destination simply cannot carry it, and turning that
+        into an error would make them go and find a number the tool already
+        knows.
+        """
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        res = compress_file(path, self.dst,
+                            Settings(target="documents", max_dimension=8000, **FAST))
+        self.assertEqual(res.error, "")
+        with Image.open(res.output) as out:
+            self.assertLessEqual(max(out.size), 4096)
+            self.assertEqual(max(out.size), 4096)
+
+    def test_the_clamp_does_not_inflate_a_smaller_request(self):
+        """A ceiling only ever lowers. Asking for 800 must give 800."""
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        res = compress_file(path, self.dst,
+                            Settings(target="documents", max_dimension=800, **FAST))
+        with Image.open(res.output) as out:
+            self.assertEqual(max(out.size), 800)
+
+    def test_documents_downscale_matches_web_by_default(self):
+        """The everyday behaviour of the two destinations differs in format
+        policy, not in how many pixels survive."""
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        sizes = {}
+        for name in ("web", "documents"):
+            res = compress_file(path, self.dst / name,
+                                Settings(target=name, **FAST))
+            with Image.open(res.output) as out:
+                sizes[name] = out.size
+        self.assertEqual(sizes["web"], sizes["documents"])
+        self.assertEqual(max(sizes["documents"]), 2560)
 
     def test_the_cap_belongs_to_documents_and_not_to_everything(self):
         """`original` means what it says. The 4096 ceiling was a Figma fact that

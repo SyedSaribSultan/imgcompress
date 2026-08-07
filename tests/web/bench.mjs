@@ -47,20 +47,16 @@ try {
     await pg.evaluate(() => document.getElementById("target").dispatchEvent(new Event("change")));
     await new Promise((r) => setTimeout(r, 500));
   }
-  /* Pin the size cap rather than taking the destination's.
+  /* No pin on the size cap: `documents` and `web` both downscale to 2560, so
+   * the format list is already the only thing that differs between them and
+   * the snapshot measures the configuration a person actually gets.
    *
-   * Since 2.7 a destination carries its own dimension, which is right for a
-   * person and wrong for this gate: camera-12mp.jpg is 4000x3000, so switching
-   * destination would change both the format list AND the frame, and a moved
-   * byte would no longer say which one moved it. The snapshot exists to catch
-   * engine changes, so it holds every other variable still. Measure a
-   * destination's real dimension with speed_by_choice.mjs, not here. */
-  await pg.evaluate(() => {
-    const md = document.getElementById("maxdim");
-    md.value = "2560";
-    md.dispatchEvent(new Event("change"));
-  });
-  await new Promise((r) => setTimeout(r, 500));
+   * This was briefly pinned to 2560 by hand, during a spell when `documents`
+   * defaulted to its own 4096 ceiling. The pin isolated the variable correctly
+   * and certified a setting nobody would ever run, which is the worse failure:
+   * a green gate over a configuration that does not exist. If a destination is
+   * ever given a different frame again, fix the destination or snapshot it
+   * separately - do not hold it still here. */
   // Warm the codecs first so the measurement is steady-state, not first-load.
   await pg.evaluate(() => addSamples());
   await pg.waitForFunction(() => state.items.length === 2 &&
