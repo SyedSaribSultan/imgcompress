@@ -208,8 +208,17 @@ def main(argv=None) -> int:
     print(f"source      {source}")
     print(f"writing to  {out_dir}")
     print(f"going to    {going_to.name} - {going_to.label.lower()}")
-    size = f"up to {max_dim}px" if max_dim else "never resized"
+    # What will actually happen, not what was asked for. Printing the request
+    # meant `-m 8000 --for documents` advertised "up to 8000px" and produced
+    # 4096 - a dimension changing without saying so, which is the whole defect
+    # this destination work exists to remove, just moved onto the override path.
+    effective = dest.effective_limit(going_to.name, max_dim)
+    size = f"up to {effective}px" if effective else "never resized"
     print(f"            {size}, visual match at least {match}")
+    if effective != (max_dim or 0):
+        print(f"            (asked for {max_dim or 'no limit'}; {going_to.name} clamps at "
+              f"{going_to.hard_cap}px because these tools rescale above it "
+              f"destructively on import)")
     if renamed:
         print(f"            ('{renamed}' is the old name for this; both work)")
     print(f"formats     {', '.join(allowed)}")

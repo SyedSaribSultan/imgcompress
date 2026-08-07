@@ -253,6 +253,36 @@ class CompressTests(unittest.TestCase):
             self.assertLessEqual(max(out.size), 4096)
             self.assertEqual(max(out.size), 4096)
 
+    def test_the_clamp_is_reported_not_applied_in_silence(self):
+        """A dimension that changes without saying so is the defect the whole
+        destination rework exists to remove. It must not survive on the
+        override path just because the override path is rarer.
+
+        `effective_limit` is the one place the rule lives, so the CLI header
+        and the engine cannot disagree - which they did: the header advertised
+        `up to 8000px` for a run that produced 4096.
+        """
+        from imgcompress import destinations as d
+        self.assertEqual(d.effective_limit("documents", 8000), 4096)
+        self.assertEqual(d.effective_limit("documents", 800), 800)
+        self.assertEqual(d.effective_limit("documents", 0), 4096)
+        # Only documents clamps; asking web for 8000 gets 8000.
+        self.assertEqual(d.effective_limit("web", 8000), 8000)
+        self.assertEqual(d.effective_limit("original", 0), 0)
+
+    def test_the_engine_uses_the_same_rule_the_cli_prints(self):
+        from imgcompress import destinations as d
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        for name, asked in (("documents", 8000), ("documents", 800), ("web", 3000)):
+            with self.subTest(destination=name, asked=asked):
+                res = compress_file(path, self.dst / f"{name}{asked}",
+                                    Settings(target=name, max_dimension=asked, **FAST))
+                expected = d.effective_limit(name, asked)
+                with Image.open(res.output) as out:
+                    # 5000px source, so any limit at or below it must bite.
+                    self.assertEqual(max(out.size), min(expected, 5000))
+
     def test_the_clamp_does_not_inflate_a_smaller_request(self):
         """A ceiling only ever lowers. Asking for 800 must give 800."""
         path = self.src / "huge.png"

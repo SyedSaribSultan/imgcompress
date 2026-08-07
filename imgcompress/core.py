@@ -122,13 +122,11 @@ def _normalise(img: Image.Image, settings: Settings) -> tuple:
     original_size = img.size
     resized_to = None
 
-    limit = settings.max_dimension or 0
     # Some destinations enforce a ceiling regardless of what was asked for -
     # design tools rescale above 4096px themselves, destructively, so the
-    # choice is between our Lanczos and theirs.
-    cap = dest.get(settings.target).hard_cap if dest.exists(settings.target) else 0
-    if cap:
-        limit = min(limit, cap) if limit else cap
+    # choice is between our Lanczos and theirs. The rule lives in one place so
+    # that what the CLI prints and what the engine does cannot disagree.
+    limit = dest.effective_limit(settings.target, settings.max_dimension)
 
     if limit and max(img.size) > limit:
         scale = limit / float(max(img.size))

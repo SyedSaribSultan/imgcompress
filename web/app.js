@@ -83,39 +83,47 @@ function rollNumber(el, toBytes, suffixHtml) {
 const state = {
   items: [],
   byId: new Map(),
-  // qualityTarget is on the SSIMULACRA 2 scale (0-100), the same floor the
-  // desktop app uses. 90 is its published "visually lossless" line.
-  /* `formats` null means the bake-off decides; a one-element array means the
+  /* Taken from the default destination rather than typed out. Repeating its
+     frame and quality here made this a fourth copy of two numbers - and one
+     that only shows up before anything is stored, so a stale value would be
+     wrong for exactly the people arriving for the first time.
+     qualityTarget is on the SSIMULACRA 2 scale (0-100); 90 is its published
+     "visually lossless" line.
+     `formats` null means the comparison decides; a one-element array means the
      person did. `alphaPolicy` only matters when that choice cannot hold the
      image's transparency, and is only ever set by answering the dialog. */
   settings: {
-    target: "web", metric: "ss2", qualityTarget: 90, maxDimension: 2560,
-    formats: null, alphaPolicy: "png",
+    target: DEFAULT_DESTINATION,
+    metric: "ss2",
+    qualityTarget: DESTINATION_NUMBERS[DEFAULT_DESTINATION].qualityTarget,
+    maxDimension: DESTINATION_NUMBERS[DEFAULT_DESTINATION].maxDimension,
+    formats: null,
+    alphaPolicy: "png",
   },
   settingsRev: 0,
   caps: { webp: null, png8: null },
   suffix: false,
 };
 
-/* Where the image is going. Mirrors imgcompress/destinations.py and the table
-   in worker.js - same names, same numbers. The Python side is the reference
-   and its tests pin these; if you change one, change all three. */
-const DESTINATIONS = {
-  web:       { label: "Website or app",          maxDimension: 2560, qualityTarget: 90 },
-  // 2560 is the everyday frame, same as web; the 4096 ceiling that clamps an
-  // explicit larger request lives in worker.js as DOCUMENTS_MAX_DIMENSION.
-  // They are two different numbers doing two different jobs.
-  documents: { label: "Design tool or document", maxDimension: 2560, qualityTarget: 90 },
-  email:     { label: "Email or chat",           maxDimension: 1920, qualityTarget: 88 },
-  thumbnail: { label: "Thumbnail or avatar",     maxDimension: 512,  qualityTarget: 80 },
-  original:  { label: "Keep full quality",       maxDimension: 0,    qualityTarget: 95 },
-};
+/* DESTINATION_NUMBERS, DESTINATION_ORDER, OLD_TARGET_NAMES and destinationOf()
+   come from destinations.js, which index.html loads before this file. It is
+   generated from imgcompress/destinations.py and committed; nothing here
+   restates a destination's name, frame size or minimum visual match. */
 
-/* Pre-2.7 names, so a stored setting from an older visit still resolves. */
-const OLD_TARGET_NAMES = { figma: "documents", archive: "original", lossless: "original" };
-function destinationOf(name) {
-  const resolved = OLD_TARGET_NAMES[name] || name;
-  return DESTINATIONS[resolved] ? resolved : "web";
+/* The control's own options are built from that table too, rather than typed
+   into index.html - a hand-written list would be one more copy to keep in step,
+   and this one is the copy a person actually reads. */
+function renderDestinationOptions() {
+  const group = $("target-destinations");
+  if (!group || group.children.length) return;
+  for (const name of DESTINATION_ORDER) {
+    const d = DESTINATION_NUMBERS[name];
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = d.label;
+    opt.title = d.help;
+    group.appendChild(opt);
+  }
 }
 
 /* The Format control is one list spanning "you choose" to "I choose", so its
@@ -1744,7 +1752,7 @@ function onFormatChoice() {
   // shorter format list, and the person would have to know to open Advanced
   // and change two more things for it to do what it says. Still editable
   // afterwards - this moves the starting point, it does not lock it.
-  const d = DESTINATIONS[value];
+  const d = DESTINATION_NUMBERS[value];
   if (d) {
     $("maxdim").value = d.maxDimension;
     $("quality").value = d.qualityTarget;
@@ -2302,6 +2310,10 @@ function bind() {
 
 /* --------------------------------- boot ----------------------------------- */
 
+// Options before values: loadSettings assigns to #target, and assigning a
+// value an empty <select> does not have is silently a no-op - the control
+// would sit blank and the stored destination would be lost on the next push.
+renderDestinationOptions();
 loadSettings();
 applyTheme(currentThemePref());
 renderLifetime();

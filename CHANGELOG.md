@@ -59,15 +59,26 @@ This project follows [Semantic Versioning](https://semver.org/).
   terms as everything else — it ships only if it is both smaller and still
   clears the floor. This is what lets the destination table be literally the
   same in all four places rather than "the same except Python."
+- **The browser's destination table is generated, not maintained.**
+  `tools/gen_destinations.py` writes `web/destinations.js` from
+  `imgcompress/destinations.py`; `worker.js` imports it, `index.html` loads it
+  before `app.js`, and the Format control's options are rendered from it rather
+  than typed into the markup. The generated file is committed, because `web/`
+  has no build step and should not grow one — CI regenerates it and fails on
+  any difference, so the commit is the check. Testing copies catches drift
+  afterwards; not having copies prevents it.
 - **A parity test for the destination table**, `tests/test_destination_parity.py`.
   The table now exists in Python, in `worker.js`, in `app.js` and in the
   markup, and nothing checked that they agreed — the same hazard `ss2.js` had
   before the CI job above, and it bit immediately: `app.js` was already
   claiming 4096px for `documents` and quality 85 for `thumbnail` while Python
   said 2560 and 80, so every browser compression would have used numbers the
-  reference had already rejected, silently. The test parses each file and
-  compares every value, and it fails loudly if a parser matches nothing rather
-  than passing because it checked nothing.
+  reference had already rejected, silently. Now that the copies are generated,
+  the test guards the generator instead: the committed file must be current,
+  and no consumer may hand-write a destination's name, frame size or format
+  list. It found one more copy while being written — `app.js` restated the
+  default destination's numbers in its initial state, where a stale value would
+  have been wrong for exactly the people arriving for the first time.
 - **`tests/web/check_ss2_corpus.py`**, wired into CI. `make_ss2_vectors.py`
   skips AVIF where Pillow cannot write it, which is right on a Windows laptop
   and wrong in CI: a failed plugin install would run 48 vectors instead of 60,
@@ -79,7 +90,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   is clamped to 4096 rather than refused, that a smaller request is never
   inflated, and that the old names still resolve. Previously the 4096px cap was
   tested but *only* the half that fires — nothing asserted that `original`
-  leaves an image alone. The Python suite goes from 24 tests to 48; the browser
+  leaves an image alone. The Python suite goes from 24 tests to 64; the browser
   suite from 72 assertions to 76.
 
 ### Fixed
@@ -98,6 +109,30 @@ This project follows [Semantic Versioning](https://semver.org/).
   target was left alone: artefacts are *less* visible at a smaller size, so if
   anything it could fall, and raising it would have been a second change with
   no reason behind it.
+
+- **A rule, in CONTRIBUTING.md: every new gate must be observed failing.**
+  Four checks on this branch reported success while checking nothing — a
+  snapshot with a hand-pinned frame, an AVIF skip that still printed
+  `VALIDATED`, parser-based assertions that could match zero lines, and a
+  `diff` against a file the job had not written yet. Two were caught in review
+  and one by a file timestamp, which is not a process. Breaking a gate and
+  watching it go red costs a minute and is the only thing separating it from a
+  comment.
+- **`tests/test_corpus_guard.py`**, because `check_ss2_corpus.py` was itself
+  only verified by hand — the same posture `ss2_validate.mjs` was in before it
+  was wired into CI. Nine tests, including the argparse bug it shipped with:
+  `action="append"` adds to a list default rather than replacing it, so
+  `--require-codec jpeg` meant "jpeg *and* the three defaults" and the
+  narrowing path had never run.
+
+### Fixed since
+- **The clamp announces itself.** `-m 8000 --for documents` printed
+  `up to 8000px` and produced 4096 — a dimension changing without saying so,
+  which is the defect this whole rework exists to remove, surviving on the
+  override path because that path is rarer. The rule now lives in one function,
+  `destinations.effective_limit`, which both the engine and the CLI header
+  call, so they cannot disagree. The header states the real limit and, when it
+  differs from the request, says which destination clamped it and why.
 
 ### A bug this branch introduced and then removed
 Recorded because the shape of it is worth remembering, not because it shipped.

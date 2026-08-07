@@ -175,6 +175,21 @@ def formats_for(name: str) -> list:
     return list(get(name).formats)
 
 
+def effective_limit(name: str, requested: int) -> int:
+    """The longest edge that will actually be produced. 0 means no resizing.
+
+    The clamp rule lives here and nowhere else. It is already restated in
+    `worker.js`, and the moment a third copy appeared in the CLI - purely to
+    print an accurate number - the header started advertising `up to 8000px`
+    for a run that produced 4096. One function, two callers.
+    """
+    limit = requested or 0
+    cap = get(name).hard_cap if exists(name) else 0
+    if cap:
+        limit = min(limit, cap) if limit else cap
+    return limit
+
+
 def visible() -> list:
     """The destinations a person is offered, in the order they are offered."""
     return [d for d in DESTINATIONS.values() if not d.hidden]

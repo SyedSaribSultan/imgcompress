@@ -95,6 +95,21 @@ jobs:
       - name: The JS port must match them
         run: node tests/web/ss2_validate.mjs
 
+  generated:
+    # web/ has no build step and should not grow one, so the browser's
+    # destination table is generated from the Python reference and committed
+    # like source. Regenerating here and failing on a diff is what makes the
+    # committed file trustworthy: there is no copy to drift, only a file that
+    # is either current or a red build.
+    name: generated files are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/gen_destinations.py --check
+
   lint:
     runs-on: ubuntu-latest
     steps:
