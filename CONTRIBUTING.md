@@ -54,18 +54,57 @@ exists because `check_ss2_corpus.py` was itself only verified by hand.
 
 ## Generated files
 
-`web/destinations.js` is generated from `imgcompress/destinations.py` and
-committed, because `web/` has no build step and should not grow one:
+Two things are generated from a source of truth and committed, because neither
+`web/` nor a pip install has a build step and neither should grow one:
 
 ```bash
-python tools/gen_destinations.py            # rewrite it
-python tools/gen_destinations.py --check    # what CI runs
+python tools/gen_destinations.py    --check   # web/destinations.js
+python tools/sync_webui_assets.py   --check   # the desktop app's design system
 ```
 
-Never edit it. Change the Python and re-run. If you find yourself typing a
-destination's name, frame size or format list into a second file, that is the
-mistake this generator exists to prevent — the previous hand-written copy
-drifted from the reference within an hour of being created.
+Drop `--check` to rewrite them. **Never edit the outputs.** Change the source
+and re-run; CI runs both with `--check` and fails on a stale copy.
+
+| Output | Source |
+| --- | --- |
+| `web/destinations.js` | `imgcompress/destinations.py` |
+| `imgcompress/webui/heyoz-tokens.css` | `web/heyoz-tokens.css` |
+| `imgcompress/webui/fonts.css` + `fonts/` | `web/fonts.css` + `web/fonts/` |
+| `imgcompress/webui/favicon.svg` | `web/favicon.svg` |
+
+If you find yourself typing a destination's name, a frame size, a colour or a
+corner radius into a second file, that is the mistake these exist to prevent —
+the previous hand-written copy of the destination table drifted from its
+reference within an hour of being created.
+
+## One design system, and one set of motion values
+
+Both interfaces render from `web/heyoz-tokens.css`. The desktop app gets a
+committed copy of it; nothing in either app declares a colour, a corner or a
+duration of its own.
+
+```bash
+node tests/web/verify_tokens.mjs     # static: both app layers, colour + motion
+node tests/web/verify_desktop.mjs    # runtime: the desktop app in real Chrome
+node tests/web/shoot_both.mjs        # screenshots, both apps, both themes
+```
+
+`verify_tokens.mjs` fails on a hand-typed colour, a hand-typed duration or
+easing curve, `transition: all`, and — the one that costs users something real
+— **any transition of a layout property**. `width`, `height`, `top`, `left`,
+`margin`, `padding` and `inset` all force the browser to recompute layout on
+every frame; `transform` and `opacity` are composited and cannot. Three
+progress bars in this app animated `width` before that rule existed.
+
+Use the values the system already ships: `--oz-duration-*`, `--oz-ease-*`, and
+the `--oz-spring-{effects,spatial}-{fast,default,slow}` pairs. Do not add a
+second motion vocabulary — `--oz-ease-exit` already exists, and redefining it
+would silently change every exit animation in the product.
+
+`prefers-reduced-motion` is handled once, in the token layer, for both
+interfaces. It collapses spatial travel and takes the overshoot off the springs
+while leaving fades alone, because a fade is often the thing carrying the
+meaning. Do not re-handle it per component or per app.
 
 ## Ground rules
 

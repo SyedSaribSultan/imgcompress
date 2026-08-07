@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Image Compressor</title>
+<!-- The same design system the web app loads. Both files are copied in from
+     web/ by tools/sync_webui_assets.py and checked by CI, so the two
+     interfaces cannot drift into two visual identities. Tokens first: the
+     styles below consume them and hand-type nothing. -->
+<link rel="icon" href="/webui/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/webui/heyoz-tokens.css">
+<link rel="stylesheet" href="/webui/fonts.css">
 <style>
 /* ---------------------------------------------------------------------------
    The interface is chrome around photographs, so it stays achromatic. Exactly
@@ -11,53 +18,31 @@
    and the badge on the encoding that won. If you can see it more than twice in
    a viewport, something has started shouting.
    --------------------------------------------------------------------------- */
+/* No palette of its own. Every colour, corner, face and spring below comes
+   from the token layer in heyoz-tokens.css, which is the same file the web app
+   loads - copied in by tools/sync_webui_assets.py and checked by CI. What is
+   left here are the app-level aliases, deliberately identical to web/app.css
+   so the two interfaces are the same product rather than two products that
+   happen to share a name. */
 :root {
-  --surface: #141518;
-  --panel: #1a1c20;
-  --raised: #212429;
-  --raised-hi: #282c32;
-  --line: #2b2f36;
-  --line-soft: #22262b;
-  --ink: #e9eaec;
-  --ink-2: #9ba0aa;
-  --ink-3: #6a6f79;
-  --accent: #d29a5e;
-  --accent-ink: #1a1206;
-  --accent-soft: #3a2b18;
-  --ok: #62b98a;
-  --bad: #e07a6e;
-  --shadow: 0 8px 28px rgba(0,0,0,.45);
-  --checker-a: #1e2126;
-  --checker-b: #23262c;
+  /* The comparison stage's transparency checkerboard: two surface steps, so it
+     tracks the theme instead of being a pair of fixed greys. */
+  --checker-a: var(--oz-color-surface-secondary);
+  --checker-b: var(--oz-color-surface-tertiary);
 
-  --r-sm: 5px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  /* Three corners, same three as the web app. */
+  --app-radius-sm: var(--oz-radius-3);       /* 6px  - controls, chips, thumbs */
+  --app-radius-md: var(--oz-radius-4);       /* 8px  - rows, cards, tiles      */
+  --app-radius-lg: var(--oz-radius-8);       /* 16px - panels, dialogs, hero   */
+  --app-radius-pill: var(--oz-radius-full);  /* tracks, dots, badges           */
 
-  --t-fast: 110ms cubic-bezier(.2,.7,.4,1);
-  --t-mid: 220ms cubic-bezier(.2,.7,.4,1);
+  /* One control height for a normal row, one for dense clusters. */
+  --app-control-h: 36px;
+  --app-control-h-sm: 28px;
 
-  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
-}
-[data-theme="light"] {
-  --surface: #f2f2ef;
-  --panel: #fbfbfa;
-  --raised: #ffffff;
-  --raised-hi: #f4f4f1;
-  --line: #dfdfd9;
-  --line-soft: #e9e9e4;
-  --ink: #1a1b1e;
-  --ink-2: #5b606a;
-  --ink-3: #868b95;
-  --accent: #8c5f26;
-  --accent-ink: #fff8ef;
-  --accent-soft: #f2e6d6;
-  --ok: #2f7d55;
-  --bad: #b3453a;
-  --shadow: 0 8px 24px rgba(28,26,22,.12);
-  --checker-a: #eeeeea;
-  --checker-b: #f7f7f4;
+  /* Below the system's 4px floor, for things that must sit *inside* something
+     without reading as separated. */
+  --app-gap-tight: 2px;
 }
 
 * { box-sizing: border-box; }
@@ -67,9 +52,9 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  font: 400 13px/1.5 var(--ui);
-  color: var(--ink);
-  background: var(--surface);
+  font: 400 13px/1.5 var(--oz-font-body);
+  color: var(--oz-color-content-primary);
+  background: var(--oz-color-surface-primary);
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-font-smoothing: antialiased;
@@ -77,14 +62,14 @@ body {
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; }
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--oz-color-border-focus);
   outline-offset: 2px;
   border-radius: 3px;
 }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.num { font-family: var(--oz-font-mono); font-variant-numeric: tabular-nums; }
 .micro {
   font-size: 11px; font-weight: 600; letter-spacing: .07em;
-  text-transform: uppercase; color: var(--ink-3);
+  text-transform: uppercase; color: var(--oz-color-content-tertiary);
 }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -102,63 +87,63 @@ button { cursor: pointer; border: none; background: none; }
 .bar {
   display: flex; align-items: center; gap: 18px;
   padding: 0 14px; height: 52px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  background: var(--oz-color-surface-secondary);
+  border-bottom: 1px solid var(--oz-color-border-primary);
 }
 .brand { display: flex; align-items: center; gap: 9px; padding-right: 4px; }
 .brand svg { display: block; }
 .brand b { font-weight: 600; font-size: 13px; letter-spacing: -.01em; }
-.bar .sep { width: 1px; height: 22px; background: var(--line); }
+.bar .sep { width: 1px; height: 22px; background: var(--oz-color-border-primary); }
 .field { display: flex; align-items: center; gap: 8px; }
-.field > label { color: var(--ink-2); white-space: nowrap; }
+.field > label { color: var(--oz-color-content-secondary); white-space: nowrap; }
 
 select, .num-input {
-  background: var(--raised); border: 1px solid var(--line);
-  border-radius: var(--r-sm); padding: 5px 8px; min-height: 30px;
-  transition: border-color var(--t-fast), background var(--t-fast);
+  background: var(--oz-color-fill-tertiary); border: 1px solid var(--oz-color-border-primary);
+  border-radius: var(--app-radius-sm); padding: 5px 8px; min-height: 30px;
+  transition: border-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast), background var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
-select:hover, .num-input:hover { border-color: var(--ink-3); }
-.num-input { width: 72px; font-family: var(--mono); }
+select:hover, .num-input:hover { border-color: var(--oz-color-content-tertiary); }
+.num-input { width: 72px; font-family: var(--oz-font-mono); }
 
 input[type="range"] {
   -webkit-appearance: none; appearance: none;
   background: none; height: 20px; width: 116px; margin: 0;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px; border-radius: 2px; background: var(--line);
+  height: 3px; border-radius: 2px; background: var(--oz-color-border-primary);
 }
-input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--line); }
+input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--oz-color-border-primary); }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 13px; height: 13px; border-radius: 50%;
-  background: var(--ink); margin-top: -5px;
-  transition: transform var(--t-fast);
+  background: var(--oz-color-content-primary); margin-top: -5px;
+  transition: transform var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--ink);
+  width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--oz-color-content-primary);
 }
 input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 0 12px; min-height: 30px;
-  border: 1px solid var(--line); border-radius: var(--r-sm);
-  background: var(--raised); color: var(--ink);
-  transition: background var(--t-fast), border-color var(--t-fast), opacity var(--t-fast);
+  border: 1px solid var(--oz-color-border-primary); border-radius: var(--app-radius-sm);
+  background: var(--oz-color-fill-tertiary); color: var(--oz-color-content-primary);
+  transition: background var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast), border-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast), opacity var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
   white-space: nowrap;
 }
-.btn:hover { background: var(--raised-hi); border-color: var(--ink-3); }
+.btn:hover { background: var(--oz-color-fill-tertiary-hover); border-color: var(--oz-color-content-tertiary); }
 .btn:active { transform: translateY(.5px); }
 .btn[disabled] { opacity: .4; pointer-events: none; }
-.btn.ghost { background: none; border-color: transparent; color: var(--ink-2); }
-.btn.ghost:hover { background: var(--raised); color: var(--ink); }
+.btn.ghost { background: none; border-color: transparent; color: var(--oz-color-content-secondary); }
+.btn.ghost:hover { background: var(--oz-color-fill-tertiary); color: var(--oz-color-content-primary); }
 .btn.primary {
-  background: var(--accent); color: var(--accent-ink);
-  border-color: var(--accent); font-weight: 600;
+  background: var(--oz-color-fill-brand); color: var(--oz-color-content-on-brand);
+  border-color: var(--oz-color-border-brand); font-weight: var(--oz-weight-semibold);
   min-height: 36px; padding: 0 18px;
 }
 .btn.primary:hover { filter: brightness(1.08); }
-.btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+.btn.on { background: var(--oz-color-fill-brand-secondary); border-color: var(--oz-color-border-brand); color: var(--oz-color-content-primary); }
 .spacer { margin-left: auto; }
 
 /* ------------------------------- body ----------------------------------- */
@@ -166,36 +151,36 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 
 .queue {
   display: grid; grid-template-rows: auto minmax(0,1fr) auto;
-  border-right: 1px solid var(--line);
-  background: var(--panel); min-height: 0;
+  border-right: 1px solid var(--oz-color-border-primary);
+  background: var(--oz-color-surface-secondary); min-height: 0;
 }
 .queue-head {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 14px 10px;
 }
 .queue-head .count {
-  font-family: var(--mono); font-size: 11px; color: var(--ink-3);
-  background: var(--raised); border-radius: 20px; padding: 1px 7px;
+  font-family: var(--oz-font-mono); font-size: 11px; color: var(--oz-color-content-tertiary);
+  background: var(--oz-color-fill-tertiary); border-radius: 20px; padding: 1px 7px;
 }
 .queue-list { overflow-y: auto; padding: 0 8px 8px; min-height: 0; }
-.queue-foot { padding: 10px 14px; border-top: 1px solid var(--line-soft); color: var(--ink-3); font-size: 12px; }
+.queue-foot { padding: 10px 14px; border-top: 1px solid var(--oz-color-border-secondary); color: var(--oz-color-content-tertiary); font-size: 12px; }
 
 .row {
   display: grid; grid-template-columns: 34px minmax(0,1fr) auto;
   gap: 10px; align-items: center;
   width: 100%; text-align: left;
-  padding: 8px; border-radius: var(--r-md);
+  padding: 8px; border-radius: var(--app-radius-md);
   border: 1px solid transparent;
-  transition: background var(--t-fast);
+  transition: background var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
 .row + .row { margin-top: 2px; }
-.row:hover { background: var(--raised); }
-.row[aria-selected="true"] { background: var(--raised-hi); border-color: var(--line); }
+.row:hover { background: var(--oz-color-fill-tertiary); }
+.row[aria-selected="true"] { background: var(--oz-color-fill-tertiary-hover); border-color: var(--oz-color-border-primary); }
 .row .thumb {
-  width: 34px; height: 34px; border-radius: var(--r-sm);
-  background-color: var(--raised);
+  width: 34px; height: 34px; border-radius: var(--app-radius-sm);
+  background-color: var(--oz-color-fill-tertiary);
   background-size: cover; background-position: center;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--oz-color-border-secondary);
 }
 .row .cell { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .row .name {
@@ -203,20 +188,26 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   font-size: 13px;
 }
 .row .meta {
-  display: block; font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  display: block; font-family: var(--oz-font-mono); font-size: 12px; color: var(--oz-color-content-secondary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.row .meta .save { color: var(--ok); }
-.row .meta .err { color: var(--bad); }
+.row .meta .save { color: var(--oz-color-content-success); }
+.row .meta .err { color: var(--oz-color-content-critical); }
 .row .tail { display: flex; align-items: center; gap: 6px; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: none; }
-.dot.done { background: var(--ok); }
-.dot.failed { background: var(--bad); }
-.dot.saved { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--oz-color-content-tertiary); flex: none; }
+.dot.done { background: var(--oz-color-content-success); }
+.dot.failed { background: var(--oz-color-content-critical); }
+.dot.saved { background: var(--oz-color-content-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--oz-color-content-success) 22%, transparent); }
 
-.track { height: 2px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 5px; }
-.track i { display: block; height: 100%; width: 40%; background: var(--ink-2); border-radius: 2px;
-  animation: slide 1.1s ease-in-out infinite; }
+.track { height: 2px; border-radius: 2px; background: var(--oz-color-border-primary); overflow: hidden; margin-top: 5px; }
+/* An indeterminate sweep, so it takes the system's loop duration and its
+   symmetric curve. Deliberately *not* marked `.oz-ambient`: that marker is what
+   the reduced-motion block switches off, and it is meant for decoration. This
+   loop is the only thing on screen saying work is still happening, so removing
+   it would remove information rather than restraint. The keyframes translate
+   rather than resize, so no frame of it costs a layout pass. */
+.track i { display: block; height: 100%; width: 40%; background: var(--oz-color-content-secondary); border-radius: 2px;
+  animation: slide var(--oz-duration-ambient) var(--oz-ease-standard) infinite; }
 @keyframes slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(360%); } }
 
 /* --------------------------- empty states -------------------------------- */
@@ -225,14 +216,14 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   gap: 14px; padding: 40px; text-align: center;
 }
 .empty h1 { font-size: 30px; line-height: 1.15; font-weight: 600; letter-spacing: -.025em; margin: 0; }
-.empty p { color: var(--ink-2); margin: 0; max-width: 42ch; }
+.empty p { color: var(--oz-color-content-secondary); margin: 0; max-width: 42ch; }
 .empty .drop-target {
-  border: 1.5px dashed var(--line); border-radius: var(--r-lg);
+  border: 1.5px dashed var(--oz-color-border-primary); border-radius: var(--app-radius-lg);
   padding: 34px 46px; display: grid; gap: 14px; justify-items: center;
-  transition: border-color var(--t-mid), background var(--t-mid);
+  transition: border-color var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default), background var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
-.empty .drop-target:hover { border-color: var(--ink-3); }
-.queue-empty { padding: 26px 16px; text-align: center; color: var(--ink-3); font-size: 13px; }
+.empty .drop-target:hover { border-color: var(--oz-color-content-tertiary); }
+.queue-empty { padding: 26px 16px; text-align: center; color: var(--oz-color-content-tertiary); font-size: 13px; }
 
 /* --------------------------- inspector ----------------------------------- */
 .inspector { display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
@@ -242,10 +233,10 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .insp-head {
   display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-  padding: 12px 18px; border-bottom: 1px solid var(--line-soft);
+  padding: 12px 18px; border-bottom: 1px solid var(--oz-color-border-secondary);
 }
 .insp-head h2 { font-size: 20px; line-height: 1.25; font-weight: 600; letter-spacing: -.02em; margin: 0; }
-.insp-head .dims { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
+.insp-head .dims { color: var(--oz-color-content-tertiary); font-family: var(--oz-font-mono); font-size: 12px; }
 
 .stage {
   position: relative; overflow: hidden; min-height: 0;
@@ -271,95 +262,103 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .viewport .after img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .viewport.solo .after { clip-path: none; }
 
+/* The divider sits on a photograph, not on the page, so it uses the inverse
+   border - which resolves to a light value in both themes. Same reasoning and
+   the same tokens as the web app's divider. */
 .divider {
   position: absolute; top: 0; bottom: 0; left: var(--split);
-  width: 1px; background: rgba(255,255,255,.85);
-  box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none;
+  width: var(--oz-stroke-2); background: var(--oz-color-border-inverse);
+  box-shadow: var(--oz-elevation-x-small); pointer-events: none;
 }
 .divider::after {
   content: ""; position: absolute; top: 50%; left: 50%;
   width: 28px; height: 28px; margin: -14px 0 0 -14px;
-  border-radius: 50%; background: rgba(255,255,255,.92);
-  box-shadow: 0 1px 6px rgba(0,0,0,.4);
+  border-radius: var(--app-radius-pill);
+  background: var(--oz-color-border-inverse);
+  box-shadow: var(--oz-elevation-small);
 }
 .split-input {
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: ew-resize; margin: 0;
 }
-.split-input:focus-visible + .divider { background: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.split-input:focus-visible + .divider { background: var(--oz-color-fill-brand); box-shadow: 0 0 0 2px var(--oz-color-border-focus); }
 
 .tag {
   position: absolute; top: 10px; padding: 3px 8px; border-radius: 20px;
-  background: rgba(10,10,12,.72); color: #fff; font-size: 11px; font-weight: 600;
+  background: var(--oz-color-surface-overlay); color: var(--oz-color-content-primary);
+  font-size: var(--oz-text-body-xs); font-weight: var(--oz-weight-semibold);
   letter-spacing: .06em; text-transform: uppercase; backdrop-filter: blur(6px);
-  pointer-events: none; transition: opacity var(--t-fast);
+  pointer-events: none; transition: opacity var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
 .tag.l { left: 10px; } .tag.r { right: 10px; }
 
 .stage-bar {
   position: absolute; right: 14px; bottom: 14px;
   display: flex; align-items: center; gap: 4px; padding: 4px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  border: 1px solid var(--line); border-radius: 22px;
-  backdrop-filter: blur(10px); box-shadow: var(--shadow);
+  background: color-mix(in srgb, var(--oz-color-surface-secondary) 88%, transparent);
+  border: 1px solid var(--oz-color-border-primary); border-radius: 22px;
+  backdrop-filter: blur(10px); box-shadow: var(--oz-shadow-large);
 }
-.stage-bar button { padding: 5px 11px; border-radius: 18px; color: var(--ink-2); font-size: 13px; }
-.stage-bar button:hover { background: var(--raised); color: var(--ink); }
-.stage-bar button[aria-pressed="true"] { background: var(--raised-hi); color: var(--ink); }
-.stage-bar .z { font-family: var(--mono); font-size: 12px; color: var(--ink-3); padding: 0 6px; }
+.stage-bar button { padding: 5px 11px; border-radius: 18px; color: var(--oz-color-content-secondary); font-size: 13px; }
+.stage-bar button:hover { background: var(--oz-color-fill-tertiary); color: var(--oz-color-content-primary); }
+.stage-bar button[aria-pressed="true"] { background: var(--oz-color-fill-tertiary-hover); color: var(--oz-color-content-primary); }
+.stage-bar .z { font-family: var(--oz-font-mono); font-size: 12px; color: var(--oz-color-content-tertiary); padding: 0 6px; }
 
 /* ------------------------------ details ---------------------------------- */
 .details {
-  border-top: 1px solid var(--line);
-  background: var(--panel);
+  border-top: 1px solid var(--oz-color-border-primary);
+  background: var(--oz-color-surface-secondary);
   display: grid; grid-template-columns: 1fr 1fr; gap: 0;
   max-height: 260px; overflow-y: auto;
 }
 .pane { padding: 14px 18px; }
-.pane + .pane { border-left: 1px solid var(--line-soft); }
+.pane + .pane { border-left: 1px solid var(--oz-color-border-secondary); }
 .pane h3 { margin: 0 0 10px; }
 
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px 18px; }
 @media (max-width: 1120px) { .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-.stat .k { color: var(--ink-3); font-size: 11px; line-height: 1.4; }
-.stat .v { font-family: var(--mono); font-size: 14px; line-height: 1.4; margin-top: 2px; }
-.stat .v small { font-size: 12px; color: var(--ink-3); }
+.stat .k { color: var(--oz-color-content-tertiary); font-size: 11px; line-height: 1.4; }
+.stat .v { font-family: var(--oz-font-mono); font-size: 14px; line-height: 1.4; margin-top: 2px; }
+.stat .v small { font-size: 12px; color: var(--oz-color-content-tertiary); }
 
 .cands { display: grid; gap: 3px; }
 .cand {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
-  padding: 6px 8px; border-radius: var(--r-sm); font-size: 13px;
+  /* format | bytes | how close it came | what happened to it. The score used
+     to be squeezed into the last column and vanished whenever a badge was
+     drawn there, which is how a rejected version came to read as the winner. */
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center;
+  padding: 6px 8px; border-radius: var(--app-radius-sm); font-size: 13px;
 }
-.cand.win { background: var(--accent-soft); }
+.cand.win { background: var(--oz-color-fill-brand-secondary); }
 .cand .f { font-weight: 500; }
-.cand .b, .cand .s { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.cand .b, .cand .s { font-family: var(--oz-font-mono); font-size: 12px; color: var(--oz-color-content-secondary); }
 .cand .badge {
   font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--accent);
+  color: var(--oz-color-content-brand);
 }
-.warn { color: var(--bad); font-size: 13px; margin-top: 8px; }
-.note { color: var(--ink-2); font-size: 13px; margin-top: 8px; }
+.warn { color: var(--oz-color-content-critical); font-size: 13px; margin-top: 8px; }
+.note { color: var(--oz-color-content-secondary); font-size: 13px; margin-top: 8px; }
 
 .override { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid var(--line-soft); }
+  border-top: 1px solid var(--oz-color-border-secondary); }
 .override .line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.override .line > label { color: var(--ink-2); }
+.override .line > label { color: var(--oz-color-content-secondary); }
 
 /* ------------------------------ summary ---------------------------------- */
 .summary {
   display: flex; align-items: center; gap: 18px;
   padding: 10px 18px; min-height: 58px;
-  border-top: 1px solid var(--line); background: var(--panel);
+  border-top: 1px solid var(--oz-color-border-primary); background: var(--oz-color-surface-secondary);
 }
 .totals { display: flex; align-items: baseline; gap: 10px; }
-.totals .big { font-family: var(--mono); font-size: 14px; }
-.totals .save { color: var(--ok); font-family: var(--mono); font-size: 13px; line-height: 1.5; }
+.totals .big { font-family: var(--oz-font-mono); font-size: 14px; }
+.totals .save { color: var(--oz-color-content-success); font-family: var(--oz-font-mono); font-size: 13px; line-height: 1.5; }
 .folder {
   display: flex; align-items: center; gap: 6px; min-width: 0;
-  color: var(--ink-2); font-size: 13px;
+  color: var(--oz-color-content-secondary); font-size: 13px;
 }
 .folder .p {
-  font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  font-family: var(--oz-font-mono); font-size: 12px; color: var(--oz-color-content-secondary);
   max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -367,40 +366,44 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .veil {
   position: fixed; inset: 0; z-index: 40;
   display: grid; place-items: center;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  background: color-mix(in srgb, var(--oz-color-surface-primary) 82%, transparent);
   backdrop-filter: blur(3px);
-  opacity: 0; pointer-events: none; transition: opacity var(--t-mid);
+  opacity: 0; pointer-events: none; transition: opacity var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .veil.on { opacity: 1; }
 .veil .box {
-  border: 2px dashed var(--accent); border-radius: var(--r-lg);
-  padding: 44px 64px; text-align: center; background: var(--panel);
-  box-shadow: var(--shadow);
+  border: 2px dashed var(--oz-color-border-brand); border-radius: var(--app-radius-lg);
+  padding: 44px 64px; text-align: center; background: var(--oz-color-surface-secondary);
+  box-shadow: var(--oz-shadow-large);
 }
 .veil .box strong { font-size: 20px; line-height: 1.25; font-weight: 600; }
-.veil .box p { margin: 6px 0 0; color: var(--ink-2); }
+.veil .box p { margin: 6px 0 0; color: var(--oz-color-content-secondary); }
 
 .toast {
   position: fixed; left: 50%; bottom: 76px; transform: translate(-50%, 8px);
   z-index: 50; padding: 9px 15px; border-radius: 22px;
-  background: var(--raised-hi); border: 1px solid var(--line);
-  box-shadow: var(--shadow); font-size: 13px;
+  background: var(--oz-color-fill-tertiary-hover); border: 1px solid var(--oz-color-border-primary);
+  box-shadow: var(--oz-shadow-large); font-size: 13px;
   opacity: 0; pointer-events: none;
-  transition: opacity var(--t-mid), transform var(--t-mid);
+  transition: opacity var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default), transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
 
 .banner {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 18px; font-size: 13px;
-  background: var(--accent-soft); color: var(--ink);
-  border-bottom: 1px solid var(--line);
+  background: var(--oz-color-fill-brand-secondary); color: var(--oz-color-content-primary);
+  border-bottom: 1px solid var(--oz-color-border-primary);
 }
-.banner code { font-family: var(--mono); font-size: 12px; }
+.banner code { font-family: var(--oz-font-mono); font-size: 12px; }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
+/* No prefers-reduced-motion block here. The token layer handles it once, for
+   both interfaces, and does it better than this file did: it collapses spatial
+   travel and takes the overshoot off the springs while leaving fades alone. A
+   blanket `transition-duration: .01ms !important` switches off the fades too,
+   and a fade is often the thing carrying the meaning - what appeared, what
+   went away. Handling it per component, or per app, is how the two answers
+   drift apart. */
 @media (max-width: 1120px) {
   .bar { flex-wrap: wrap; height: auto; padding: 8px 14px; gap: 12px 16px; }
   .bar .sep { display: none; }
@@ -408,7 +411,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 @media (max-width: 900px) {
   .body { grid-template-columns: 260px minmax(0, 1fr); }
   .details { grid-template-columns: 1fr; max-height: 220px; }
-  .pane + .pane { border-left: none; border-top: 1px solid var(--line-soft); }
+  .pane + .pane { border-left: none; border-top: 1px solid var(--oz-color-border-secondary); }
 }
 </style>
 </head>
@@ -418,9 +421,9 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   <header class="bar">
     <div class="brand">
       <svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true">
-        <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="var(--ink-3)"/>
-        <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="var(--accent)"/>
-        <circle cx="6.2" cy="5.6" r="1.25" fill="var(--ink-2)"/>
+        <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="var(--oz-color-content-tertiary)"/>
+        <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="var(--oz-color-fill-brand)"/>
+        <circle cx="6.2" cy="5.6" r="1.25" fill="var(--oz-color-content-secondary)"/>
       </svg>
       <b>Image Compressor</b>
     </div>
@@ -446,7 +449,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
       <label for="maxdim">Max size</label>
       <input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560"
              aria-describedby="maxdim-hint">
-      <span id="maxdim-hint" style="color:var(--ink-3)">px</span>
+      <span id="maxdim-hint" style="color:var(--oz-color-content-tertiary)">px</span>
     </div>
 
     <div class="spacer"></div>
@@ -508,7 +511,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
           <div class="stage-bar">
             <button id="mode-split" aria-pressed="true" title="Split view (Space to toggle)">Split</button>
             <button id="mode-after" aria-pressed="false" title="Compressed only (Space to toggle)">After</button>
-            <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
+            <span class="sep" style="width:1px;height:16px;background:var(--oz-color-border-primary)"></span>
             <button id="zoom-out" aria-label="Zoom out">−</button>
             <span class="z" id="zoom-label">Fit</span>
             <button id="zoom-in" aria-label="Zoom in">+</button>
@@ -768,15 +771,44 @@ function renderInspector(it) {
         ? "This file looks damaged and couldn't be read. Try re-exporting it."
         : "Trying formats…"}</div>`;
   } else {
-    const winner = Math.min(...it.candidates.map((c) => c.bytes));
+    /* The winner is the version that actually shipped, not the smallest one.
+       This used to badge `Math.min(bytes)`, which is wrong whenever the
+       smallest version missed the target - and it hid that version's score
+       behind the badge, so the screen said "winner" next to a file the engine
+       had rejected and gave you no way to see why. Exactly the bug core.py
+       fixed in the engine, repeated in the picture of it. */
+    const target = it.override?.quality_target ?? state.settings.quality_target;
+    const shipped = it.fmt;
+    const smallest = Math.min(...it.candidates.map((c) => c.bytes));
+    const shippedBytes = (it.candidates.find((c) => c.format === shipped) || {}).bytes;
+
+    const scoreOf = (c) => (c.score == null ? "—"
+      : c.score >= 100 ? "identical"
+      : it.metric === "ssim" ? c.score.toFixed(3)
+      : `${Math.round(c.score)}/100`);
+
+    // One plain sentence per version that lost, same as the web app.
+    const why = (c) => {
+      if (c.format === shipped) return "The smallest version that still looked close enough.";
+      if (c.bytes >= it.original_bytes) return "Bigger than your original, so it was discarded.";
+      if (c.score != null && c.score < target) {
+        return `Too different from the original — matched ${Math.round(c.score)} `
+             + `against your target of ${Math.round(target)}.`;
+      }
+      const larger = shippedBytes ? Math.round(100 * (c.bytes - shippedBytes) / shippedBytes) : 0;
+      return larger > 0
+        ? `Close enough to the original, but ${larger}% larger than the one chosen.`
+        : "Close enough to the original, but not the one chosen.";
+    };
+
     cands.innerHTML = [...it.candidates].sort((a, b) => a.bytes - b.bytes).map((c) => `
-      <div class="cand ${c.bytes === winner ? "win" : ""}">
+      <div class="cand ${c.format === shipped ? "win" : ""}" title="${escapeHtml(why(c))}">
         <span class="f">${escapeHtml(c.format)}</span>
         <span class="b">${human(c.bytes)}</span>
-        <span class="${c.bytes === winner ? "badge" : "s"}">${
-          c.bytes === winner ? "winner" :
-          (c.score >= 100 ? "identical"
-            : (it.metric === "ssim" ? c.score.toFixed(3) : `${Math.round(c.score)}/100`))}</span>
+        <span class="s">${escapeHtml(scoreOf(c))}</span>
+        <span class="${c.format === shipped ? "badge" : "s"}">${
+          c.format === shipped ? "kept"
+            : c.bytes === smallest ? "smallest" : ""}</span>
       </div>`).join("");
   }
   $("ov-format").value = it.override?.formats?.[0] || "";

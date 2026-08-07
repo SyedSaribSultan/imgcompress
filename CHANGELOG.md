@@ -6,6 +6,83 @@ This project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **One design system, and the desktop app is inside it.** There were two
+  interfaces and they looked like two products. `web/` rendered from a token
+  layer with an automated gate; the desktop app had its own palette baked into
+  the file — its own greys, its own brass, its own three corner radii, its own
+  two transition shorthands and its own system-font stack — and nothing checked
+  any of it. That is the real answer to "how do I get consistency": not a
+  component library, but one interface sitting outside the gate.
+
+  The token layer and the self-hosted faces are now copied into
+  `imgcompress/webui/` by `tools/sync_webui_assets.py` and committed, the same
+  pattern as `web/destinations.js`: no build step, and CI fails on a stale copy.
+  The desktop app's private palette is gone — every colour, corner, face and
+  spring comes from the shared tokens, and it shares the browser app's
+  `--app-*` alias names so the two are one product rather than two that happen
+  to share a name.
+- **Motion is enforced, not just available.** The token layer already shipped a
+  closed set (`--oz-duration-*`, `--oz-ease-*`, and the `--oz-spring-*` pairs);
+  what was missing was anything rejecting a value from outside it.
+  `verify_tokens.mjs` now fails on a hand-typed duration or easing curve,
+  `transition: all`, and any transition of a layout property.
+- **Three progress bars stopped animating `width`.** The batch hairline, the
+  per-row hairline and the version-chip meter all transitioned `width`, which
+  makes the browser recompute layout on every frame of every bar. They now
+  scale a `transform`, which is composited and cannot reflow anything. The
+  fraction arrives as a unitless `--p` instead of a percentage.
+- **`prefers-reduced-motion` is handled once**, in the token layer, for both
+  interfaces. The desktop app's own blanket `transition-duration: .01ms
+  !important` is gone: the shared version collapses spatial travel and takes
+  the overshoot off the springs while leaving fades alone, and a fade is often
+  the thing carrying the meaning.
+
+### Fixed
+- **The desktop app labelled a rejected version as the winner.** Its versions
+  list badged `Math.min(bytes)` — the smallest candidate — rather than the one
+  that actually shipped, and hid that candidate's score behind the badge. On a
+  real photograph it read `webp 229.6 KB WINNER` while the file it wrote was
+  `webp-lossless` at 344.1 KB, with no way to see that WebP had scored 87
+  against a target of 90. This is precisely the bug `core.py` fixed in the
+  engine, reappearing in the picture of it. The badge now follows the shipped
+  format, every version shows how close it came, and each one carries the same
+  one-sentence reason the browser app gained in the vocabulary pass.
+- **The desktop app was one 403 away from rendering in Times New Roman.** A
+  `<link>` and a `url()` inside a stylesheet cannot carry the query string the
+  page was opened with, so the token check refused the app's own stylesheets and
+  Chrome dropped them for having a JSON MIME type. Static assets under
+  `/webui/` are now served before the token check — they are files shipped in
+  the package with no user data in them, the loopback-Host check still applies,
+  and the token still gates every API route and every image. Found by the new
+  runtime gate on its first run; every static check was green throughout.
+- Faces are served as `font/woff2`. `mimetypes` has no woff2 entry on a stock
+  Windows Python, so they went out as `application/octet-stream`.
+- The desktop app has the product's icon. Without one linked the browser asked
+  for `/favicon.ico`, which answered 403 — one console error on every launch,
+  saying nothing useful.
+- `Now` became `New size` in the browser app's result panel — a vocabulary-pass
+  miss, caught by looking at a screenshot rather than at the code.
+
+### Added
+- **`tests/web/verify_desktop.mjs`** — the desktop app in real Chrome: the
+  shared stylesheets arrive with a CSS type, the faces arrive as `font/woff2`,
+  the tokens resolve to real values, six faces register, nothing renders above
+  600, the private palette is undefined, and no request leaves the machine. The
+  static gate can only prove the app *references* the token layer; this proves
+  the browser receives it.
+- **`tests/test_design_system.py`** — 22 tests covering everything reachable
+  without a browser: the copies are current, the copy tool fails on an edited,
+  missing or CRLF copy, the face URLs are rewritten for `/webui/` while the
+  source is left alone, the desktop app declares no palette of its own, and
+  neither app layer transitions a layout property.
+- **`probe_a11y.mjs` and `probe_mobile.mjs` can now fail.** Both printed
+  measurements and exited 0 whatever they said, which made them reports rather
+  than tests — running them and seeing no errors carried almost no information,
+  and it blocked Phase 4, whose criteria they are supposed to enforce.
+  `probe_mobile` now measures at **375px**, not 390.
+- `tests/web/shoot_both.mjs`, which screenshots both interfaces in both themes,
+  so "recognisably the same product" is something you can look at.
+
 - **The interface speaks English.** Eleven invented words for three ideas meant
   it was possible to look at this product and not know what it was telling you.
   One concept now gets one word everywhere a person can see it — the browser

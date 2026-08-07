@@ -894,7 +894,9 @@ function renderQueue() {
     if (dot.className !== dotClass) dot.className = dotClass;
     el.querySelector(".ov").hidden = !it.override;
     if (it.status === "working") {
-      el.querySelector(".track i").style.width = `${Math.max(4, (it.frac || 0) * 100)}%`;
+      // Unitless fraction: the bar is scaleX'd, not resized. See .track i.
+      el.querySelector(".track i").style.setProperty(
+        "--p", Math.max(0.04, it.frac || 0).toFixed(3));
     }
     prev = el;
   }
@@ -935,7 +937,7 @@ function capsLine() {
   if (state.caps.webp) parts.push("webp");
   if (state.caps.webpLossless) parts.push("webp-lossless");
   if (state.caps.avif) parts.push("avif");
-  return `Engines: ${parts.join(", ")} · scored with SSIMULACRA 2 · all in your browser`;
+  return `Engines: ${parts.join(", ")} · every version measured against your original · all in your browser`;
 }
 
 function renderBatchProgress() {
@@ -944,13 +946,13 @@ function renderBatchProgress() {
   const busy = items.some(isBusy);
   $("batch").classList.toggle("on", busy);
   $("stop-btn").hidden = !busy;
-  if (!busy) { bar.style.width = "0%"; return; }
+  if (!busy) { bar.style.setProperty("--p", "0"); return; }
   let sum = 0;
   for (const i of items) {
     sum += (isReady(i) || i.status === "failed" || i.status === "cancelled") ? 1
       : i.status === "working" ? Math.min(0.95, i.frac || 0) : 0;
   }
-  bar.style.width = `${(sum / items.length) * 100}%`;
+  bar.style.setProperty("--p", (sum / items.length).toFixed(4));
 }
 
 function renderTitle() {
@@ -1325,11 +1327,12 @@ function renderCandidates(it) {
     why.hidden = !why.textContent;
   }
 
-  // Widths go through the CSSOM: a style="" attribute in markup would (rightly)
-  // be refused by the page's style-src CSP, leaving every meter at zero.
+  // A unitless 0-1 scale, not a width: the meter is scaleX'd so the browser
+  // never reflows on it. Set through the CSSOM because a style="" attribute in
+  // markup would (rightly) be refused by the page's style-src CSP.
   for (const el of cands.querySelectorAll(".cand")) {
     const w = Math.max(2, (Number(el.dataset.bytes) / max) * 100);
-    el.style.setProperty("--w", `${w.toFixed(1)}%`);
+    el.style.setProperty("--w", (w / 100).toFixed(4));
   }
 }
 

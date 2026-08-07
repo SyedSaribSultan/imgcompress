@@ -486,9 +486,14 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .batch.on { opacity: 1; }
 /* Neutral, not brand. A full-width orange line under the toolbar reads as an
    alarm; work in progress is not an error, and the accent is reserved. */
+/* scaleX, not width. Animating width makes the browser redo layout on every
+   frame of every bar; transform is composited and cannot reflow anything. The
+   fraction arrives as a unitless --p from renderBatchProgress. */
 .batch i {
-  display: block; height: 100%; width: 0; background: var(--oz-color-border-tertiary);
-  transition: width var(--oz-spring-effects-slow-ms) var(--oz-spring-effects-slow);
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-border-tertiary);
+  transition: transform var(--oz-spring-effects-slow-ms) var(--oz-spring-effects-slow);
 }
 
 .body {
@@ -615,9 +620,10 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 /* Also neutral: three orange hairlines stacked under three filenames looked
    like three failures. */
 .track i {
-  display: block; height: 100%; width: 0;
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
   background: var(--oz-color-border-tertiary); border-radius: var(--app-radius-pill);
-  transition: width var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .row.enter { animation: oz-enter-rise var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default) both; }
 
@@ -1026,9 +1032,10 @@ kbd {
    neutral in every chip — the ring says which one is showing and the badge says
    which one won, so a coloured meter would be a third voice saying nothing new. */
 .cand .meter {
-  position: absolute; left: 0; bottom: 0; height: 2px; width: var(--w, 0%);
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  transform: scaleX(var(--w, 0)); transform-origin: left center;
   background: var(--oz-color-border-tertiary);
-  transition: width var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
+  transition: transform var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
 }
 .cand-wait {
   font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);

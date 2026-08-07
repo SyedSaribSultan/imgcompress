@@ -109,6 +109,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: python tools/gen_destinations.py --check
+      # The desktop app's copy of the design system. Same reasoning: the file
+      # people edit is in web/, the copy is committed so a pip install needs no
+      # build, and a stale copy is a red build rather than two visual identities.
+      - run: python tools/sync_webui_assets.py --check
 
   lint:
     runs-on: ubuntu-latest
