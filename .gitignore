@@ -21,3 +21,5 @@ tests/fixtures/
 
 # vercel
 .vercel/
+
+tests/*.log
