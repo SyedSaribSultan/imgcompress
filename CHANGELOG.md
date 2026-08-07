@@ -3,6 +3,46 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-08-06
+
+### Added
+- **A set-up step between dropping images and compressing them.** Dropping
+  files used to start the work immediately, which spent a minute of someone's
+  laptop before they had been told they could pick a format, a quality, or a
+  name. A drop into an empty queue now lands on a step that shows what was
+  picked up, hands over the settings, and waits. Images can be renamed there
+  (the extension is not editable — the format decides it) and dropped from the
+  list. Adding more files while it is open extends the list; a drop onto a run
+  that is already configured joins it rather than asking again, and the demo
+  button skips it, because someone who pressed "see it work" asked to see it.
+  The settings bar is *moved* into the step rather than copied, so there is
+  still exactly one Format control and one Quality control in the document.
+- **Copy** beside Save on each image, for pasting straight into Figma, Slack or
+  a document. Clipboards accept `image/png` and nothing else, so a JPEG or WebP
+  result is re-encoded losslessly for the paste and the toast says so rather
+  than implying the compressed bytes travelled.
+
+### Fixed
+- **Zooming threw the image off the stage.** CSS alignment silently switches
+  from `center` to `start` once an item is larger than its container — the
+  "safe" behaviour — so the moment you zoomed past the frame the image snapped
+  to the top-left and the rest hung off the bottom, which is why scrolling felt
+  like it jumped to the top and needed a long drag back. The frame is now
+  centred by transform, which has no such rule. Zoom is also anchored to the
+  pointer, so whatever is under the cursor stays under it, and panning is
+  clamped to the frame's own overhang so the image can no longer be dragged
+  into empty space.
+- The toast sat exactly on the toolbar and covered the Quality control while
+  reporting on the file you had just saved. It now sits at the bottom, clear of
+  every control.
+- Thumbnails in the set-up list stayed blank when they finished decoding after
+  the list had rendered.
+
+### Changed
+- The keyboard lands on the start button when the set-up step opens, and Enter
+  starts the run from anywhere in the step except a name field, where it
+  commits the rename instead.
+
 ## [2.4.0] - 2026-08-06
 
 ### Added

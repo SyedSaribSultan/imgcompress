@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { CHROME } from "./resolve_puppeteer.mjs";
+import { uploadAndStart } from "./drive.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BENCH = path.join(here, process.env.BENCH_DIR || "bench");
@@ -57,9 +58,10 @@ try {
   await pg.evaluate(() => { window.__perf = {}; });
   await pg.exposeFunction("__note", () => {});
 
+  // The clock starts when the work does: the set-up step is a person deciding,
+  // not the engine running, and timing it would make every run look slower.
+  await uploadAndStart(pg, files);
   const t0 = Date.now();
-  const input = await pg.$("#file-input");
-  await input.uploadFile(...files);
   await pg.waitForFunction(
     (n) => state.items.length === n &&
       state.items.every((i) => ["done", "saved", "failed"].includes(i.status)),

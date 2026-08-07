@@ -52,7 +52,7 @@
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript and a modern browser",
-      "softwareVersion": "2.4.0",
+      "softwareVersion": "2.5.0",
       "license": "https://github.com/SyedSaribSultan/imgcompress/blob/main/LICENSE",
       "sameAs": ["https://github.com/SyedSaribSultan/imgcompress"],
       "author": { "@type": "Organization", "name": "HeyOz" },
@@ -176,9 +176,40 @@
       </div>
     </div>
 
+    <!-- ===================== 1b. SET UP THE BATCH ======================= *
+         Dropping images used to start compressing them on the spot, which
+         spends a minute of someone's laptop before they have been told they
+         could have picked a format, a quality, or renamed anything. This step
+         stops between "here are your images" and "here is the work": it shows
+         what was picked up and hands over the controls first. The settings bar
+         is physically moved in here rather than duplicated, so there is
+         exactly one Format control and one Quality control in the document. -->
+    <div class="setup" id="app-stage" hidden>
+      <div class="setup-head">
+        <h2 id="setup-title">Ready when you are</h2>
+        <p class="setup-sub" id="setup-sub">Nothing has been compressed yet.
+           Check the list, choose how you want it done, then start.</p>
+      </div>
+
+      <div class="setup-controls" id="setup-controls"></div>
+
+      <ul class="setup-list" id="setup-list" aria-label="Images waiting to be compressed"></ul>
+
+      <div class="setup-actions">
+        <button class="btn primary big" id="setup-go">Compress</button>
+        <button class="btn big" id="setup-add">Add more</button>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="setup-cancel">Start over</button>
+      </div>
+      <p class="setup-foot micro">Runs on this device. Nothing is uploaded, and
+         you can change any of it afterwards.</p>
+    </div>
+
     <div class="app" id="app-full" hidden>
-      <!-- toolbar: the simple promise up front, everything else behind Advanced -->
-      <div class="bar">
+      <!-- toolbar: the simple promise up front, everything else behind Advanced.
+           This element and #advanced are MOVED between here and the set-up
+           step rather than copied - see placeControls(). -->
+      <div class="bar" id="bar-controls">
         <!-- Two decisions, both the person's to make, both defaulting to
              "let the app work it out". The groups say which is which, and
              the single-format group says out loud what it buys: speed.
@@ -278,6 +309,11 @@
               <button class="btn" id="retry-btn" hidden>Try again</button>
               <!-- Scoped to this image; the batch action lives in the results bar. -->
               <button class="btn" id="dl-one">Save this one</button>
+              <!-- Clipboards accept image/png and nothing else, so this is the
+                   compressed result re-encoded losslessly for the paste - the
+                   toast says so rather than implying the bytes travelled. -->
+              <button class="btn ghost" id="copy-one"
+                      title="Copy the image to your clipboard for pasting">Copy</button>
               <button class="btn ghost" id="remove-btn" title="Remove from the queue (Delete)">Remove</button>
               <button class="btn ghost" id="insp-toggle" aria-expanded="true" aria-controls="details"
                       title="Collapse the detail panel to enlarge the preview">Details ▾</button>
@@ -561,7 +597,7 @@ imgcompress photos/        # or the command line</code></pre>
   <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
   <!-- The one place the version is written. Exported reports read it from
        here, so a report can never claim a version the page is not. -->
-  <span class="num" id="app-version">v2.4.0</span>
+  <span class="num" id="app-version">v2.5.0</span>
   <span>by HeyOz</span>
   <!-- Lifetime totals live here, labelled, so they cannot be mistaken for the
        current batch's numbers in the results bar. -->

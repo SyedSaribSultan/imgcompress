@@ -236,6 +236,40 @@ download), `ss2.js` (the metric), `worker.js` (the engine: ladder bisection,
 the bake-off, dual-backdrop transparency scoring, the never-bigger rule — a
 port of `quality.py` + `core.py` + `encoders.py`).
 
+### The set-up step
+
+`#app-stage` sits between the landing page and the dashboard. A drop into an
+empty queue creates items at status **`staged`** — neither busy nor ready, so
+nothing dispatches and no result is claimed — and `startStagedRun()` is the
+only thing that promotes them to `queued`.
+
+* `placeControls()` **moves** `#bar-controls` and `#advanced` between the
+  set-up panel and the dashboard toolbar. Do not clone them: two live copies
+  of a control the engine reads from is the floor-99 bug waiting to happen.
+* `pushSettings()` records the choice but **does not requeue** while staging,
+  and `requeue()` skips `staged` items outright. Between them, nothing can
+  start the work except the button.
+* A drop onto a queue that already has items joins that run instead of asking
+  again, and `addFiles(files, {immediate: true})` opts out entirely — the demo
+  uses it.
+* Set-up rows are built once and reused (`list.dataset.ids`); rebuilding them
+  on every render would wipe out a half-typed rename, and a settings change
+  triggers a render.
+
+### Zoom
+
+Two rules, both learned the hard way:
+
+* **The frame is centred by transform, never by CSS alignment.** Grid and flex
+  silently switch a centred item to `start` once it overflows its container —
+  the "safe" behaviour — so the instant you zoomed past the stage the image
+  snapped to the top-left and the rest hung off the bottom. `translate(-50%,
+  -50%)` has no such rule.
+* **Zoom is anchored to the pointer and panning is clamped to the overhang.**
+  `zoomAt()` keeps whatever is under the cursor under the cursor; `clampPan()`
+  allows movement only as far as the frame overhangs the stage, so an axis that
+  still fits stays centred and the image can never be dragged into empty space.
+
 ### The two controls, and why they are shaped that way
 
 The toolbar asks for two decisions and defaults both to delegation.

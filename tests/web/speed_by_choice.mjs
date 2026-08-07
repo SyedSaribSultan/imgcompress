@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { CHROME } from "./resolve_puppeteer.mjs";
+import { uploadAndFinish } from "./drive.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const REF = path.resolve(here, "..", "bench_ref");
@@ -50,11 +51,8 @@ try {
     });
     await new Promise((r) => setTimeout(r, 500));
 
-    const input = await pg.$("#file-input");
-    await input.uploadFile(file);
-    await pg.waitForFunction(() => state.items.length === 1 &&
-      ["done", "failed", "saved"].includes(state.items[0].status),
-      { timeout: 900000, polling: 250 });   // first run also pays for codec load
+    // First run also pays for codec load; the measured rows come after it.
+    await uploadAndFinish(pg, [file], 900_000);
 
     for (const [label, value] of CHOICES) {
       const before = await pg.evaluate(() => state.settingsRev);

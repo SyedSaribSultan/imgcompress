@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { CHROME } from "./resolve_puppeteer.mjs";
+import { uploadAndFinish } from "./drive.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIX = path.join(here, "fixtures");
@@ -80,11 +81,7 @@ try {
      `"WebP only" restricts the engine to webp (${JSON.stringify(w.formats)})`);
 
   // ---- transparency: the question, both answers, and cancel -------------
-  const input = await pg.$("#file-input");
-  await input.uploadFile(path.join(FIX, "logo.png"), path.join(FIX, "ui.png"));
-  await pg.waitForFunction(() => state.items.length === 2 &&
-    state.items.every((i) => ["done", "failed", "saved"].includes(i.status)),
-    { timeout: 600000, polling: 300 });
+  await uploadAndFinish(pg, [path.join(FIX, "logo.png"), path.join(FIX, "ui.png")], 600_000);
   const alphaSeen = await pg.evaluate(() => state.items.map((i) => ({ n: i.name, a: i.alpha })));
   console.log("  alpha detected:", JSON.stringify(alphaSeen));
   ok(alphaSeen.find((x) => x.n === "logo.png").a === true &&

@@ -58,6 +58,30 @@ byte-identical output to the design-tool preset on photographs.
 including the flatten-onto-white answer to the transparency dialog that the
 E2E does not cover (the E2E takes the keep-as-PNG branch).
 
+## Focused probes
+
+```
+node tests/web/probe_setup.mjs      # set-up step, copy button, zoom anchoring
+node tests/web/probe_controls.mjs   # Format/Quality controls, transparency dialog
+node tests/web/probe_a11y.mjs       # accessible names, live regions, focus, Enter
+node tests/web/probe_mobile.mjs     # 390px: does anything overhang the viewport
+node tests/web/probe_zoom.mjs       # traces stage/frame geometry through zoom steps
+```
+
+`drive.mjs` holds `uploadAndStart` / `uploadAndFinish`. Since v2.5.0 a drop
+into an empty queue lands on the set-up step and waits, so **any harness that
+uploads files must press the start button too** — use these rather than
+hand-rolling it.
+
+Two things worth knowing before writing a probe here:
+
+- **Chrome refuses clipboard writes to an automated browser** whatever you pass
+  to `overridePermissions`. Grant `clipboardReadWrite` and
+  `clipboardSanitizedWrite` over CDP (`Browser.grantPermissions`) instead.
+- **Settings pushes are debounced**, so "everything is done" stays true of the
+  previous run until the new one starts. Wait for `state.settingsRev` to move
+  before waiting for completion, or you will assert against stale results.
+
 ## Metric validation + design gates
 
 ```

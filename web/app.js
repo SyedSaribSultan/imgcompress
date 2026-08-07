@@ -92,6 +92,10 @@ const state = {
   settingsRev: 0,
   caps: { webp: null, png8: null },
   suffix: false,
+  /* True between "images picked up" and "start compressing". Items sit at
+     status "staged", which is neither busy nor ready, so nothing dispatches
+     and no result is claimed for them. */
+  staging: false,
 };
 
 /* The Format control is one list spanning "you choose" to "I choose", so its
@@ -452,6 +456,99 @@ function maybeCelebrate() {
     : `All done${took} — these were already well compressed`);
 }
 
+/* ------------------------- the set-up step -------------------------------- *
+ * One settings bar exists in the document. Rather than cloning it - two live
+ * copies of a control the engine reads from is the floor-99 bug waiting to
+ * happen again - the real nodes are moved between the set-up panel and the
+ * dashboard toolbar. Same elements, same ids, same listeners, one truth. */
+function placeControls(where) {
+  const host = where === "setup" ? $("setup-controls") : $("app-full");
+  const bar = $("bar-controls"), adv = $("advanced");
+  if (bar.parentElement === host) return;
+  if (where === "setup") { host.append(bar, adv); }
+  else { host.prepend(bar, adv); }        // toolbar sits above the dashboard
+}
+
+const splitName = (name) => {
+  const m = /^(.*?)(\.[a-z0-9]+)?$/i.exec(name) || [];
+  return { base: m[1] || name, ext: m[2] || "" };
+};
+
+function renderSetup() {
+  placeControls("setup");
+  const staged = state.items.filter((i) => i.status === "staged");
+  const n = staged.length;
+  const bytes = staged.reduce((s, i) => s + i.originalBytes, 0);
+  $("setup-title").textContent = n === 1
+    ? "1 image ready" : `${n} images ready`;
+  $("setup-sub").textContent =
+    `${human(bytes)} in total. Nothing has been compressed yet — check the list, ` +
+    `choose how you want it done, then start.`;
+  $("setup-go").textContent = n === 1 ? "Compress this image" : `Compress ${n} images`;
+  $("setup-go").disabled = n === 0;
+
+  /* Rows are built once and kept. Rebuilding the list on every render would
+     wipe out whatever someone was halfway through typing into a name field -
+     and a settings change re-renders. */
+  const list = $("setup-list");
+  const want = staged.map((i) => i.id).join(",");
+  if (list.dataset.ids !== want) {
+    list.dataset.ids = want;
+    list.textContent = "";
+    for (const it of staged) list.append(buildSetupRow(it));
+  }
+}
+
+function buildSetupRow(it) {
+  const li = document.createElement("li");
+  li.className = "setup-row";
+  li.dataset.id = it.id;
+  li.innerHTML = `
+    <span class="thumb"></span>
+    <span class="setup-cell">
+      <input class="setup-name" type="text" spellcheck="false"
+             aria-label="Name for this image">
+      <span class="setup-meta num"></span>
+    </span>
+    <button class="setup-drop" title="Remove this image" aria-label="Remove this image">×</button>`;
+  if (it.thumbURL) li.querySelector(".thumb").style.backgroundImage = `url("${it.thumbURL}")`;
+  const { base, ext } = splitName(it.name);
+  const input = li.querySelector(".setup-name");
+  input.value = base;
+  // The extension is not editable: the format decides it, and letting someone
+  // type ".png" onto a JPEG would promise something untrue.
+  li.querySelector(".setup-meta").textContent = `${ext || ""} · ${human(it.originalBytes)}`;
+  const commit = () => {
+    const v = input.value.trim();
+    if (v) it.name = v + ext; else input.value = splitName(it.name).base;
+  };
+  input.addEventListener("change", commit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    commit();
+    input.blur();      // Enter in a name field means "done", not "go"
+  });
+  li.querySelector(".setup-drop").addEventListener("click", () => removeItems([it.id]));
+  return li;
+}
+
+/** Leave the set-up step and actually start the work. */
+function startStagedRun() {
+  const staged = state.items.filter((i) => i.status === "staged");
+  if (!staged.length) return;
+  state.staging = false;
+  state.settings = currentSettings();   // whatever the controls now show
+  state.settingsRev++;
+  saveSettings();
+  placeControls("toolbar");
+  for (const it of staged) it.status = "queued";
+  selected = selected && state.byId.has(selected) ? selected : staged[0].id;
+  beginBatch();
+  scheduleRender();
+  dispatch();
+}
+
 /* ------------------------------ add files -------------------------------- */
 
 async function makeThumb(item) {
@@ -482,24 +579,32 @@ async function makeThumb(item) {
     const blob = await new Promise((r) => c.toBlob(r, "image/png"));
     if (blob && state.byId.has(item.id)) {
       item.thumbURL = URL.createObjectURL(blob);
-      const row = rowEls.get(item.id);
-      if (row) row.querySelector(".thumb").style.backgroundImage = `url("${item.thumbURL}")`;
+      // Both places that show a thumbnail: the queue row, and the set-up list -
+      // where a blank square would defeat the point of showing you the images.
+      for (const row of [rowEls.get(item.id),
+                         $("setup-list").querySelector(`[data-id="${item.id}"]`)]) {
+        if (row) row.querySelector(".thumb").style.backgroundImage = `url("${item.thumbURL}")`;
+      }
     }
   } catch { /* corrupt files simply keep a blank thumb */ }
 }
 
-function addFiles(files) {
+function addFiles(files, opts = {}) {
   const usable = [...files].filter((f) => SUPPORTED.test(f.name) || /^image\//.test(f.type));
   if (!usable.length) { toast("No supported images in that drop"); return; }
   startEngine();
-  beginBatch();
+  /* A drop into an empty queue pauses for setup; a drop onto a run that is
+     already configured joins it. The step exists to choose settings before
+     spending the compute, and once they are chosen, they are chosen.
+     The demo opts out: someone who pressed "see it work" asked to see it. */
+  const setup = !opts.immediate && (state.staging || state.items.length === 0);
   for (const file of usable) {
     const item = {
       id: uid(),
       name: file.name || "pasted image.png",
       file,
       originalBytes: file.size,
-      status: "queued",
+      status: setup ? "staged" : "queued",
       beforeURL: URL.createObjectURL(file),
       warnings: [], candidates: [],
       width: 0, height: 0, outW: 0, outH: 0,
@@ -509,6 +614,17 @@ function addFiles(files) {
     if (!selected) selected = item.id;
     makeThumb(item);
   }
+  if (setup) {
+    const first = !state.staging;
+    state.staging = true;
+    scheduleRender();
+    // Land the keyboard on the thing most people want next, but only on the
+    // way in - stealing focus every time a file is added would fight anyone
+    // who is partway through renaming.
+    if (first) requestAnimationFrame(() => $("setup-go").focus());
+    return;
+  }
+  beginBatch();
   toast(`Added ${usable.length} image${usable.length === 1 ? "" : "s"}`);
   scheduleRender();
   dispatch();
@@ -551,6 +667,12 @@ function removeItems(ids) {
     if (selected === id) selected = null;
   }
   if (!selected && state.items.length) selected = state.items[0].id;
+  // Emptying the set-up list drops back to the landing page rather than
+  // leaving a set-up step with nothing to set up.
+  if (state.staging && !state.items.length) {
+    state.staging = false;
+    placeControls("toolbar");
+  }
   scheduleRender();
 }
 
@@ -558,7 +680,9 @@ function requeue(ids) {
   let any = false;
   for (const id of ids) {
     const item = state.byId.get(id);
-    if (!item || item.status === "working") continue;
+    // "staged" is deliberately not requeued: it has never run, and starting it
+    // here would be the surprise the set-up step exists to remove.
+    if (!item || item.status === "working" || item.status === "staged") continue;
     item.status = "queued";
     item.error = "";
     item.warnings = [];
@@ -596,7 +720,9 @@ function render() {
     dirty.inspector = false;
   }
   $("app-empty").hidden = state.items.length > 0;
-  $("app-full").hidden = state.items.length === 0;
+  $("app-stage").hidden = !state.staging;
+  $("app-full").hidden = state.items.length === 0 || state.staging;
+  if (state.staging) renderSetup();
   renderBatchProgress();
   renderTitle();
 }
@@ -623,6 +749,7 @@ function statusLine(it) {
 function phaseLine(it) {
   if (it.status === "cancelled") return "Stopped";
   if (it.status === "failed") return "";
+  if (it.status === "staged") return "Not started yet";
   if (it.status === "queued") return "Waiting";
   if (it.status === "working") return it.progress || "Working";
   const took = it.elapsedMs != null ? ` · ${duration(it.elapsedMs)}` : "";
@@ -935,6 +1062,7 @@ function renderInspector(it) {
   }
   $("ov-reset").hidden = !it.override;
   $("dl-one").disabled = !ready;
+  $("copy-one").disabled = !ready;
   $("retry-btn").hidden = it.status !== "failed" && it.status !== "cancelled";
   applyZoom();
 }
@@ -1133,29 +1261,68 @@ function renderSummary() {
 /* -------------------------------- zoom ------------------------------------ */
 
 const ZOOMS = [0, 0.5, 1, 2, 4, 8];
+
+/** Scale that fits the frame in the stage. Capped at 1 - upscaling a
+ *  compressed file would misrepresent it. */
+function fitScale() {
+  const stage = $("stage"), img = $("img-before");
+  if (!img.naturalWidth) return 1;
+  const pad = 14;   // tight: the image is the subject, it should own the pane
+  return Math.min(
+    (stage.clientWidth - pad * 2) / img.naturalWidth,
+    (stage.clientHeight - pad * 2) / img.naturalHeight,
+    1);
+}
+const scaleNow = () => zoom || Math.max(fitScale(), 0.02);
+
+/* Panning was unbounded, so a drag could throw the image clean off the stage
+   and leave you hunting for it - which is what "I have to drag back a long
+   way" actually was. The frame may now be moved only as far as its own
+   overhang: at or below fit scale there is no overhang, so it stays centred. */
+function clampPan() {
+  const stage = $("stage"), img = $("img-before");
+  const s = scaleNow();
+  const overX = Math.max(0, (img.naturalWidth * s - stage.clientWidth) / 2);
+  const overY = Math.max(0, (img.naturalHeight * s - stage.clientHeight) / 2);
+  pan.x = Math.min(overX, Math.max(-overX, pan.x));
+  pan.y = Math.min(overY, Math.max(-overY, pan.y));
+}
+
 function applyZoom() {
   const stage = $("stage"), img = $("img-before"), vp = $("viewport");
   if (!img.naturalWidth) return;
-  // Tight margin: the image is the subject, so it should own the pane. Fit is
-  // still capped at 1 - upscaling a compressed file would misrepresent it.
-  const pad = 14;
-  const fit = Math.min(
-    (stage.clientWidth - pad * 2) / img.naturalWidth,
-    (stage.clientHeight - pad * 2) / img.naturalHeight,
-    1
-  );
-  const scale = zoom || Math.max(fit, 0.02);
+  const scale = scaleNow();
+  clampPan();
   vp.style.width = Math.max(1, Math.round(img.naturalWidth * scale)) + "px";
   vp.style.height = Math.max(1, Math.round(img.naturalHeight * scale)) + "px";
-  vp.style.transform = zoom ? `translate(${pan.x}px, ${pan.y}px)` : "";
+  // The -50% pair is what centres it; see the note on .viewport in app.css.
+  vp.style.transform = `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px)`;
   stage.style.cursor = zoom ? "grab" : "";
   $("zoom-label").textContent = zoom ? `${Math.round(zoom * 100)}%` : "Fit";
 }
-function stepZoom(dir) {
+
+/* Zoom about a point instead of about the middle. Scrolling used to re-centre
+   the frame and drop the pan, so zooming in on a detail threw you somewhere
+   else entirely and you had to drag back to find it. Whatever sits under the
+   cursor now stays under the cursor, which is what every map and image viewer
+   has trained people to expect. */
+function zoomAt(dir, clientX, clientY) {
   const i = ZOOMS.indexOf(zoom);
   const next = Math.max(0, Math.min(ZOOMS.length - 1, (i < 0 ? 1 : i) + dir));
-  zoom = ZOOMS[next]; pan = { x: 0, y: 0 }; applyZoom();
+  const before = scaleNow();
+  zoom = ZOOMS[next];
+  const after = scaleNow();
+  if (after !== before) {
+    const box = $("stage").getBoundingClientRect();
+    const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+    const dx = (clientX == null ? cx : clientX) - cx;
+    const dy = (clientY == null ? cy : clientY) - cy;
+    const k = after / before;
+    pan = { x: dx - (dx - pan.x) * k, y: dy - (dy - pan.y) * k };
+  }
+  applyZoom();
 }
+const stepZoom = (dir) => zoomAt(dir, null, null);
 
 /* ------------------------------- downloads -------------------------------- */
 
@@ -1175,6 +1342,44 @@ function outputName(it, used) {
     return candidate;
   }
   return name;
+}
+
+/* Copy the result to the clipboard, for pasting straight into Figma, Slack or
+ * a document. Clipboards accept image/png and nothing else — writing a JPEG or
+ * WebP blob is rejected outright — so the compressed result is decoded and
+ * re-encoded as PNG. The pixels are exactly what was measured; the bytes are
+ * not the file, and the toast says so rather than letting someone believe they
+ * pasted a 400 KB JPEG. */
+async function copyImage(it) {
+  if (!it || !isReady(it)) return;
+  const btn = $("copy-one");
+  btn.disabled = true;
+  try {
+    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+      throw new Error("this browser has no clipboard image support");
+    }
+    const asPng = async () => {
+      if (it.afterBlob.type === "image/png") return it.afterBlob;
+      const bmp = await createImageBitmap(it.afterBlob);
+      const c = document.createElement("canvas");
+      c.width = bmp.width; c.height = bmp.height;
+      c.getContext("2d").drawImage(bmp, 0, 0);
+      bmp.close?.();
+      return new Promise((res) => c.toBlob(res, "image/png"));
+    };
+    /* The blob is handed over as a promise rather than awaited first. Awaiting
+       the re-encode before calling write() spends the click's user activation,
+       which Safari rejects outright and Chrome can too; the promise form is
+       what the API is designed around. */
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": asPng() })]);
+    toast(it.afterBlob.type === "image/png"
+      ? "Copied — paste it anywhere"
+      : "Copied as PNG — the only image format clipboards take");
+  } catch (e) {
+    toast(`Could not copy: ${e && e.message ? e.message : e}`);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function downloadBlob(blob, name) {
@@ -1413,6 +1618,9 @@ function pushSettings() {
     state.settings = currentSettings();
     state.settingsRev++;
     saveSettings();
+    // During set-up the whole point is that nothing has started yet: record
+    // the choice and leave it at that.
+    if (state.staging) { scheduleRender(); return; }
     requeue(state.items.filter((i) => i.status !== "working").map((i) => i.id));
   }, 350);
 }
@@ -1545,7 +1753,7 @@ async function addSamples() {
     addFiles([
       new File([photo], "sample-photo.png", { type: "image/png" }),
       new File([ui], "sample-ui.png", { type: "image/png" }),
-    ]);
+    ], { immediate: true });
   } catch {
     toast("Could not build the demo — try dropping your own image");
   } finally {
@@ -1707,11 +1915,21 @@ function bind() {
   });
   new ResizeObserver(() => applyZoom()).observe($("stage"));
 
-  $("stage").addEventListener("wheel", (e) => { e.preventDefault(); stepZoom(e.deltaY < 0 ? 1 : -1); },
-    { passive: false });
+  $("stage").addEventListener("wheel", (e) => {
+    e.preventDefault();
+    zoomAt(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY);
+  }, { passive: false });
   $("stage").addEventListener("dblclick", (e) => {
     if (e.target.closest(".stage-bar")) return;
-    zoom = zoom ? 0 : 1; pan = { x: 0, y: 0 }; applyZoom();
+    // Double-click toggles fit and 100%, and lands on what was clicked.
+    if (zoom) { zoom = 0; pan = { x: 0, y: 0 }; applyZoom(); return; }
+    const box = $("stage").getBoundingClientRect();
+    const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+    const k = 1 / scaleNow();
+    zoom = 1;
+    pan = { x: (e.clientX - cx) - (e.clientX - cx - pan.x) * k,
+            y: (e.clientY - cy) - (e.clientY - cy - pan.y) * k };
+    applyZoom();
   });
 
   let dragging = null;
@@ -1770,6 +1988,20 @@ function bind() {
   $("sample-btn").addEventListener("click", addSamples);
   $("stop-btn").addEventListener("click", cancelAll);
 
+  $("setup-go").addEventListener("click", startStagedRun);
+  $("setup-add").addEventListener("click", () => $("file-input").click());
+  /* Enter starts the run from anywhere in the step except a control that owns
+     the key itself - a name field commits the rename, and a select is being
+     used. Without this the only way on is to find the button with a mouse. */
+  $("app-stage").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.target.matches("input, select, button")) return;
+    startStagedRun();
+  });
+  $("setup-cancel").addEventListener("click", () => {
+    removeItems(state.items.map((i) => i.id));
+    toast("Cleared — nothing was compressed");
+  });
+
   $("clear-btn").addEventListener("click", () => {
     if (!state.items.length) return;
     cancelAll();
@@ -1786,6 +2018,7 @@ function bind() {
     it.status = "saved";
     scheduleRender();
   });
+  $("copy-one").addEventListener("click", () => copyImage(state.byId.get(selected)));
 
   $("ov-apply").addEventListener("click", () => {
     const it = state.byId.get(selected);

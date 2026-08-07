@@ -73,8 +73,25 @@ try {
   // ---- upload the whole fixture set --------------------------------------
   const files = ["photo.png", "photo5mp.png", "ui.png", "logo.png", "static.gif", "anim.gif",
                  "small.jpg", "corrupt.png", "chromanoise.png"].map((f) => path.join(FIX, f));
-  const input = await page.$("#file-input");
-  await input.uploadFile(...files);
+
+  /* Dropping files lands on the set-up step and waits. That is the promise:
+     no compute is spent until it is asked for. */
+  await page.waitForFunction(() => typeof state !== "undefined");
+  const inputEl = await page.$("#file-input");
+  await inputEl.uploadFile(...files);
+  await new Promise((r) => setTimeout(r, 800));
+  const paused = await page.evaluate(() => ({
+    staging: state.staging,
+    started: state.items.some((i) => i.status !== "staged"),
+    listed: document.querySelectorAll("#setup-list .setup-row").length,
+  }));
+  ok(paused.staging && !paused.started,
+     `a drop waits for set-up instead of compressing (${JSON.stringify(paused)})`);
+  ok(paused.listed === files.length,
+     `every dropped image is shown first (${paused.listed}/${files.length})`);
+  ok(await page.evaluate(() => document.activeElement?.id) === "setup-go",
+     "the keyboard lands on the start button");
+  await page.click("#setup-go");
 
   await page.waitForFunction(
     (n) => typeof state !== "undefined" && state.items.length === n &&
@@ -335,6 +352,28 @@ try {
     await page.waitForFunction((r) => state.settingsRev > r &&
       state.items.every((i) => ["done", "failed", "saved"].includes(i.status)),
       { timeout: 900_000, polling: 300 }, rev2);
+  }
+
+  /* ---- copy to clipboard --------------------------------------------------
+   * Chrome refuses clipboard writes to an automated browser unless these
+   * permissions are granted over CDP, so a denial here is the harness, not
+   * the app. The check is still worth having: it catches the button being
+   * wired to nothing, or throwing. */
+  {
+    const cdp = await browser.target().createCDPSession();
+    await cdp.send("Browser.grantPermissions", {
+      origin: new URL(BASE).origin,
+      permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+    }).catch(() => {});
+    await page.evaluate(() => selectItem(state.items.find((i) => i.name === "ui.png").id));
+    await new Promise((r) => setTimeout(r, 300));
+    ok(!(await page.evaluate(() => document.getElementById("copy-one").disabled)),
+       "the copy button is live for a finished image");
+    await page.bringToFront();
+    await page.click("#copy-one");
+    await new Promise((r) => setTimeout(r, 1200));
+    const said = await page.evaluate(() => document.getElementById("toast").textContent);
+    ok(/^Copied/.test(said), `copying reports success (${said})`);
   }
 
   // ---- settings change requeues -------------------------------------------

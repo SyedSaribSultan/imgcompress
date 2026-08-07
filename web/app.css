@@ -402,15 +402,90 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .app > .bar, .app > .advanced, .app > .batch, .app > .summary { flex: none; }
 .app > .body { flex: 1 1 auto; min-height: 0; }
+/* ====================== 1b. THE SET-UP STEP ============================== *
+   Between "here are your images" and "here is the work". It is a page, not a
+   dialog: the decision is not urgent, there is nothing to dismiss, and the
+   list of what was picked up is the main content. job: staging */
+.setup {
+  display: grid; gap: var(--oz-space-6); align-content: start;
+  padding: var(--oz-space-10) var(--oz-space-7) var(--oz-space-12);
+  max-width: 840px; margin: 0 auto; width: 100%;
+  overflow-y: auto;
+}
+.setup-head { display: grid; gap: var(--oz-space-2); }
+.setup h2 {
+  font-family: var(--oz-font-heading);
+  font-size: var(--oz-text-heading-md); line-height: var(--oz-leading-heading-md);
+  letter-spacing: var(--oz-tracking-heading-md);
+  font-weight: var(--oz-default-weight-heading); margin: 0;
+}
+.setup-sub, .setup-foot {
+  margin: 0; color: var(--oz-color-content-secondary);
+  font-size: var(--oz-text-body-sm); line-height: var(--oz-leading-body-sm);
+}
+.setup-foot { color: var(--oz-color-content-tertiary); }
+/* The moved settings bar sits on its own rung so it reads as a panel of
+   choices rather than a strip of chrome. */
+.setup-controls {
+  border-radius: var(--oz-radius-8); overflow: hidden;
+  background: var(--oz-color-surface-secondary);
+}
+.setup-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: var(--oz-space-2);
+  max-height: 46vh; overflow-y: auto;
+}
+.setup-row {
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  padding: var(--oz-space-3) var(--oz-space-4);
+  border-radius: var(--oz-radius-6);
+  background: var(--oz-color-surface-primary);
+}
+.setup-row .thumb {
+  width: 44px; height: 44px; flex: none; border-radius: var(--oz-radius-4);
+  background-color: var(--oz-color-fill-tertiary);
+  background-size: cover; background-position: center;
+}
+.setup-cell { display: grid; gap: var(--oz-space-1); min-width: 0; flex: 1; }
+/* Editable, but it should not look like a form until you reach for it - the
+   name is content here, and most people will never touch it. */
+.setup-name {
+  font: inherit; font-size: var(--oz-text-body-sm); color: var(--oz-color-content-primary);
+  background: transparent; border: var(--oz-stroke-1) solid transparent;
+  border-radius: var(--oz-radius-3); padding: var(--oz-space-1) var(--oz-space-2);
+  width: 100%; min-width: 0;
+}
+.setup-name:hover { border-color: var(--oz-color-border-primary); }
+.setup-name:focus {
+  outline: none; background: var(--oz-color-fill-tertiary);
+  border-color: var(--oz-color-border-selected);
+}
+.setup-meta {
+  font-size: var(--oz-text-label-xs); color: var(--oz-color-content-tertiary);
+  padding-inline: var(--oz-space-2);
+}
+.setup-drop {
+  flex: none; width: 28px; height: 28px; border-radius: var(--oz-radius-full);
+  border: none; background: transparent; cursor: pointer;
+  color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-md);
+  line-height: 1;
+}
+.setup-drop:hover { background: var(--oz-color-fill-secondary); color: var(--oz-color-content-primary); }
+.setup-actions { display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap; }
+
 .bar {
   display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap;
   padding: var(--oz-space-3) var(--oz-space-5); min-height: 52px;
   background: var(--oz-color-surface-primary);
 }
-.field { display: flex; align-items: center; gap: var(--oz-space-3); }
+/* min-width:0 on both is what lets a long option label shrink instead of
+   pushing the control off the side of a phone - the Format and Quality
+   options are sentences, and at 390px they overhung the viewport by 40px. */
+.field { display: flex; align-items: center; gap: var(--oz-space-3); min-width: 0; }
 .field > label {
   color: var(--oz-color-content-secondary); white-space: nowrap; font-size: var(--oz-text-body-sm);
 }
+.field > select { min-width: 0; max-width: 100%; }
 .spacer { margin-left: auto; }
 
 /* progressive disclosure: the numbers most people never need */
@@ -628,8 +703,16 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   background: var(--oz-color-background);
   display: grid; place-items: center;
 }
+/* Centred by transform, not by the grid. CSS alignment silently switches from
+   `center` to `start` once an item is bigger than its container - the "safe"
+   behaviour, meant to protect content from being scrolled off - so the moment
+   you zoomed past the stage the frame snapped to the top-left and the rest of
+   the picture hung off the bottom. That is what "scrolling takes me to the top
+   and I have to drag a long way back" was. A transform has no such rule, so
+   the frame stays centred at every scale and panning starts from the middle. */
 .viewport {
-  position: relative; line-height: 0; touch-action: none;
+  position: absolute; left: 50%; top: 50%;
+  line-height: 0; touch-action: none;
   background-color: var(--checker-a);
   background-image:
     linear-gradient(45deg, var(--checker-b) 25%, transparent 25%, transparent 75%, var(--checker-b) 75%),
@@ -965,9 +1048,13 @@ button.cand:hover { box-shadow: inset 0 0 0 var(--oz-stroke-2) var(--oz-color-bo
    controls in the evidence pane - a toast that covers the thing you just used
    is worse than no toast - and briefly overlaying the settings row costs
    nothing, because nobody reads it while a confirmation is up. */
+/* Bottom, not top. At 68px it sat exactly on the toolbar and covered the
+   Quality control while telling you something about the file you had just
+   saved - the confirmation obscuring the control you might act on next. Down
+   here it clears the results bar and is out of every control's way. */
 .toast {
-  position: fixed; left: 50%; top: 68px; bottom: auto;
-  transform: translate(-50%, calc(-8px * var(--oz-motion-spatial-scale)));
+  position: fixed; left: 50%; bottom: 84px; top: auto;
+  transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
   z-index: var(--oz-layer-toast);
   padding: var(--oz-space-4) var(--oz-space-5); border-radius: var(--oz-radius-full);
   background: var(--oz-color-surface-overlay);
