@@ -41,6 +41,13 @@ try {
   await pg.waitForFunction(() => state.items.every((i) =>
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   await new Promise((r) => setTimeout(r, 600));
+  /* Two files, so this lands on the list. Open one, then open its panel: the
+     chips are the primary control and they live in the drawer now, and a
+     control measured while it is shut measures 0px and passes nothing. */
+  await pg.evaluate(() => selectItem(state.items[0].id));
+  await new Promise((r) => setTimeout(r, 400));
+  await pg.evaluate(() => document.getElementById("insp-toggle").click());
+  await new Promise((r) => setTimeout(r, 600));
   await pg.screenshot({ path: path.join(here, "shot-studio-mobile.png"), fullPage: true });
 
   const fit = await pg.evaluate(() => {

@@ -444,12 +444,154 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    box, and grid auto-placement shifted every later child up a track: the body
    fell into an auto row and the results bar inherited the 1fr, leaving an empty
    185px of track beneath it. Flex simply ignores absent children. */
+/* ======================= THE SHELL: three views ==========================
+   One thing on screen at a time, decided by what the person is doing. The
+   shell is a flex column so the active view takes all the height that is not
+   the progress hairline, and `position: relative` so the panel and the
+   finished-bar can be positioned against it rather than against the page.
+   ======================================================================== */
 .app {
   display: flex; flex-direction: column;
   height: 100%; min-height: 0; min-width: 0;
+  position: relative; overflow: hidden;
 }
-.app > .bar, .app > .advanced, .app > .batch, .app > .summary { flex: none; }
-.app > .body { flex: 1 1 auto; min-height: 0; }
+.app > .batch { flex: none; }
+/* Every view fills what is left. `min-height: 0` on a flex child is what lets
+   an inner scroller actually scroll instead of pushing the column taller. */
+.app > .view { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; }
+
+/* -------------------------- view: work happening -----------------------
+   Its own screen. The original at size, one sentence, one bar, one estimate.
+   Centred in a single column because there is exactly one thing to look at
+   and nothing to compare it to yet. */
+.view-working {
+  grid-template-rows: minmax(0, 1fr) auto;
+  place-items: center; gap: var(--oz-space-6);
+  padding: var(--oz-space-6);
+  background: var(--oz-color-background);
+}
+.working-frame {
+  max-width: 100%; max-height: 100%; min-height: 0;
+  display: grid; place-items: center;
+  border-radius: var(--app-radius-md); overflow: hidden;
+  box-shadow: var(--oz-elevation-small);
+}
+.working-frame img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.working-say {
+  display: grid; justify-items: center; gap: var(--oz-space-3);
+  width: min(56ch, 100%); text-align: center;
+  padding-bottom: var(--oz-space-6);
+}
+.working-track {
+  width: 100%; height: 3px; border-radius: var(--app-radius-pill);
+  background: var(--oz-color-fill-tertiary); overflow: hidden;
+}
+.working-track i {
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-border-tertiary);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+}
+.working-eta, .working-now {
+  margin: 0; font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+}
+
+/* ---------------------------- view: one image --------------------------
+   The comparison IS the screen. No padding, no card, no bands: the two bars
+   float on top of the picture and everything else is one panel away. */
+.view-single { grid-template-rows: minmax(0, 1fr); }
+.view-single > .stage { border-radius: 0; }
+
+.float-bar {
+  position: absolute; left: var(--oz-space-4); right: var(--oz-space-4);
+  z-index: 2;
+  display: flex; align-items: center; gap: var(--oz-space-3);
+  padding: var(--oz-space-2) var(--oz-space-3);
+  border-radius: var(--app-radius-md);
+  /* Floating over a photograph, so it needs its own ground rather than the
+     page's - and a blur so the picture stays legible underneath it. */
+  background: var(--oz-color-surface-overlay);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--oz-elevation-small);
+}
+.float-bar.top { top: var(--oz-space-4); }
+.float-bar.bottom { bottom: var(--oz-space-4); }
+/* They float over the picture, so they cannot push the page wide - they have
+   to fold instead. At 375px the mode switch and the zoom cluster together are
+   wider than the screen, and the first thing probe_mobile said about this
+   layout was that the zoomer ran to 457px on a 375px phone. */
+.float-bar { flex-wrap: wrap; }
+.float-bar > * { min-width: 0; }
+.float-bar .segmented, .float-bar .zoomer { flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .float-bar { left: var(--oz-space-2); right: var(--oz-space-2); gap: var(--oz-space-2); }
+  /* The keycap hints are a desktop affordance; a phone has no Space bar to
+     press, so they are noise taking the width the controls need. */
+  .float-bar kbd { display: none; }
+  .float-bar .spacer { display: none; }
+}
+.float-bar .insp-title { margin: 0; display: flex; align-items: baseline; min-width: 0; }
+.result-size { font-size: var(--oz-text-body-md); font-weight: var(--oz-weight-semibold); }
+.result-saved { font-size: var(--oz-text-body-sm); color: var(--oz-color-content-success); }
+
+/* ---------------------------- view: the list ---------------------------
+   Full width. The rail this replaced was 17% of the screen whether it held
+   one row or eighty. */
+.view-list {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--oz-color-surface-primary);
+}
+.list-head {
+  display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap;
+  padding: var(--oz-space-4) var(--oz-space-6);
+  border-bottom: var(--oz-stroke-1) solid var(--oz-color-border-secondary);
+}
+
+/* ------------------------------- the panel -----------------------------
+   One direction for everything deeper. Slides from the right, over the view
+   rather than beside it, so no view has to reserve room for it and the
+   comparison keeps the whole screen when it is shut.
+
+   Translated, never widthed: animating width would relayout every frame, and
+   verify_tokens.mjs refuses a transition on a layout property outright. */
+.panel {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 3;
+  width: min(420px, 100%);
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  background: var(--oz-color-surface-primary);
+  box-shadow: var(--oz-elevation-large);
+  transform: translateX(100%);
+  transition: transform var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default);
+}
+.panel.on { transform: translateX(0); }
+.panel-head {
+  display: flex; align-items: center; gap: var(--oz-space-3);
+  padding: var(--oz-space-4) var(--oz-space-5);
+  border-bottom: var(--oz-stroke-1) solid var(--oz-color-border-secondary);
+}
+.panel-body { overflow-y: auto; min-height: 0; padding: var(--oz-space-5); }
+.panel-sec { padding-bottom: var(--oz-space-6); }
+.panel-sec + .panel-sec {
+  padding-top: var(--oz-space-6);
+  border-top: var(--oz-stroke-1) solid var(--oz-color-border-secondary);
+}
+.panel-sec h4 { margin: 0 0 var(--oz-space-4); }
+.panel-sec .field { margin-bottom: var(--oz-space-4); }
+
+/* --------------------------- the end of the task ----------------------- */
+.done-bar {
+  position: absolute; left: 50%; bottom: var(--oz-space-7); z-index: 4;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  padding: var(--oz-space-3) var(--oz-space-5);
+  border-radius: var(--app-radius-pill);
+  background: var(--oz-color-surface-overlay);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--oz-elevation-small);
+  font-size: var(--oz-text-body-sm);
+}
+
 .bar {
   display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap;
   padding: var(--oz-space-3) var(--oz-space-5); min-height: 52px;
@@ -544,13 +686,45 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-sm);
 }
 
+/* The row got the width the sidebar used to take, so it can carry what it
+   did rather than only that it is finished: thumb, name and sizes, the
+   saving drawn to the batch's scale, the format that won, and its state. */
 .row {
-  display: grid; grid-template-columns: 46px minmax(0,1fr) auto;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(90px, 22%) 7rem auto;
   gap: var(--oz-space-4); align-items: center;
   width: 100%; text-align: left;
   padding: var(--oz-space-3); border-radius: var(--app-radius-md);
   background: transparent;
   transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
+}
+.saving { display: flex; align-items: center; gap: var(--oz-space-3); min-width: 0; }
+.saving-bar {
+  flex: 1 1 auto; height: 6px; min-width: 0;
+  border-radius: var(--app-radius-pill);
+  background: var(--oz-color-fill-tertiary); overflow: hidden;
+}
+/* scaleX, never width: a transitioned width relayouts the whole list on every
+   frame of every bar, and verify_tokens refuses it outright. */
+.saving-bar i {
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-content-success);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+}
+.saving-pct {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-success);
+  white-space: nowrap;
+}
+.won {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Below a tablet the two measured columns have nowhere to go; the sizes are
+   still in .meta, so nothing is lost by dropping them. */
+@media (max-width: 720px) {
+  .row { grid-template-columns: 46px minmax(0, 1fr) auto; }
+  .row .saving, .row .won { display: none; }
 }
 .row + .row { margin-top: var(--app-gap-tight); }
 .row:hover { background: var(--oz-color-fill-secondary-hover); }
@@ -981,6 +1155,10 @@ kbd {
   padding-bottom: var(--oz-space-2); margin-bottom: calc(var(--oz-space-2) * -1);
   scrollbar-width: thin;
 }
+/* In the panel there is no width to scroll sideways into, so they wrap. A
+   sideways scroller inside a 420px drawer hides its own contents. */
+.panel .cands { flex-wrap: wrap; overflow-x: visible; }
+.panel .cand { flex: 1 1 calc(50% - var(--oz-space-2)); }
 /* Equal width, always: `flex: 1 0 <basis>` gives every chip the same basis and
    the same share of any slack, and forbids shrinking. That is not a tidiness
    preference — the meter along the bottom edge is a percentage of the chip, so
@@ -1157,8 +1335,12 @@ kbd {
    the download actions on the right and nothing in between. The toast sits in
    that gap. `probe_theme.mjs` asserts it covers no control, because the next
    person to move it will not know any of the above. */
+/* Clear of the floating bottom bar, which is itself `bottom: --oz-space-4`.
+   A toast that covers a control is a toast that hides the button somebody was
+   reaching for - probe_theme asserts it outright, over every visible control
+   on the page, and it caught this the moment the bar started floating. */
 .toast {
-  position: fixed; left: 50%; bottom: var(--oz-space-4); top: auto;
+  position: fixed; left: 50%; bottom: var(--oz-space-15); top: auto;
   max-width: min(46ch, calc(100vw - var(--oz-space-7)));
   transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
   z-index: var(--oz-layer-toast);

@@ -155,6 +155,11 @@ function beginBatch() {
   batchActive = true;
 }
 let ovSyncedFor = null;   // which item the override controls currently reflect
+/* `selected` is the whole of it: null means "looking at the list", an id means
+   "looking at that one". A second `opened` flag was tried first and was two
+   names for one idea - the distinction was invisible to the person, and the
+   only thing it bought was a way for the two to disagree. */
+let savedThisRun = 0;     // how many files this run actually wrote
 const BASE_TITLE = document.title;
 
 function uid() {
@@ -791,15 +796,93 @@ function render() {
   if (dirty.queue || wantAll) { renderQueue(); dirty.queue = false; }
   if (wantAll) {
     renderSummary(); dirty.summary = false;
-    const still = state.byId.get(selected);
-    if (!still && state.items.length) selected = state.items[0].id;
+    /* No auto-selection. It used to fall back to the first item whenever the
+       selection was empty, which made "nothing is open" unrepresentable - and
+       that state is exactly the list view. The one case worth keeping is a
+       single image: there is nothing to choose between, so it opens itself. */
+    if (selected && !state.byId.get(selected)) selected = null;
+    if (!selected && state.items.length === 1) selected = state.items[0].id;
     renderInspector(state.byId.get(selected));
     dirty.inspector = false;
   }
   $("app-empty").hidden = state.items.length > 0;
   $("app-full").hidden = state.items.length === 0;
+  renderView();
   renderBatchProgress();
   renderTitle();
+}
+
+/* --------------------------- which view is on ----------------------------
+ * What you are doing decides what is on screen, and only one thing is.
+ *
+ *   nothing here yet        -> the drop screen
+ *   the subject is working  -> the waiting screen, which is its own screen
+ *                              rather than a skeleton of the finished one
+ *   one image to look at    -> the comparison, full bleed
+ *   several, none opened    -> the list, full bleed
+ *
+ * "The subject" is the image being looked at: the only one, or the one opened
+ * from the list. A batch of eighty where one is still going does NOT take
+ * everybody to the waiting screen - the list is the right place to watch a
+ * batch, because it shows all of them at once.
+ */
+function subjectItem() {
+  if (state.items.length === 1) return state.items[0];
+  return selected ? state.byId.get(selected) : null;
+}
+
+function currentView() {
+  if (!state.items.length) return "empty";
+  const it = subjectItem();
+  if (!it) return "list";
+  return isBusy(it) ? "working" : "single";
+}
+
+function renderView() {
+  const view = currentView();
+  $("view-working").hidden = view !== "working";
+  $("view-single").hidden = view !== "single";
+  $("view-list").hidden = view !== "list";
+  // Only meaningful when the list exists to go back to.
+  $("back-btn").hidden = state.items.length < 2;
+  if (view === "working") renderWorking(subjectItem());
+  if (view !== "single" && view !== "working") setPanel(false);
+  renderDone();
+}
+
+/** The waiting screen: the untouched original, one sentence, one bar, one
+ *  estimate, and the format being measured right now. Never a bare spinner. */
+function renderWorking(it) {
+  if (!it) return;
+  const frame = $("working-frame");
+  if (frame.dataset.src !== it.beforeURL) {
+    frame.dataset.src = it.beforeURL || "";
+    frame.innerHTML = it.beforeURL
+      ? `<img alt="Your original, untouched" src="${escapeHtml(it.beforeURL)}">` : "";
+  }
+  $("working-bar").style.setProperty("--p", Math.max(0.02, it.frac || 0).toFixed(3));
+  $("working-now").textContent = it.progress || "";
+  const ms = it.startedAt ? performance.now() - it.startedAt : 0;
+  // An estimate, and said as one. A countdown that is wrong is worse than a
+  // range that is honest.
+  $("working-eta").textContent = it.frac > 0.05 && ms > 1200
+    ? `about ${duration(Math.max(0, (ms / it.frac) - ms))} left`
+    : "";
+}
+
+/** The end of the task, said out loud. A job with no ending leaves people
+ *  unsure it worked - "did it actually save?" was the one question the app
+ *  never answered. */
+function renderDone() {
+  const bar = $("done-bar");
+  const show = savedThisRun > 0 && state.items.length > 0
+            && state.items.every((i) => !isBusy(i));
+  bar.hidden = !show;
+  if (show) {
+    $("done-say").textContent = savedThisRun === 1
+      ? "Saved. Your original was not changed."
+      : `Saved ${savedThisRun} images. Your originals were not changed.`;
+  }
 }
 
 /* -------------------------------- queue ---------------------------------- */
@@ -831,6 +914,15 @@ function phaseLine(it) {
   return fmtLabel(it.fmt) + (it.level != null ? ` · quality ${it.level}` : "") + took;
 }
 
+/* A row in the list view. The list is the whole screen now rather than a
+   324px rail, so a row can say what it did instead of only that it finished:
+   the two sizes, how much came off drawn to scale, and which format won.
+
+   The saving bar is drawn against the WIDEST saving in the batch, not against
+   this row's own original. Against its own original every row would look
+   similar; against the batch, the rows that saved most are visibly the ones
+   that saved most, which is the comparison a person is actually making when
+   they scan a list of eighty. */
 function buildRow(it) {
   const el = document.createElement("button");
   el.className = "row enter";
@@ -844,6 +936,9 @@ function buildRow(it) {
       <span class="phase"></span>
       <span class="track"><i></i></span>
     </span>
+    <span class="saving"><span class="saving-bar"><i></i></span>
+      <span class="saving-pct num"></span></span>
+    <span class="won num"></span>
     <span class="tail">
       <span class="micro ov" title="This image has its own settings" hidden>OV</span>
       <span class="dot"></span>
@@ -869,6 +964,10 @@ function renderQueue() {
   }
   list.querySelector(".queue-empty")?.remove();
 
+  // The biggest saving in the batch, so every bar is drawn to one scale.
+  const widestSaving = state.items.reduce(
+    (m, i) => (isReady(i) ? Math.max(m, i.originalBytes - i.newBytes) : m), 0);
+
   let prev = null;
   for (const it of state.items) {
     let el = rowEls.get(it.id);
@@ -893,6 +992,18 @@ function renderQueue() {
     const dotClass = `dot ${it.status}`;
     if (dot.className !== dotClass) dot.className = dotClass;
     el.querySelector(".ov").hidden = !it.override;
+
+    // What this row achieved, drawn to the batch's scale.
+    const savedBytes = isReady(it) ? Math.max(0, it.originalBytes - it.newBytes) : 0;
+    const pct = isReady(it) && it.originalBytes
+      ? Math.round(100 * savedBytes / it.originalBytes) : 0;
+    const bar = el.querySelector(".saving-bar i");
+    bar.style.setProperty("--p", widestSaving ? (savedBytes / widestSaving).toFixed(3) : "0");
+    el.querySelector(".saving-pct").textContent = isReady(it) && pct > 0 ? `−${pct}%` : "";
+    const won = isReady(it) && !it.passthrough ? fmtLabel(currentPick(it) === ORIGINAL_PICK
+      ? "original" : (it.fmt || "")) : "";
+    el.querySelector(".won").textContent = won;
+
     if (it.status === "working") {
       // Unitless fraction: the bar is scaleX'd, not resized. See .track i.
       el.querySelector(".track i").style.setProperty(
@@ -966,6 +1077,23 @@ function renderTitle() {
 function showInspector(on) {
   $("inspector-empty").hidden = on;
   $("inspector-body").hidden = !on;
+}
+
+/** Open or shut the one panel. Everything deeper is in here, so this is the
+ *  only disclosure the app has left. `hidden` is dropped before the class is
+ *  added so the slide actually runs; a `hidden` element cannot transition. */
+function setPanel(on) {
+  const panel = $("panel");
+  if (on) {
+    panel.hidden = false;
+    requestAnimationFrame(() => panel.classList.add("on"));
+  } else {
+    panel.classList.remove("on");
+  }
+  for (const id of ["insp-toggle", "list-details"]) {
+    const el = $(id);
+    if (el) el.setAttribute("aria-expanded", String(!!on));
+  }
 }
 
 function selectItem(id, quiet) {
@@ -1080,10 +1208,10 @@ function renderInspector(it) {
     nameField.size = Math.max(4, base.length);
     $("insp-ext").textContent = ext;
   }
-  const dims = it.width ? `${it.width}×${it.height}` : "";
-  const out = it.outW && (it.outW !== it.width || it.outH !== it.height)
-    ? ` → ${it.outW}×${it.outH}` : "";
-  $("insp-dims").textContent = dims + out;
+  // Dimensions live once now, in the panel's own row (#s-dims). They were
+  // in the file-identity band as well, which is one of the places the same
+  // fact was being said twice.
+
 
   const before = $("img-before"), after = $("img-after");
   if (before.dataset.src !== it.beforeURL) {
@@ -1187,7 +1315,7 @@ function renderInspector(it) {
   // this is deliberately not summed into a batch total anywhere.
   $("s-time").innerHTML = it.elapsedMs != null
     ? `${duration(it.elapsedMs)}${it.candidates?.length
-        ? ` <small>${it.candidates.length} candidate${it.candidates.length === 1 ? "" : "s"}</small>` : ""}`
+        ? ` <small>${it.candidates.length} version${it.candidates.length === 1 ? "" : "s"} tried</small>` : ""}`
     : (it.status === "working" ? `<span class="skel w-sm"></span>` : "—");
 
   // The narration is rewritten only when it actually changes: it carries a
@@ -1676,6 +1804,7 @@ async function downloadAll() {
     downloadBlob(it.afterBlob, outputName(it));
     toast(`Downloaded ${outputName(it)}`);
     it.status = "saved";
+    savedThisRun += 1;
     scheduleRender();
     return;
   }
@@ -2047,10 +2176,23 @@ function bind() {
     scheduleRender("summary");
   });
 
-  $("adv-btn").addEventListener("click", () => {
-    const open = $("advanced").hidden;
-    $("advanced").hidden = !open;
-    $("adv-btn").setAttribute("aria-expanded", String(open));
+  /* No Advanced toggle. It used to hide the quality slider, the dimension cap
+     and the filename suffix behind a second click in the toolbar. With every
+     setting living in the panel, that would be a disclosure inside a
+     disclosure - the "deeper opens in four directions" problem in miniature -
+     so they are all in the open there instead. */
+
+  // ---- the one panel, and the one way back --------------------------------
+  $("panel-close").addEventListener("click", () => setPanel(false));
+  $("list-details").addEventListener("click", () => setPanel(true));
+  $("back-btn").addEventListener("click", () => {
+    selected = null;
+    setPanel(false);
+    scheduleRender();
+  });
+  $("done-again").addEventListener("click", () => {
+    savedThisRun = 0;
+    removeItems(state.items.map((i) => i.id));
   });
 
   $("theme-btn").addEventListener("click", () => {
@@ -2060,7 +2202,10 @@ function bind() {
 
   $("queue-list").addEventListener("click", (e) => {
     const row = e.target.closest(".row");
-    if (row) selectItem(row.dataset.id);
+    if (!row) return;
+    // Opening one from the list is a move to another screen: selecting it IS
+    // opening it, and the back button clears the selection to return.
+    selectItem(row.dataset.id);
   });
 
   // A candidate chip is the direct way to see and keep a different encode.
@@ -2104,10 +2249,7 @@ function bind() {
 
   // Collapse the detail panel to give the comparison the whole pane.
   $("insp-toggle").addEventListener("click", () => {
-    const open = $("details").hidden;
-    $("details").hidden = !open;
-    $("insp-toggle").setAttribute("aria-expanded", String(open));
-    $("insp-toggle").textContent = open ? "Details ▾" : "Details ▸";
+    setPanel($("panel").hidden || !$("panel").classList.contains("on"));
     requestAnimationFrame(applyZoom);
   });
 
@@ -2255,6 +2397,7 @@ function bind() {
     downloadBlob(it.afterBlob, outputName(it));
     toast(`Downloaded ${outputName(it)}`);
     it.status = "saved";
+    savedThisRun += 1;
     scheduleRender();
   });
   $("copy-one").addEventListener("click", () => copyImage(state.byId.get(selected)));

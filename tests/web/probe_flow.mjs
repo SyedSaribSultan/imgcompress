@@ -80,15 +80,23 @@ try {
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   ok(true, "the work completes without anything being pressed");
 
-  // The settings bar never moves any more: one of each control, in the toolbar.
+  /* Settings live in the panel now, and the claim moved with them. It used to
+     be "the settings bar lives in the toolbar", asserted as `#app-full >
+     #bar-controls` - pure DOM ancestry of an arrangement that no longer
+     exists, and a direct-child selector at that. What was worth keeping is
+     underneath it: there is exactly one of each control, in one place, and
+     that place is the one panel everything deeper opens into. */
   const controls = await pg.evaluate(() => ({
-    inToolbar: !!document.querySelector("#app-full > #bar-controls"),
+    inPanel: !!document.querySelector("#panel #bar-controls"),
     targets: document.querySelectorAll("#target").length,
     qualities: document.querySelectorAll("#quality").length,
+    advancedToggles: document.querySelectorAll("#adv-btn").length,
   }));
-  ok(controls.inToolbar, "the settings bar lives in the toolbar");
+  ok(controls.inPanel, "the settings live in the one panel");
   ok(controls.targets === 1 && controls.qualities === 1,
      `exactly one of each control exists (${JSON.stringify(controls)})`);
+  ok(controls.advancedToggles === 0,
+     "and none of them is behind a second disclosure inside it");
 
   // ---- frame 3: original and result legible at the same time --------------
   await pg.evaluate(() => selectItem(state.items[0].id));
@@ -110,6 +118,11 @@ try {
      `both sides are named (${compare.left} | ${compare.right})`);
 
   // ---- frame 4: the chips are the control, and they answer instantly ------
+  /* They are in the panel now - the evidence drawer - so it has to be open
+     before they can be measured. Opening it is what a person does to see them;
+     the probe was reaching for them where they used to sit. */
+  await pg.click("#insp-toggle");
+  await settle(500);
   const chips = await pg.evaluate(() => {
     const els = [...document.querySelectorAll("#cands .cand")];
     return {
@@ -120,14 +133,22 @@ try {
       bytes: els.map((e) => Number(e.dataset.bytes)),
       current: els.filter((e) => e.classList.contains("current")).length,
       winner: els.filter((e) => e.classList.contains("win")).length,
-      // Near the image, not buried in a panel below the fold.
-      aboveDetails: els[0].getBoundingClientRect().top <
-                    document.getElementById("details").getBoundingClientRect().top,
+      /* Reachable and real, rather than "above the numbers". The old check
+         was an absolute vertical relation between two containers, and the
+         numbers are not below the image any more - they are beside it, in the
+         same drawer. What still has to be true is that a chip is something you
+         can actually see and hit. */
+      onScreen: els.every((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 &&
+               r.right > 0 && r.left < innerWidth &&
+               r.bottom > 0 && r.top < innerHeight;
+      }),
     };
   });
   console.log("  chips:", JSON.stringify(chips));
   ok(chips.n >= 2 && chips.allButtons, `every candidate is a real button (${chips.n})`);
-  ok(chips.aboveDetails, "the chips sit with the image, above the numbers");
+  ok(chips.onScreen, "every chip is visible and hittable where it sits");
   ok(chips.current === 1, `exactly one chip is marked as showing (${chips.current})`);
   ok(chips.winner === 1, `and exactly one as the winner (${chips.winner})`);
   ok(chips.order[chips.order.length - 1] === "__original",

@@ -468,6 +468,12 @@ try {
     ok(!(await page.evaluate(() => document.getElementById("copy-one").disabled)),
        "the copy button is live for a finished image");
     await page.bringToFront();
+    /* Copy lives in the panel now — it is a second way to get one file out, so
+       it does not compete with Download for the primary slot. Open the drawer
+       the way a person does, then press it for real: a click that skips hit
+       testing would not notice the button being covered by something. */
+    await page.evaluate(() => document.getElementById("insp-toggle").click());
+    await new Promise((r) => setTimeout(r, 500));
     await page.click("#copy-one");
     await new Promise((r) => setTimeout(r, 1200));
     const said = await page.evaluate(() => document.getElementById("toast").textContent);
@@ -514,6 +520,15 @@ try {
   const downloadDone = new Promise((resolve) => {
     cdp.on("Browser.downloadProgress", (e) => { if (e.state === "completed") resolve(); });
   });
+  /* "Download all" is the list view's primary control, so this has to be on
+     the list to press it — which is exactly what "one primary control per
+     screen" means. Clearing the selection is what the back button does. */
+  await page.evaluate(() => {
+    setPanel(false);
+    selected = null;
+    scheduleRender(); renderNow();
+  });
+  await new Promise((r) => setTimeout(r, 500));
   await page.click("#save-btn");
   await downloadDone;
   const zips = readdirSync(DL).filter((f) => f.endsWith(".zip"));

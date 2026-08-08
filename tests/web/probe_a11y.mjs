@@ -82,6 +82,15 @@ try {
   await pg.waitForFunction(() => state.items.every((i) =>
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   await new Promise((r) => setTimeout(r, 600));
+  /* Three files, so this lands on the list. Everything below is about the
+     result view and the evidence drawer, so open one image and then its panel
+     - the same two moves a person makes. Measured while shut, every control
+     in there reports `offsetParent === null` and the probe would pass over an
+     empty set, which is the failure mode this whole suite keeps finding. */
+  await pg.evaluate(() => selectItem(state.items[0].id));
+  await new Promise((r) => setTimeout(r, 400));
+  await pg.evaluate(() => document.getElementById("insp-toggle").click());
+  await new Promise((r) => setTimeout(r, 600));
   await pg.screenshot({ path: path.join(here, "shot-studio.png") });
   console.log("\n=== studio, with results ===");
   const studio = await pg.evaluate(audit);

@@ -1,0 +1,708 @@
+{
+ "floor": 90.0,
+ "images": [
+  {
+   "name": "camera_12mp.jpg",
+   "width": 2560,
+   "height": 1920,
+   "sourceBytes": 1992520,
+   "referenceBytes": 5650700,
+   "rows": [
+    {
+     "strategy": "AVIF q50 (a common default)",
+     "format": "avif",
+     "setting": "q50",
+     "searched": false,
+     "bytes": 12596,
+     "ss2": 79.8,
+     "ssim": 0.9521,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "WebP q75 (a common default)",
+     "format": "webp",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 22970,
+     "ss2": 75.8,
+     "ssim": 0.9498,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q75 (a common default)",
+     "format": "jpeg",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 81282,
+     "ss2": 80.1,
+     "ssim": 0.9539,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q85 (a common default)",
+     "format": "jpeg",
+     "setting": "q85",
+     "searched": false,
+     "bytes": 182619,
+     "ss2": 84.9,
+     "ssim": 0.9588,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (documents)",
+     "format": "jpeg",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 371100,
+     "ss2": 90.4,
+     "ssim": 0.9657,
+     "clearsFloor": true,
+     "winner": true
+    },
+    {
+     "strategy": "imgcompress web (web)",
+     "format": "jpeg",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 371100,
+     "ss2": 90.4,
+     "ssim": 0.9657,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG 4:2:0 only",
+     "format": "jpeg",
+     "setting": "q94",
+     "searched": true,
+     "bytes": 529809,
+     "ss2": 90.5,
+     "ssim": 0.97,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress desktop",
+     "format": "jpeg",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 556852,
+     "ss2": 91.4,
+     "ssim": 0.97,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "mozjpeg 4:4:4 only",
+     "format": "jpeg",
+     "setting": "q94",
+     "searched": true,
+     "bytes": 556852,
+     "ss2": 91.4,
+     "ssim": 0.97,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "PNG lossless + zopfli",
+     "format": "png",
+     "setting": "lossless",
+     "searched": true,
+     "bytes": 2677021,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    }
+   ]
+  },
+  {
+   "name": "gradient.png",
+   "width": 1000,
+   "height": 600,
+   "sourceBytes": 3313,
+   "referenceBytes": 18375,
+   "rows": [
+    {
+     "strategy": "imgcompress desktop",
+     "format": "webp-lossless",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 438,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": true
+    },
+    {
+     "strategy": "imgcompress web (web)",
+     "format": "webp",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 450,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "AVIF q50 (a common default)",
+     "format": "avif",
+     "setting": "q50",
+     "searched": false,
+     "bytes": 1302,
+     "ss2": 85.8,
+     "ssim": 0.9955,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "WebP q75 (a common default)",
+     "format": "webp",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 2584,
+     "ss2": 74.7,
+     "ssim": 0.9876,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "PNG lossless + zopfli",
+     "format": "png",
+     "setting": "lossless",
+     "searched": true,
+     "bytes": 2798,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (documents)",
+     "format": "png",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 2862,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q75 (a common default)",
+     "format": "jpeg",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 6128,
+     "ss2": 77.2,
+     "ssim": 0.994,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q85 (a common default)",
+     "format": "jpeg",
+     "setting": "q85",
+     "searched": false,
+     "bytes": 9873,
+     "ss2": 83.0,
+     "ssim": 0.9958,
+     "clearsFloor": false,
+     "winner": false
+    }
+   ]
+  },
+  {
+   "name": "logo_alpha.png",
+   "width": 900,
+   "height": 900,
+   "sourceBytes": 10200,
+   "referenceBytes": 39276,
+   "rows": [
+    {
+     "strategy": "imgcompress web (web)",
+     "format": "webp",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 2922,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": true
+    },
+    {
+     "strategy": "imgcompress desktop",
+     "format": "webp-lossless",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 3218,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "pngquant + zopfli",
+     "format": "png8",
+     "setting": "8 colours",
+     "searched": true,
+     "bytes": 3965,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "PNG lossless + zopfli",
+     "format": "png",
+     "setting": "lossless",
+     "searched": true,
+     "bytes": 3965,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (documents)",
+     "format": "png",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 4244,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "AVIF q50 (a common default)",
+     "format": "avif",
+     "setting": "q50",
+     "searched": false,
+     "bytes": 7261,
+     "ss2": 81.0,
+     "ssim": 0.9997,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "WebP q75 (a common default)",
+     "format": "webp",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 11378,
+     "ss2": 80.8,
+     "ssim": 0.9962,
+     "clearsFloor": false,
+     "winner": false
+    }
+   ]
+  },
+  {
+   "name": "photo.png",
+   "width": 1280,
+   "height": 820,
+   "sourceBytes": 1742416,
+   "referenceBytes": 2787761,
+   "rows": [
+    {
+     "strategy": "AVIF q50 (a common default)",
+     "format": "avif",
+     "setting": "q50",
+     "searched": false,
+     "bytes": 11307,
+     "ss2": 70.5,
+     "ssim": 0.9227,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "WebP q75 (a common default)",
+     "format": "webp",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 16280,
+     "ss2": 61.8,
+     "ssim": 0.9142,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q75 (a common default)",
+     "format": "jpeg",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 49719,
+     "ss2": 69.8,
+     "ssim": 0.9269,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q85 (a common default)",
+     "format": "jpeg",
+     "setting": "q85",
+     "searched": false,
+     "bytes": 84654,
+     "ss2": 74.2,
+     "ssim": 0.9352,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress desktop",
+     "format": "jpeg",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 449799,
+     "ss2": 90.7,
+     "ssim": 0.9662,
+     "clearsFloor": true,
+     "winner": true
+    },
+    {
+     "strategy": "mozjpeg 4:4:4 only",
+     "format": "jpeg",
+     "setting": "q96",
+     "searched": true,
+     "bytes": 449799,
+     "ss2": 90.7,
+     "ssim": 0.9662,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (documents)",
+     "format": "jpeg",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 460900,
+     "ss2": 91.1,
+     "ssim": 0.9711,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (web)",
+     "format": "jpeg",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 460900,
+     "ss2": 91.1,
+     "ssim": 0.9711,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "PNG lossless + zopfli",
+     "format": "png",
+     "setting": "lossless",
+     "searched": true,
+     "bytes": 1567771,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    }
+   ]
+  },
+  {
+   "name": "screenshot_retina.png",
+   "width": 2560,
+   "height": 1600,
+   "sourceBytes": 16885,
+   "referenceBytes": 123966,
+   "rows": [
+    {
+     "strategy": "imgcompress web (web)",
+     "format": "webp",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 1108,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": true
+    },
+    {
+     "strategy": "imgcompress desktop",
+     "format": "webp-lossless",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 1108,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "AVIF only",
+     "format": "avif",
+     "setting": "q45",
+     "searched": true,
+     "bytes": 2543,
+     "ss2": 91.6,
+     "ssim": 0.9999,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "AVIF q50 (a common default)",
+     "format": "avif",
+     "setting": "q50",
+     "searched": false,
+     "bytes": 2559,
+     "ss2": 92.3,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (documents)",
+     "format": "png",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 4253,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "pngquant + zopfli",
+     "format": "png8",
+     "setting": "8 colours",
+     "searched": true,
+     "bytes": 4679,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "PNG lossless + zopfli",
+     "format": "png",
+     "setting": "lossless",
+     "searched": true,
+     "bytes": 4679,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "WebP q75 (a common default)",
+     "format": "webp",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 15444,
+     "ss2": 88.3,
+     "ssim": 0.9758,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "WebP only",
+     "format": "webp",
+     "setting": "q84",
+     "searched": true,
+     "bytes": 18038,
+     "ss2": 90.4,
+     "ssim": 0.9916,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q75 (a common default)",
+     "format": "jpeg",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 96840,
+     "ss2": 88.1,
+     "ssim": 0.9842,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "mozjpeg 4:4:4 only",
+     "format": "jpeg",
+     "setting": "q82",
+     "searched": true,
+     "bytes": 100160,
+     "ss2": 92.2,
+     "ssim": 0.9889,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG 4:2:0 only",
+     "format": "jpeg",
+     "setting": "q85",
+     "searched": true,
+     "bytes": 112257,
+     "ss2": 90.3,
+     "ssim": 0.9855,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q85 (a common default)",
+     "format": "jpeg",
+     "setting": "q85",
+     "searched": false,
+     "bytes": 112257,
+     "ss2": 90.3,
+     "ssim": 0.9855,
+     "clearsFloor": true,
+     "winner": false
+    }
+   ]
+  },
+  {
+   "name": "ui_text.png",
+   "width": 1280,
+   "height": 820,
+   "sourceBytes": 30045,
+   "referenceBytes": 56468,
+   "rows": [
+    {
+     "strategy": "imgcompress desktop",
+     "format": "png8",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 6937,
+     "ss2": 93.9,
+     "ssim": 0.9983,
+     "clearsFloor": true,
+     "winner": true
+    },
+    {
+     "strategy": "pngquant + zopfli",
+     "format": "png8",
+     "setting": "16 colours",
+     "searched": true,
+     "bytes": 6937,
+     "ss2": 93.9,
+     "ssim": 0.9983,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "AVIF q50 (a common default)",
+     "format": "avif",
+     "setting": "q50",
+     "searched": false,
+     "bytes": 7182,
+     "ss2": 87.8,
+     "ssim": 0.9969,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (web)",
+     "format": "webp",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 9530,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "AVIF only",
+     "format": "avif",
+     "setting": "q88",
+     "searched": true,
+     "bytes": 11492,
+     "ss2": 90.2,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "WebP q75 (a common default)",
+     "format": "webp",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 12448,
+     "ss2": 83.1,
+     "ssim": 0.937,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "PNG lossless + zopfli",
+     "format": "png",
+     "setting": "lossless",
+     "searched": true,
+     "bytes": 21989,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "imgcompress web (documents)",
+     "format": "png",
+     "setting": "measured floor",
+     "searched": true,
+     "bytes": 24003,
+     "ss2": 100.0,
+     "ssim": 1.0,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q75 (a common default)",
+     "format": "jpeg",
+     "setting": "q75",
+     "searched": false,
+     "bytes": 32139,
+     "ss2": 78.8,
+     "ssim": 0.976,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG q85 (a common default)",
+     "format": "jpeg",
+     "setting": "q85",
+     "searched": false,
+     "bytes": 36223,
+     "ss2": 83.4,
+     "ssim": 0.9807,
+     "clearsFloor": false,
+     "winner": false
+    },
+    {
+     "strategy": "mozjpeg 4:4:4 only",
+     "format": "jpeg",
+     "setting": "q92",
+     "searched": true,
+     "bytes": 49387,
+     "ss2": 91.5,
+     "ssim": 0.9939,
+     "clearsFloor": true,
+     "winner": false
+    },
+    {
+     "strategy": "JPEG 4:2:0 only",
+     "format": "jpeg",
+     "setting": "q98",
+     "searched": true,
+     "bytes": 61902,
+     "ss2": 90.2,
+     "ssim": 0.9997,
+     "clearsFloor": true,
+     "winner": false
+    }
+   ]
+  }
+ ]
+}
