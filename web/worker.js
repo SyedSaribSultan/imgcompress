@@ -1074,6 +1074,88 @@ async function searchOne(job, encoder, target, report) {
 }
 
 /* ------------------------------------------------------------------------- *
+ * the other search — a port of core._search_under_size
+ *
+ * searchOne's mirror image: same ladder, same bisection, opposite question.
+ * Size rises with quality just as score does, so a rung that overshoots the cap
+ * proves every rung above it would too, and the shape of the search is
+ * identical. Returns null when even the lowest rung overshoots - this format
+ * cannot hold this image that small, and the caller should try another.
+ * ------------------------------------------------------------------------- */
+
+async function searchUnderSize(job, encoder, cap, report) {
+  const { width, height, rgba, metric } = job;
+  const levels = encoder.levels;
+
+  const memo = new Map();
+  const encodeAt = (index, fast) => {
+    const key = encoder.fastAffects ? `${index}|${fast ? 1 : 0}` : `${index}`;
+    let hit = memo.get(key);
+    if (!hit) {
+      hit = timedAsync("encode", () =>
+        timedAsync(`enc:${encoder.name}`, () => encoder.encode(levels[index], fast)));
+      memo.set(key, hit);
+    }
+    return hit;
+  };
+
+  const finalScore = async (data) => {
+    if (data._exact) return { score: metric.perfect };
+    const cand = await timedAsync("back",
+      () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
+    return { score: timed("ssimFull", () => metric.verify(rgba, cand, width, height)) };
+  };
+
+  if (encoder.lossless || levels.length === 1) {
+    report(1);
+    if (PERF) PERF.encodes++;
+    const data = await encodeAt(levels.length - 1, false);
+    if (data.length > cap) return null;
+    return { data, level: null, score: metric.perfect,
+             index: levels.length - 1, top: levels.length - 1, encoder,
+             encodeAt, finalScore };
+  }
+
+  let probes = 0;
+  let chosen = null;
+  let lo = 0, hi = levels.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    report(++probes);
+    if (PERF) PERF.probes++;
+    if ((await encodeAt(mid, true)).length <= cap) { chosen = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  if (chosen === null) return null;
+
+  if (PERF) PERF.encodes++;
+  let data = await encodeAt(chosen, false);
+
+  /* Fast encodes run larger than full-effort ones - mozjpeg and oxipng only
+     ever take bytes away - so the bisection above is conservative and may have
+     rejected a rung that fits once those passes have run. One probe upward
+     recovers the quality that would otherwise be left on the table. */
+  if (chosen < levels.length - 1) {
+    report(++probes);
+    const better = await encodeAt(chosen + 1, false);
+    if (better.length <= cap) { chosen++; data = better; }
+  }
+
+  /* Measured, not assumed. Shipping over a cap the person set is the one thing
+     this search must never do. */
+  while (data.length > cap && chosen > 0) {
+    report(++probes);
+    chosen--;
+    data = await encodeAt(chosen, false);
+  }
+  if (data.length > cap) return null;
+
+  const { score } = await finalScore(data);
+  return { data, level: levels[chosen], score, index: chosen,
+           top: levels.length - 1, encodeAt, finalScore };
+}
+
+/* ------------------------------------------------------------------------- *
  * normalisation — decode, EXIF-rotate, cap dimensions, strip metadata
  * (the canvas round-trip strips EXIF/ICC/XMP by construction)
  * ------------------------------------------------------------------------- */
@@ -1087,17 +1169,10 @@ async function decodeNormalised(blob, settings) {
   }
   const w0 = bmp.width, h0 = bmp.height;
 
-  let limit = settings.maxDimension || 0;
-  if (settings.target === "figma") {
-    limit = limit ? Math.min(limit, FIGMA_MAX_DIMENSION) : FIGMA_MAX_DIMENSION;
-  }
-
-  let W = w0, H = h0;
-  if (limit && Math.max(w0, h0) > limit) {
-    const scale = limit / Math.max(w0, h0);
-    W = Math.max(1, Math.round(w0 * scale));
-    H = Math.max(1, Math.round(h0 * scale));
-  }
+  const frame = frameFor(w0, h0, settings.dimensionMode || "longest",
+                         settings.maxDimension || 0, hardCapFor(settings));
+  const W = frame ? frame[0] : w0;
+  const H = frame ? frame[1] : h0;
 
   // Stepped halving approximates a proper windowed filter far better than a
   // single bilinear pass when the reduction is large.
@@ -1140,12 +1215,44 @@ const EXT_OF = { jpeg: ".jpg", png8: ".png", png: ".png", webp: ".webp" };
  * worker that last handled it, so one slot per worker is enough. */
 let DCACHE = null;
 
-function limitFor(settings) {
-  let limit = settings.maxDimension || 0;
-  if (destinationOf(settings.target) === "documents") {
-    limit = limit ? Math.min(limit, DOCUMENTS_MAX_DIMENSION) : DOCUMENTS_MAX_DIMENSION;
+/* A destination's own ceiling on the long edge. Resolved through
+   destinationOf() rather than compared against a raw string, because the
+   pre-2.7 name for this place was "figma" and an unresolved alias silently
+   skips the clamp. */
+function hardCapFor(settings) {
+  return destinationOf(settings.target) === "documents" ? DOCUMENTS_MAX_DIMENSION : 0;
+}
+
+/* A port of core.frame_for. The frame this image is drawn into, or null to
+   leave it alone.
+
+   `mode` decides which edge `limit` governs. `hardCap` always applies to the
+   long edge whatever the mode is - that is the edge design tools rescale on
+   import - which is why it is a separate argument rather than folded into the
+   limit: a ceiling on the long edge and a pin on the width are different
+   numbers and collapsing them was only safe while "longest" was the only mode.
+
+   Never enlarges. A pin is a ceiling, not a size; enlarging inside a
+   compressor spends bytes on blur. */
+function frameFor(w, h, mode, limit, hardCap) {
+  let scale = 1;
+  if (limit && mode !== "none") {
+    const edge = mode === "width" ? w : mode === "height" ? h : Math.max(w, h);
+    if (edge > limit) scale = limit / edge;
   }
-  return limit;
+  if (hardCap && Math.max(w, h) * scale > hardCap) scale = hardCap / Math.max(w, h);
+  if (scale >= 1) return null;
+  return [Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))];
+}
+
+/* Everything about the settings that changes the pixels, and nothing that does
+   not. The decode cache is keyed on this, so the mode has to be in it: "width
+   1600" and "longest 1600" are different frames for the same image and must
+   not share a slot. The quality floor is deliberately absent - changing only
+   the floor reuses the decode, which is what makes the slider feel instant. */
+function frameKey(settings) {
+  return `${settings.dimensionMode || "longest"}`
+       + `|${settings.maxDimension || 0}|${hardCapFor(settings)}`;
 }
 
 function sameContainer(ext, name) {
@@ -1182,7 +1289,7 @@ async function runJob(msg) {
   post({ type: "progress", stage: "decoding", frac: 0 });
   perfReset();
 
-  const cacheKey = `${id}|${limitFor(settings)}`;
+  const cacheKey = `${id}|${frameKey(settings)}`;
   let job;
   if (DCACHE && DCACHE.key === cacheKey) {
     job = DCACHE.job;
@@ -1290,41 +1397,73 @@ async function runJob(msg) {
   let bestFailing = null;  // otherwise: highest score, smaller file breaks ties
   const passing = [];      // every candidate that cleared it, for the post-passes
 
-  for (const nameKey of names) {
-    const encoder = encoders[nameKey];
-    // ~log2(ladder) probes plus the final verify; close enough for a live bar.
-    const expected = Math.ceil(Math.log2(encoder.levels.length || 2)) + 3;
-    const report = (probes = 0) => post({
-      type: "progress", stage: "encoding", detail: `${encoder.name}`,
-      done, total: names.length,
-      frac: (done + Math.min(probes / expected, 0.95)) / names.length,
-    });
-    try {
-      // png8x only exists where it is pixel-exact; skip silently elsewhere.
-      if (encoder.exactOnly && !encoders._hasExact()) { done++; continue; }
-      const found = await searchOne(job, encoder, target, report);
-      const { data, level, score } = found;
-      const exact = !!(encoder.lossless || data._exact);
-      // ext and mime ride along so the UI can name and serve a candidate the
-      // person picks later without a table of its own to keep in step.
-      candidates.push({
-        format: encoder.name, bytes: data.length, score, lossless: exact,
-        level: exact ? null : level, ext: encoder.ext, mime: encoder.mime,
+  const cap = settings.sizeTarget || 0;
+
+  /* One pass of the bake-off, in whichever direction was asked for.
+     Runs once normally. Runs a second time only when a size cap turned out to
+     be unreachable, and then everything the first pass produced is thrown away
+     rather than shown beside the winner: all of it fitted the cap and none of
+     it cleared the floor, so listing it reads as though the cap had been met
+     after all. That second pass is the only path that pays for two bake-offs,
+     and only when the cap was impossible anyway. */
+  const bakeOff = async (underCap) => {
+    candidates.length = 0;
+    candidateData.clear();
+    passing.length = 0;
+    bestPassing = null;
+    bestFailing = null;
+    done = 0;
+
+    for (const nameKey of names) {
+      const encoder = encoders[nameKey];
+      // ~log2(ladder) probes plus the final verify; close enough for a live bar.
+      const expected = Math.ceil(Math.log2(encoder.levels.length || 2)) + 3;
+      const report = (probes = 0) => post({
+        type: "progress", stage: "encoding", detail: `${encoder.name}`,
+        done, total: names.length,
+        frac: (done + Math.min(probes / expected, 0.95)) / names.length,
       });
-      candidateData.set(encoder.name, data);
-      const entry = { ...found, encoder };
-      if (score >= target) {
-        passing.push(entry);
-        if (!bestPassing || data.length < bestPassing.data.length) bestPassing = entry;
-      } else if (!bestFailing || score > bestFailing.score ||
-                 (score === bestFailing.score && data.length < bestFailing.data.length)) {
-        bestFailing = entry;
+      try {
+        // png8x only exists where it is pixel-exact; skip silently elsewhere.
+        if (encoder.exactOnly && !encoders._hasExact()) { done++; continue; }
+        const found = underCap
+          ? await searchUnderSize(job, encoder, cap, report)
+          : await searchOne(job, encoder, target, report);
+        // Under a cap, null means no rung of this ladder is small enough.
+        if (!found) { done++; continue; }
+        const { data, level, score } = found;
+        const exact = !!(encoder.lossless || data._exact);
+        // ext and mime ride along so the UI can name and serve a candidate the
+        // person picks later without a table of its own to keep in step.
+        candidates.push({
+          format: encoder.name, bytes: data.length, score, lossless: exact,
+          level: exact ? null : level, ext: encoder.ext, mime: encoder.mime,
+        });
+        candidateData.set(encoder.name, data);
+        const entry = { ...found, encoder };
+        if (underCap) {
+          /* Everything that got here already fits, so size has stopped being
+             the thing worth competing on and the best-looking one wins. */
+          if (score >= target) {
+            passing.push(entry);
+            if (!bestPassing || score > bestPassing.score) bestPassing = entry;
+          }
+        } else if (score >= target) {
+          passing.push(entry);
+          if (!bestPassing || data.length < bestPassing.data.length) bestPassing = entry;
+        } else if (!bestFailing || score > bestFailing.score ||
+                   (score === bestFailing.score && data.length < bestFailing.data.length)) {
+          bestFailing = entry;
+        }
+      } catch (exc) {
+        warnings.push(`${encoder.name} failed: ${exc && exc.message ? exc.message : exc}`);
       }
-    } catch (exc) {
-      warnings.push(`${encoder.name} failed: ${exc && exc.message ? exc.message : exc}`);
+      done++;
     }
-    done++;
-  }
+  };
+
+  await bakeOff(!!cap);
+  if (cap && !bestPassing) await bakeOff(false);
 
   /* ---- chroma verification, on the winner only ------------------------- *
    * Luma SSIM is structurally blind to chroma damage, so the encode that
@@ -1363,6 +1502,9 @@ async function runJob(msg) {
     while (best.index < best.top) {
       best.index++;
       best.data = await best.encodeAt(best.index, false);
+      // Escalating up the ladder grows the file. Under a cap that is not an
+      // option, so the candidate is rejected rather than quietly overshooting.
+      if (cap && best.data.length > cap) break;
       ({ score: best.score } = await best.finalScore(best.data));
       if (best.score >= target && await chromaOk(best)) { escalated = true; break; }
     }
@@ -1378,9 +1520,15 @@ async function runJob(msg) {
       rejected.add(best.encoder.name);
       if (row) row.rejected = true;
     }
-    // Re-pick the smallest survivor, or fall back to the best failing one.
+    // Re-pick the best survivor, or fall back to the best failing one. Which
+    // "best" means is whichever question was asked: smallest under a floor,
+    // best-looking under a cap.
     const live = passing.filter((p) => !rejected.has(p.encoder.name) && p.score >= target);
-    best = live.length ? live.reduce((a, b) => (b.data.length < a.data.length ? b : a)) : null;
+    best = live.length
+      ? live.reduce((a, b) => (cap
+          ? (b.score > a.score ? b : a)
+          : (b.data.length < a.data.length ? b : a)))
+      : null;
   }
   if (!best) best = bestFailing;   // nothing cleared the floor; warned about below
 
@@ -1401,7 +1549,15 @@ async function runJob(msg) {
   if (CODECS.oxipng) {
     const sizeOf = (c) => c.data.length;
     let bestSize = sizeOf(best);
-    const pngCandidates = passing.filter((p) => p.encoder.pngFamily && !rejected.has(p.encoder.name));
+    /* Under a size cap the winner is the best-looking candidate, not the
+       smallest, and oxipng is lossless - it cannot change how anything looks.
+       Shrinking the losers therefore cannot promote one, so the competitive
+       pass is skipped and only the winner's own deeper pass is worth paying
+       for. Without this guard a PNG that shrank would take the winner's place
+       from a better-looking JPEG purely on byte count, under a cap they both
+       already fit. */
+    const pngCandidates = cap ? []
+      : passing.filter((p) => p.encoder.pngFamily && !rejected.has(p.encoder.name));
     for (const cand of pngCandidates) {
       if (sizeOf(cand) * OXI_BEST_CASE > bestSize) continue;   // cannot win
       const before = sizeOf(cand);
@@ -1431,6 +1587,20 @@ async function runJob(msg) {
       + `${target}. Lower the target, or keep the original.`);
   }
 
+  /* The bytes that will actually ship - the passthrough branch below hands the
+     original back when nothing beat it. Reading the miss off that, rather than
+     off wherever the fallback was chosen, is what stops it claiming a miss on a
+     file that in the end came in under the cap. */
+  const shipping = (best.data.length >= originalBytes && !job.resized)
+    ? originalBytes : best.data.length;
+  const missedSize = !!(cap && shipping > cap);
+  if (missedSize) {
+    const kb = (n) => `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB`;
+    warnings.push(
+      `Couldn't fit ${kb(cap)} without going below the quality you asked for — `
+      + `this is ${kb(shipping - cap)} over. Allow a lower quality, or a smaller frame.`);
+  }
+
   // Never ship a bigger file. (Stricter than the desktop rule: any regrowth
   // without a resize passes the original through, whatever the container.)
   if (best.data.length >= originalBytes && !job.resized) {
@@ -1447,6 +1617,7 @@ async function runJob(msg) {
         width: job.originalW, height: job.originalH,
         outW: job.originalW, outH: job.originalH,
         candidates, warnings, alpha: sourceAlpha,
+        sizeTarget: cap, missedSize,
       },
     }, transfer);
     return;
@@ -1470,6 +1641,7 @@ async function runJob(msg) {
       width: job.originalW, height: job.originalH,
       outW: job.width, outH: job.height,
       candidates, warnings, alpha: sourceAlpha,
+      sizeTarget: cap, missedSize,
     },
   }, transfer);
 }
