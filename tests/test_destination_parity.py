@@ -167,8 +167,7 @@ class TheGeneratorItself(unittest.TestCase):
         """The guard is only worth having if it has been seen to fail."""
         original = _read(GENERATED_JS)
         try:
-            GENERATED_JS.write_text(original.replace("2560", "9999"),
-                                    encoding="utf-8", newline="")
+            _write(GENERATED_JS, original.replace("2560", "9999"))
             self.assertEqual(gen_destinations.main(["--check"]), 1)
         finally:
             _write(GENERATED_JS, original)
@@ -190,8 +189,7 @@ class TheGeneratorItself(unittest.TestCase):
         because every difference was invisible."""
         original = _read(GENERATED_JS)
         try:
-            GENERATED_JS.write_text(original.replace("\n", "\r\n"),
-                                    encoding="utf-8", newline="")
+            _write(GENERATED_JS, original.replace("\n", "\r\n"))
             self.assertEqual(gen_destinations.main(["--check"]), 0,
                              "a CRLF working copy was reported as out of date")
         finally:
