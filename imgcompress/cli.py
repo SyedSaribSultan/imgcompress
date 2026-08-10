@@ -22,6 +22,31 @@ def human(n: int) -> str:
     return f"{value:.1f} GB"
 
 
+_UNITS = {"b": 1, "k": 1024, "kb": 1024, "m": 1024**2, "mb": 1024**2,
+          "g": 1024**3, "gb": 1024**3}
+
+
+def parse_size(text: str) -> int:
+    """`200kb`, `1.5MB`, `480000` -> bytes. Raises ValueError on anything else.
+
+    Spelled in the units people actually think in. A byte ceiling typed as a
+    raw byte count is a number nobody has in their head; the limit they were
+    given is almost always in KB or MB.
+    """
+    cleaned = str(text).strip().lower().replace(" ", "").replace(",", "")
+    for suffix in sorted(_UNITS, key=len, reverse=True):
+        if cleaned.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)]
+            scale = _UNITS[suffix]
+            break
+    else:
+        scale = 1
+    value = float(cleaned)          # ValueError here is the caller's answer
+    if value <= 0:
+        raise ValueError("size must be greater than zero")
+    return int(value * scale)
+
+
 def describe(res: CompressionResult, verbose: bool = False) -> str:
     name = res.source.name
     if res.error:
@@ -34,7 +59,11 @@ def describe(res: CompressionResult, verbose: bool = False) -> str:
     if res.resized_to:
         bits.append(f"{res.resized_from[0]}x{res.resized_from[1]}"
                     f" -> {res.resized_to[0]}x{res.resized_to[1]}")
-    if res.level is not None:
+    # The encoder level is an implementation detail: it means nothing without
+    # knowing which ladder it came from, it is not comparable between formats,
+    # and it is not something anyone can act on. Kept for --verbose, where the
+    # whole point is to see the internals, and out of the ordinary line.
+    if verbose and res.level is not None:
         bits.append(f"q{res.level}")
     if res.score is not None:
         fmt = "{:.1f}" if res.metric == "ssimulacra2" else "{:.4f}"
@@ -86,6 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  imgcompress hero.png --for documents  safe to import into a design tool\n"
             "  imgcompress input/ --for email        small enough to attach\n"
             "  imgcompress input/ -q 95              hold a higher visual match\n"
+            "  imgcompress hero.jpg --under 200KB    best quality that fits a limit\n"
+            "  imgcompress input/ --fit width -m 1600   pin every image to 1600px wide\n"
             "  imgcompress input/ --fast             quicker, slightly bigger\n"
             "  imgcompress --check                   show which engines are active\n"
         ),
@@ -108,11 +139,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target", dest="legacy_target", default=None,
                         help=argparse.SUPPRESS)
     parser.add_argument("-m", "--max-dimension", type=int,
-                        help="cap the longest edge in pixels. 0 keeps the original size")
+                        help="cap an edge in pixels. 0 keeps the original size")
+    parser.add_argument("--fit", choices=["longest", "width", "height"],
+                        default="longest",
+                        help="which edge -m caps (default: longest). Aspect ratio is "
+                             "always kept, and an image already inside the limit is "
+                             "left alone rather than enlarged")
+    parser.add_argument("--under", dest="size_target", metavar="SIZE",
+                        help="hold the file under this size and spend whatever room "
+                             "is left on quality, e.g. 200KB or 1.5MB. Without it the "
+                             "search runs the other way: the smallest file that still "
+                             "clears -q")
     parser.add_argument("-q", "--quality-target", type=float,
-                        help="minimum visual match, 0-100 where 100 is indistinguishable "
-                             "(90 = you will not see the difference), or 0-1 with "
-                             "--metric ssim")
+                        help="the visual match the result may not fall below, 0-100 "
+                             "where 100 is indistinguishable (90 = you will not see "
+                             "the difference), or 0-1 with --metric ssim. With --under "
+                             "it is the point past which shrinking is not worth doing")
     parser.add_argument("--metric", choices=["ssimulacra2", "ssim"], default=None,
                         help="quality metric (default: ssimulacra2 when installed)")
     parser.add_argument("-f", "--format", dest="formats", action="append",
@@ -189,11 +231,22 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 2
 
+    size_target = 0
+    if args.size_target is not None:
+        try:
+            size_target = parse_size(args.size_target)
+        except ValueError:
+            print(f"--under wants a size like 200KB or 1.5MB, "
+                  f"not '{args.size_target}'.", file=sys.stderr)
+            return 2
+
     settings = Settings(
         target=going_to.name,
         max_dimension=max_dim,
+        dimension_mode=args.fit,
         metric=metric.name,
         quality_target=target,
+        size_target=size_target,
         keep_metadata=args.keep_metadata,
         zopfli=not args.no_zopfli,
         fast=args.fast,
@@ -213,10 +266,25 @@ def main(argv=None) -> int:
     # meant `-m 8000 --for documents` advertised "up to 8000px" and produced
     # 4096 - a dimension changing without saying so, which is the whole defect
     # this destination work exists to remove, just moved onto the override path.
-    effective = dest.effective_limit(going_to.name, max_dim)
-    size = f"up to {effective}px" if effective else "never resized"
-    print(f"            {size}, visual match at least {match}")
-    if effective != (max_dim or 0):
+    # `longest` is still the only mode whose clamp `effective_limit` can express,
+    # because a ceiling on the long edge and a pin on the width are different
+    # numbers. The other modes print their pin and name the clamp separately
+    # rather than pretending one number covers both.
+    pinned = args.fit != "longest" and max_dim
+    if pinned:
+        effective = max_dim
+        size = f"{args.fit} up to {max_dim}px"
+        if going_to.hard_cap:
+            size += f", never past {going_to.hard_cap}px on the long edge"
+    else:
+        effective = dest.effective_limit(going_to.name, max_dim)
+        size = f"up to {effective}px on the longest edge" if effective else "never resized"
+    if size_target:
+        print(f"            under {human(size_target)}, at the best quality that fits")
+        print(f"            {size}, and never below a visual match of {match}")
+    else:
+        print(f"            {size}, visual match at least {match}")
+    if not pinned and effective != (max_dim or 0):
         print(f"            (asked for {max_dim or 'no limit'}; {going_to.name} clamps at "
               f"{going_to.hard_cap}px because these tools rescale above it "
               f"destructively on import)")
