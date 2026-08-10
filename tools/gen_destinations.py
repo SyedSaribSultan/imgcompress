@@ -30,6 +30,7 @@ hand-patched into the output:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -37,7 +38,35 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from imgcompress import destinations as dest  # noqa: E402
+
+def _load_destinations():
+    """Load `imgcompress/destinations.py` on its own, not through the package.
+
+    `from imgcompress import destinations` runs the package's `__init__`, which
+    imports the engine, which imports Pillow and numpy. That turns "is this
+    committed file current?" - a question answered entirely by two files on disk
+    - into something that needs the whole dependency tree installed. CI found
+    it: the check job installs nothing, so it failed in eight seconds on an
+    ImportError rather than on anything about the file.
+
+    `destinations.py` was written to import nothing from the rest of the
+    package precisely so it could be read like this. Loading it directly keeps
+    this tool dependency-free, which is the right shape for a check that runs on
+    every pull request and should never be able to go red because a release of
+    Pillow broke.
+    """
+    path = ROOT / "imgcompress" / "destinations.py"
+    spec = importlib.util.spec_from_file_location("imgcompress_destinations", path)
+    module = importlib.util.module_from_spec(spec)
+    # Registered before it is executed, because @dataclass resolves a field's
+    # type by looking its own module up in sys.modules. Skip this and the
+    # decorator dies on a None it never expected to see.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+dest = _load_destinations()
 
 OUTPUT = ROOT / "web" / "destinations.js"
 
@@ -68,6 +97,22 @@ BANNER = """/* GENERATED FILE - DO NOT EDIT.
 
 "use strict";
 """
+
+
+# `Path.read_text`/`write_text` only learned `newline=` in 3.13 and 3.10, and
+# this package supports 3.9. `Path.open` has always taken it. CI found this:
+# every job except ubuntu/3.13 failed on a TypeError, which is the version
+# matrix earning its keep.
+def _read_exact(path) -> str:
+    """File contents with no line-ending translation."""
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        return fh.read()
+
+
+def _write_exact(path, text: str) -> None:
+    """Write with no line-ending translation, so LF stays LF on Windows."""
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
 
 
 def _js(value) -> str:
@@ -139,7 +184,7 @@ def main(argv=None) -> int:
     # it printed looked empty - every line differing by an invisible character.
     # .gitattributes pins this file to LF as well; this is the half that keeps
     # the tool honest if that is ever lost.
-    raw = OUTPUT.read_text(encoding="utf-8", newline="") if OUTPUT.is_file() else None
+    raw = _read_exact(OUTPUT) if OUTPUT.is_file() else None
     existing = raw.replace("\r\n", "\n") if raw is not None else None
 
     if args.check:
@@ -163,7 +208,7 @@ def main(argv=None) -> int:
     if existing == fresh:
         print(f"{OUTPUT.relative_to(ROOT)} already current")
         return 0
-    OUTPUT.write_text(fresh, encoding="utf-8", newline="")
+    _write_exact(OUTPUT, fresh)
     print(f"wrote {OUTPUT.relative_to(ROOT)}")
     return 0
 

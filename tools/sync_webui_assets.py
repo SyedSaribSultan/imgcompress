@@ -49,8 +49,24 @@ FONT_DIR = WEB / "fonts"
 ICONS = ["favicon.svg"]
 
 
+# `Path.read_text`/`write_text` only learned `newline=` in 3.13 and 3.10, and
+# this package supports 3.9. `Path.open` has always taken it. CI found this:
+# every job except ubuntu/3.13 failed on a TypeError, which is the version
+# matrix earning its keep.
+def _read_exact(path) -> str:
+    """File contents with no line-ending translation."""
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        return fh.read()
+
+
+def _write_exact(path, text: str) -> None:
+    """Write with no line-ending translation, so LF stays LF on Windows."""
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
 def stylesheet(name: str) -> str:
-    text = (WEB / name).read_text(encoding="utf-8", newline="")
+    text = _read_exact(WEB / name)
     if name == "fonts.css":
         # Root-absolute -> relative, so it resolves under /webui/ too.
         text = text.replace("url('/fonts/", "url('fonts/")

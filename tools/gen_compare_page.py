@@ -56,6 +56,22 @@ SUBJECTS = {
 }
 
 
+# `Path.read_text`/`write_text` only learned `newline=` in 3.13 and 3.10, and
+# this package supports 3.9. `Path.open` has always taken it. CI found this:
+# every job except ubuntu/3.13 failed on a TypeError, which is the version
+# matrix earning its keep.
+def _read_exact(path) -> str:
+    """File contents with no line-ending translation."""
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        return fh.read()
+
+
+def _write_exact(path, text: str) -> None:
+    """Write with no line-ending translation, so LF stays LF on Windows."""
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
 def kb(n: int) -> str:
     if n >= 1024 * 1024:
         return f"{n / (1024 * 1024):.1f} MB"
@@ -302,7 +318,7 @@ def main(argv=None) -> int:
         return 1
 
     fresh = render(data)
-    raw = OUTPUT.read_text(encoding="utf-8", newline="") if OUTPUT.is_file() else None
+    raw = _read_exact(OUTPUT) if OUTPUT.is_file() else None
     existing = raw.replace("\r\n", "\n") if raw is not None else None
 
     if args.check:
@@ -317,7 +333,7 @@ def main(argv=None) -> int:
     if existing == fresh:
         print(f"{OUTPUT.relative_to(ROOT).as_posix()} already current")
         return 0
-    OUTPUT.write_text(fresh, encoding="utf-8", newline="")
+    _write_exact(OUTPUT, fresh)
     print(f"wrote {OUTPUT.relative_to(ROOT).as_posix()}")
     return 0
 

@@ -21,6 +21,7 @@ import contextlib
 import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -41,7 +42,11 @@ def _vectors(n_jpeg=2, n_webp=1, n_avif=1):
 
 class CorpusGuard(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(self.enterContext(__import__("tempfile").TemporaryDirectory()))
+        # addCleanup rather than enterContext: the latter arrived in 3.11 and
+        # this package supports 3.9, which the version matrix caught.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
         self.vectors_path = self.tmp / "vectors.json"
         # The module resolves the path at import time; point it at a temp file.
         self._real = check_ss2_corpus.VECTORS

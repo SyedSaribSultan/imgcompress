@@ -40,7 +40,15 @@ DESKTOP_HTML = ROOT / "imgcompress" / "webui" / "app.html"
 
 
 def _read(path: Path) -> str:
-    return path.read_text(encoding="utf-8", newline="")
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        return fh.read()
+
+
+def _write(path: Path, text: str) -> None:
+    """No line-ending translation, so an LF file stays LF on Windows. `newline=`
+    on Path.write_text is 3.10+, and this package supports 3.9."""
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
 
 
 class TheGeneratedFileIsCurrent(unittest.TestCase):
@@ -163,7 +171,7 @@ class TheGeneratorItself(unittest.TestCase):
                                     encoding="utf-8", newline="")
             self.assertEqual(gen_destinations.main(["--check"]), 1)
         finally:
-            GENERATED_JS.write_text(original, encoding="utf-8", newline="")
+            _write(GENERATED_JS, original)
         self.assertEqual(gen_destinations.main(["--check"]), 0,
                          "the file was not restored")
 
@@ -173,7 +181,7 @@ class TheGeneratorItself(unittest.TestCase):
             GENERATED_JS.unlink()
             self.assertEqual(gen_destinations.main(["--check"]), 1)
         finally:
-            GENERATED_JS.write_text(original, encoding="utf-8", newline="")
+            _write(GENERATED_JS, original)
 
     def test_a_crlf_checkout_is_not_mistaken_for_staleness(self):
         """This repo is developed with core.autocrlf=true, so a fresh Windows
@@ -187,7 +195,7 @@ class TheGeneratorItself(unittest.TestCase):
             self.assertEqual(gen_destinations.main(["--check"]), 0,
                              "a CRLF working copy was reported as out of date")
         finally:
-            GENERATED_JS.write_text(original, encoding="utf-8", newline="")
+            _write(GENERATED_JS, original)
 
     def test_line_endings_are_pinned_in_gitattributes(self):
         """The other half of the fix: checkout should not vary in the first

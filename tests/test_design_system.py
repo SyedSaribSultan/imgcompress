@@ -33,7 +33,8 @@ DESKTOP = WEBUI / "app.html"
 
 
 def _read(path: Path) -> str:
-    return path.read_text(encoding="utf-8", newline="")
+    with path.open("r", encoding="utf-8", newline="") as fh:
+        return fh.read()
 
 
 def _desktop_css() -> str:
