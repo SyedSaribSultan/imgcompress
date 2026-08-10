@@ -139,7 +139,11 @@ const tokenWeights = new Map(
   [...tokens.matchAll(/^\s*(--oz-(?:weight|default-weight)-[a-z]+)\s*:\s*(\d+)/gm)]
     .map((m) => [m[1], Number(m[2])]));
 
-for (const [file, src] of [["app.css", appNoComments], ["index.html", html]]) {
+/* The desktop layer was missing from this loop, so its `font-weight: 700` on
+   the winning version's badge sat there passing. A ceiling checked in one of
+   two app layers is a ceiling with a hole in it. */
+for (const [file, src] of [["app.css", appNoComments], ["index.html", html],
+                           ["webui/app.html", desktopNoComments]]) {
   for (const m of src.matchAll(/font-weight\s*:\s*(\d{3})\b/g)) {
     if (Number(m[1]) > CEILING) { console.log(`  WEIGHT ${file}: literal ${m[1]} > ${CEILING}`); bad++; }
   }
