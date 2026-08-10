@@ -1089,6 +1089,18 @@ kbd {
   color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
   margin: var(--oz-space-4) 0 0; max-width: 60ch;
 }
+/* Where the saving actually came from, and the check on transparent edges.
+   Both are findings rather than readouts, so they read as sentences and sit
+   just under the verdict they qualify. The transparency one gets the success
+   colour because it is the only line on screen that reports a test the image
+   passed that nobody asked for. */
+.split-note, .alpha-note {
+  font-size: var(--oz-text-body-xs); line-height: var(--oz-leading-body-xs);
+  margin: var(--oz-space-3) 0 0; max-width: 60ch;
+  color: var(--oz-color-content-secondary);
+}
+.alpha-note { color: var(--oz-color-content-success); }
+#keep-size { margin-top: var(--oz-space-3); }
 .hint-inline {
   font-family: var(--oz-font-body); text-transform: none; letter-spacing: 0;
   font-weight: var(--oz-weight-regular); color: var(--oz-color-content-tertiary);
@@ -1447,6 +1459,77 @@ td.win::before {
   margin-right: var(--oz-space-2); vertical-align: 2px;
 }
 
+/* ======================= 8. THE COMPARISON PAGE ==========================
+   compare.html, generated from tests/benchmark.json. It reuses .learn, the
+   table rules above and the buttons, so the argument looks like the product
+   making it rather than like a separate document. Only what is genuinely new
+   to this page lives here. */
+/* Shared with the download page, which opens the same way. Both are standalone
+   pages rather than app screens, and a second display size for the same job
+   would make them read as two products. */
+.compare-page h1,
+.download-page h1 {
+  font-family: var(--oz-font-heading);
+  font-size: var(--oz-text-display-sm); line-height: var(--oz-leading-display-sm);
+  letter-spacing: var(--oz-tracking-display-sm);
+  font-weight: var(--oz-default-weight-heading);
+  margin: 0 0 var(--oz-space-6); max-width: 30ch;
+}
+/* The three numbers the page rests on. Auto-fit rather than a fixed count, so
+   a corpus change that adds a claim does not need a breakpoint. */
+.claims {
+  display: grid; gap: var(--oz-space-5); margin: var(--oz-space-11) 0;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.claim {
+  padding: var(--oz-space-6);
+  background: var(--oz-color-surface-secondary);
+  border-radius: var(--app-radius-lg);
+}
+.claim-n {
+  font-size: var(--oz-text-heading-xl); line-height: 1;
+  color: var(--oz-color-content-brand);
+  font-weight: var(--oz-weight-semibold); margin-bottom: var(--oz-space-4);
+}
+.claim p {
+  margin: 0; font-size: var(--oz-text-body-sm);
+  line-height: var(--oz-leading-body-sm); color: var(--oz-color-content-secondary);
+}
+.corpus-image { margin: var(--oz-space-13) 0; }
+.corpus-what {
+  max-width: 62ch; color: var(--oz-color-content-secondary);
+  margin: var(--oz-space-3) 0 0;
+}
+.corpus-meta {
+  color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
+  margin: var(--oz-space-2) 0 0;
+}
+/* The smallest file that actually cleared the standard. The only row on the
+   page that deserves emphasis, so it is the only one that gets it. */
+.compare-page tbody tr.best th,
+.compare-page tbody tr.best td {
+  color: var(--oz-color-content-primary); font-weight: var(--oz-weight-semibold);
+}
+.compare-page tbody tr.best { background-color: var(--oz-color-fill-brand-secondary); }
+/* A row that did not clear it. Dimmed rather than coloured red: it is not an
+   error, it is a setting somebody chose that did not do what they wanted. */
+.compare-page tbody tr.missed th,
+.compare-page tbody tr.missed td { color: var(--oz-color-content-tertiary); }
+.compare-page tbody tr.ours th { color: var(--oz-color-content-brand); }
+.compare-page .verdict-cell {
+  white-space: nowrap; font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+}
+.compare-page tbody tr.best .verdict-cell { color: var(--oz-color-content-success); }
+.repro {
+  background: var(--oz-color-surface-secondary);
+  border-radius: var(--app-radius-md);
+  padding: var(--oz-space-5); overflow-x: auto;
+  font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
+  line-height: var(--oz-leading-body-sm); color: var(--oz-color-content-secondary);
+}
+.cta-line { margin: var(--oz-space-13) 0 0; }
+
 .checks { padding-left: 0; margin: var(--oz-space-5) 0; list-style: none; display: grid; gap: var(--oz-space-3); }
 .checks li {
   color: var(--oz-color-content-secondary); padding-left: var(--oz-space-8); position: relative;
@@ -1575,6 +1658,129 @@ html.theming body, html.theming body * {
   input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }
   .row { padding: var(--oz-space-4) var(--oz-space-3); }
 }
+
+/* ======================== 9. THE DOWNLOAD PAGE ===========================
+   download.html. It reuses .learn, .checks, .code, .metric-note, the buttons,
+   the site chrome and the comparison page's display heading, so the page that
+   asks somebody to install this looks like the thing being installed rather
+   than a landing page bolted on beside it. Only what is new to it lives here.
+
+   The accent budget is why this block is as plain as it is. The page spends
+   brand orange twice: on the primary action that offers the browser version,
+   and on whichever build the visitor probably wants. Give the other two cards
+   an accent too and the guess stops being visible - which is the only thing
+   the guess is for. */
+
+/* Three builds, three equal cards. auto-fit rather than three named columns so
+   the grid folds to one column on a phone with no breakpoint of its own, and
+   `min(100%, 220px)` rather than a bare 220px because a fixed track floor is
+   exactly what makes a grid wider than the screen it is on. */
+.dl-grid {
+  display: grid; gap: var(--oz-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  margin: var(--oz-space-7) 0;
+}
+/* The whole card is the link, so the stroke is the control's boundary rather
+   than a separator.  job: affordance */
+.dl-card {
+  position: relative; min-width: 0;
+  display: grid; gap: var(--oz-space-1); align-content: start;
+  padding: var(--oz-space-6);
+  border: var(--oz-stroke-2) solid var(--oz-color-border-primary);
+  border-radius: var(--app-radius-lg);
+  background: var(--oz-color-surface-primary);
+  text-decoration: none;
+  transition-property: background-color, border-color, transform;
+  transition-duration: var(--oz-spring-effects-fast-ms);
+  transition-timing-function: var(--oz-spring-effects-fast);
+}
+.dl-card:hover {
+  background: var(--oz-color-surface-secondary);
+  border-color: var(--oz-color-border-primary-hover);
+}
+/* The same 1px dip as .btn:active, for the same reason: the press has to
+   register before the download does. */
+.dl-card:active { transform: translateY(1px); }
+.dl-os {
+  font-family: var(--oz-font-heading);
+  font-size: var(--oz-text-body-lg); line-height: var(--oz-leading-heading-xs);
+  font-weight: var(--oz-weight-semibold);
+}
+.dl-arch { font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary); }
+.dl-go {
+  margin-top: var(--oz-space-4);
+  font-size: var(--oz-text-body-sm); font-weight: var(--oz-weight-medium);
+}
+/* The guess. Selected-ness is a state, so the stroke may carry it, and the
+   ground is the brand *surface* step rather than a brand fill - a card is a
+   surface, and `fill-*` is for controls. It is deliberately the tint and not
+   the brand itself: this card is still one of three choices and it might be the
+   wrong one, which is also why the label says "probably".
+
+   `.row[aria-selected="true"]` refuses a brand tint on purpose, because at 15%
+   over a white page it renders pink and reads destructive rather than selected.
+   Taken and answered rather than missed: there the tint had to carry "selected"
+   on its own, here a brand stroke and a brand label already say which card this
+   is, so the ground only has to agree with them. */
+.dl-card.likely {
+  border-color: var(--oz-color-border-brand);
+  background: var(--oz-color-surface-brand);
+}
+/* Out of the flow. Reserved space would leave a hole in the two cards that
+   never get the label, and revealing it inside the third would push that
+   card's platform name out of line with its neighbours'. */
+.dl-you {
+  position: absolute; top: var(--oz-space-4); right: var(--oz-space-5);
+  color: var(--oz-color-content-brand);
+}
+
+/* An unsigned build means the operating system will interrupt somebody who
+   trusted this page, so this line sits at the buttons rather than only in the
+   section that explains it - which is not where a person who has already
+   clicked will be. Warning colour, because that is what it is.
+
+   Scoped to the page rather than written as a bare class: `.learn p` is a class
+   and a type, so it outranks a lone class, and the first version of this line
+   came out the same grey as the prose around it - the one thing it must not
+   be. */
+.download-page .dl-heads-up {
+  color: var(--oz-color-content-warning);
+  font-size: var(--oz-text-body-sm); max-width: 62ch;
+}
+.dl-heads-up a { color: inherit; text-decoration-color: currentColor; }
+
+/* The browser version, given its own ground instead of a line of prose. For
+   most people it is the right answer, and it has to reach somebody who came
+   here to download something and stopped reading at the buttons. */
+.dl-alt {
+  display: grid; gap: var(--oz-space-5); justify-items: start;
+  margin: var(--oz-space-11) 0; padding: var(--oz-space-7);
+  background: var(--oz-color-surface-secondary);
+  border-radius: var(--app-radius-lg);
+}
+.dl-alt p {
+  margin: 0; max-width: 54ch;
+  font-size: var(--oz-text-body-md); color: var(--oz-color-content-primary);
+}
+/* The one button in this product whose label is a sentence. .btn is nowrap
+   because a wrapped control breaks a toolbar row, but here the label IS the
+   offer and it is 46 characters long: held on one line it overhung a 375px
+   phone by more than a finger's width. */
+.dl-alt .btn {
+  white-space: normal; text-align: center;
+  padding-top: var(--oz-space-3); padding-bottom: var(--oz-space-3);
+}
+
+/* The per-platform steps sit inside .learn's <details>, whose paragraphs carry
+   the drawer's own padding; the list has to answer to the same edges or the
+   steps stand outside the prose they belong to. */
+.dl-steps {
+  margin: 0;
+  padding: 0 var(--oz-space-5) var(--oz-space-5) var(--oz-space-11);
+  color: var(--oz-color-content-secondary);
+  font-size: var(--oz-text-body-sm); line-height: var(--oz-leading-body-md);
+}
+.dl-steps li + li { margin-top: var(--oz-space-2); }
 
 /* No blanket motion reset here: the token layer's reduced-motion block already
    collapses spatial travel, repoints spatial springs and stops ambient loops,

@@ -308,6 +308,12 @@ function effectiveSettings(item) {
   if (item.override) {
     if (item.override.formats) { s.formats = item.override.formats; s.target = "web"; }
     if (item.override.qualityTarget != null) s.qualityTarget = item.override.qualityTarget;
+    /* A per-image frame size. The override carried format and quality but not
+       this, so "redo at the original size" had nothing to ask for - and any
+       future per-image size control would have hit the same wall. All three of
+       a destination's numbers can now be overridden for one image, which is
+       the shape the override always implied. */
+    if (item.override.maxDimension != null) s.maxDimension = item.override.maxDimension;
   }
   return s;
 }
@@ -1333,6 +1339,53 @@ function renderInspector(it) {
   const vtext = ready ? verdictFor(it) : "";
   verdict.hidden = !vtext;
   verdict.innerHTML = vtext;
+
+  /* ---- 5.1: resizing and compressing, said apart ------------------------
+     When an image is resized, part of the saving came from throwing pixels
+     away rather than from compression - and the visual match sitting beside
+     the total only ever measured the compression, never the resize. Rolling
+     them into one percentage lets a big number stand on work the score did
+     not check.
+
+     The resize's share is stated in pixels, not in bytes. A byte figure for
+     "what this would have weighed at full size" cannot be had without
+     encoding it at full size too, and estimating one from the pixel ratio
+     would be exactly the guess this project refuses to make elsewhere. So the
+     honest split is: this many pixels went, and compression did the rest -
+     with the button beside it to go and find out for real. */
+  const shrank = ready && it.outW && it.outH && it.width && it.outW !== it.width;
+  const split = $("s-split");
+  const keep = $("keep-size");
+  if (shrank) {
+    const pixelsGone = 1 - (it.outW * it.outH) / (it.width * it.height);
+    split.innerHTML =
+      `Two things made this smaller. The frame went from `
+      + `<b>${it.width}×${it.height}</b> to <b>${it.outW}×${it.outH}</b>, which is `
+      + `<b>${Math.round(pixelsGone * 100)}% fewer pixels</b> — compression did the `
+      + `rest. The visual match above is about the compression only; it compares `
+      + `this result against your image <i>at the new size</i>.`;
+    split.hidden = false;
+    keep.hidden = false;
+    keep.textContent = `Redo at ${it.width}×${it.height}`;
+  } else {
+    split.hidden = true;
+    keep.hidden = true;
+    if (ready && !it.passthrough) {
+      split.innerHTML = "";
+    }
+  }
+
+  /* ---- 5.3: the check that no other compressor seems to do -------------- */
+  const alphaNote = $("s-alpha");
+  const dualBackdrop = ready && it.alpha === true && !it.passthrough
+    && (it.lossless || (it.score != null && it.score >= Number(floor)));
+  alphaNote.hidden = !dualBackdrop;
+  if (dualBackdrop) {
+    alphaNote.innerHTML =
+      `This image has transparent areas, so it was compared over a <b>dark and a `
+      + `light background</b> and the worse of the two had to pass. A halo you `
+      + `cannot see on white is still a defect.`;
+  }
 
   const note = $("s-note");
   note.hidden = !it.note; note.textContent = it.note || "";
@@ -2411,6 +2464,17 @@ function bind() {
     if (format) override.formats = [format];
     if (quality !== "") override.qualityTarget = Number(quality);
     it.override = Object.keys(override).length ? override : null;
+    requeue([it.id]);
+  });
+  /* 5.1's other half. Saying "82% of the saving was the resize" is only useful
+     if you can go and see the difference, so the sentence ends in the action.
+     `maxDimension: 0` means never resize - the destination's own cap included,
+     because this is an explicit per-image instruction. */
+  $("keep-size").addEventListener("click", () => {
+    const it = state.byId.get(selected);
+    if (!it) return;
+    it.override = { ...(it.override || {}), maxDimension: 0 };
+    toast(`Redoing ${it.name} at ${it.width}×${it.height}`);
     requeue([it.id]);
   });
   $("ov-reset").addEventListener("click", () => {

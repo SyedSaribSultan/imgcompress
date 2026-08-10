@@ -52,7 +52,7 @@
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript and a modern browser",
-      "softwareVersion": "2.6.0",
+      "softwareVersion": "2.7.0",
       "license": "https://github.com/SyedSaribSultan/imgcompress/blob/main/LICENSE",
       "sameAs": ["https://github.com/SyedSaribSultan/imgcompress"],
       "author": { "@type": "Organization", "name": "HeyOz" },
@@ -125,6 +125,8 @@
               aria-label="More links">⋯</button>
       <nav class="menu" id="more-menu" aria-label="Site" hidden>
         <a href="#learn">How it works</a>
+        <a href="/compare.html">How it compares</a>
+        <a href="/download.html">Download the app</a>
         <a href="#desktop">Desktop app</a>
         <a href="#faq">FAQ</a>
         <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub ↗</a>
@@ -337,7 +339,9 @@
           <div id="inspector-body">
 
             <section class="panel-sec" id="sec-versions">
-              <h4 class="micro">Every version that was tried</h4>
+              <h4 class="micro">Every version that was tried
+                <span class="hint-inline">tap one — it is already made, so it
+                  appears instantly</span></h4>
               <!-- One home for the chips. They were the discoverable format
                    control when they sat under the picture; here they are the
                    evidence, which is what the panel is for. Tapping one still
@@ -355,6 +359,16 @@
                 </div>
               </div>
               <p class="verdict" id="s-verdict" hidden></p>
+              <!-- 5.1. Resizing and compressing are different things, and
+                   adding their savings together hides which one did the work -
+                   while the visual match sits next to the total having measured
+                   only the compression. Said apart, with the way out beside
+                   it. -->
+              <p class="split-note" id="s-split" hidden></p>
+              <button class="btn sm" id="keep-size" hidden>Redo at the original size</button>
+              <!-- 5.3. The dual-backdrop check, which as far as we know no
+                   other compressor does. Only shown when it actually ran. -->
+              <p class="alpha-note" id="s-alpha" hidden></p>
               <div class="note" id="s-note" hidden></div>
               <div class="warn" id="s-warn" hidden></div>
               <div class="stats">
@@ -648,7 +662,7 @@ imgcompress photos/        # or the command line</code></pre>
   <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
   <!-- The one place the version is written. Exported reports read it from
        here, so a report can never claim a version the page is not. -->
-  <span class="num" id="app-version">v2.6.0</span>
+  <span class="num" id="app-version">v2.7.0</span>
   <span>by HeyOz</span>
   <!-- Lifetime totals live here, labelled, so they cannot be mistaken for the
        current batch's numbers in the results bar. -->

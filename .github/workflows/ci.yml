@@ -113,6 +113,9 @@ jobs:
       # people edit is in web/, the copy is committed so a pip install needs no
       # build, and a stale copy is a red build rather than two visual identities.
       - run: python tools/sync_webui_assets.py --check
+      # The comparison page. Generated from tests/benchmark.json so the page
+      # cannot claim one thing while the measurement says another.
+      - run: python tools/gen_compare_page.py --check
 
   lint:
     runs-on: ubuntu-latest
