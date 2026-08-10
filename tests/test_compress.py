@@ -8,11 +8,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 
 from imgcompress import Settings, compress_file, compress_tree  # noqa: E402
 from imgcompress import destinations as dest  # noqa: E402
 from imgcompress import encoders as enc  # noqa: E402
+from imgcompress.core import frame_for  # noqa: E402
 from imgcompress.quality import (  # noqa: E402
     HAVE_SSIMULACRA2,
     flatten,
@@ -26,6 +28,26 @@ warnings.simplefilter("ignore", UserWarning)
 # Keep the suite quick: SSIM is the fast metric and its behaviour is what most
 # of these assertions are about. The SSIMULACRA2 path gets its own test.
 FAST = {"metric": "ssim", "quality_target": 0.95, "zopfli": False, "fast": True}
+
+
+def photo_sample(size=(480, 360)) -> Image.Image:
+    """Smooth gradients plus grain - an image lossy formats beat lossless on.
+
+    The size-cap tests need this rather than `sample()`. Flat vector art
+    compresses losslessly to a perfect score, so there is no quality headroom
+    above the floor for a cap to trade against and "a looser cap buys better
+    quality" cannot be observed at all. Grain is what makes lossless expensive.
+    """
+    W, H = size
+    rng = np.random.default_rng(11)
+    yy, xx = np.mgrid[0:H, 0:W]
+    base = np.stack([
+        90 + 120 * (xx / W) + 30 * np.sin(yy / 18.0),
+        70 + 130 * (yy / H) + 30 * np.cos(xx / 23.0),
+        140 + 90 * ((xx + yy) / (W + H)) + 25 * np.sin((xx + yy) / 15.0),
+    ], -1)
+    return Image.fromarray(
+        (base + rng.normal(0, 6, (H, W, 3))).clip(0, 255).astype("uint8"))
 
 
 def sample(size=(600, 420), alpha=False) -> Image.Image:
@@ -394,6 +416,132 @@ class CompressTests(unittest.TestCase):
         self.assertEqual(res.fmt, "png")          # the one that actually passed
         self.assertGreaterEqual(res.score, 0.999)
         self.assertEqual(res.warnings, [])
+
+
+class DimensionModeTests(unittest.TestCase):
+    """`max_dimension` governs one edge, and which one is now a setting."""
+
+    def test_longest_is_the_old_behaviour(self):
+        self.assertEqual(frame_for((3500, 4500), "longest", 2560), (1991, 2560))
+        self.assertEqual(frame_for((4500, 3500), "longest", 2560), (2560, 1991))
+
+    def test_width_pins_the_width_whatever_the_orientation(self):
+        self.assertEqual(frame_for((3500, 4500), "width", 1600)[0], 1600)
+        self.assertEqual(frame_for((4500, 3500), "width", 1600)[0], 1600)
+
+    def test_height_pins_the_height_whatever_the_orientation(self):
+        self.assertEqual(frame_for((3500, 4500), "height", 1000)[1], 1000)
+        self.assertEqual(frame_for((4500, 3500), "height", 1000)[1], 1000)
+
+    def test_none_never_resizes(self):
+        self.assertIsNone(frame_for((3500, 4500), "none", 2560))
+
+    def test_never_enlarges(self):
+        """A pin is a ceiling, not a size. Enlarging spends bytes on blur."""
+        for mode in ("longest", "width", "height"):
+            self.assertIsNone(frame_for((320, 205), mode, 1600), mode)
+
+    def test_hard_cap_applies_to_the_long_edge_under_every_mode(self):
+        """`documents` clamps at 4096 because design tools rescale above it
+        destructively. That is a fact about the long edge, so pinning the width
+        must not be a way around it."""
+        cap = dest.get("documents").hard_cap
+        for mode, limit in (("longest", 0), ("width", 8000), ("height", 8000), ("none", 0)):
+            frame = frame_for((9000, 6000), mode, limit, cap)
+            self.assertEqual(max(frame), cap, mode)
+
+    def test_engine_honours_the_mode_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = Path(tmp) / "in", Path(tmp) / "out"
+            src.mkdir()
+            path = src / "wide.png"
+            sample((1200, 800)).save(path)
+            res = compress_file(path, dst, Settings(
+                dimension_mode="width", max_dimension=500, **FAST))
+            self.assertEqual(res.resized_to[0], 500)
+
+
+class SizeCapTests(unittest.TestCase):
+    """`size_target` inverts the search: best quality that fits, not smallest."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        self.src, self.dst = root / "in", root / "out"
+        self.src.mkdir()
+        self.path = self.src / "photo.png"
+        photo_sample().save(self.path)
+        self.floor = dict(metric="ssim", zopfli=False, fast=True,
+                          dimension_mode="none", max_dimension=0)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run(self, **over):
+        return compress_file(self.path, self.dst, Settings(**{**self.floor, **over}))
+
+    def test_result_stays_under_a_reachable_cap(self):
+        baseline = self._run(quality_target=0.95)
+        cap = int(baseline.new_bytes * 1.8)
+        res = self._run(quality_target=0.80, size_target=cap)
+        self.assertLessEqual(res.new_bytes, cap)
+        self.assertFalse(res.missed_size)
+        self.assertEqual(res.size_target, cap)
+
+    def test_spare_room_under_the_cap_is_spent_on_quality(self):
+        """The point of the mode. A generous cap must not just reproduce the
+        floor search's answer - it has to buy something with the headroom."""
+        baseline = self._run(quality_target=0.95)
+        res = self._run(quality_target=0.80, size_target=int(baseline.new_bytes * 1.8))
+        self.assertGreater(res.score, baseline.score)
+
+    def test_a_tighter_cap_costs_quality(self):
+        baseline = self._run(quality_target=0.95)
+        loose = self._run(quality_target=0.5, size_target=int(baseline.new_bytes * 1.8))
+        tight = self._run(quality_target=0.5, size_target=int(baseline.new_bytes * 0.6))
+        self.assertFalse(tight.missed_size)       # else the comparison is vacuous
+        self.assertLessEqual(tight.new_bytes, int(baseline.new_bytes * 0.6))
+        self.assertLess(tight.score, loose.score)
+
+    def test_unreachable_cap_is_missed_out_loud_not_met_by_wrecking_the_image(self):
+        """The one failure state the app has. It ships the smallest file still
+        worth looking at - over the cap - rather than something that fits and
+        looks broken, and it says so."""
+        res = self._run(quality_target=0.95, size_target=800)
+        self.assertTrue(res.missed_size)
+        self.assertGreater(res.new_bytes, 800)
+        self.assertGreaterEqual(res.score, 0.95)      # never went below the floor
+        self.assertTrue(any("could not fit" in w for w in res.warnings))
+
+    def test_the_miss_hands_back_exactly_the_ordinary_search(self):
+        """A missed cap produces the same file the floor search would have, and
+        the same list of versions tried.
+
+        The capped pass's own attempts are dropped rather than listed beside the
+        winner. Every one of them fitted the cap and none of them cleared the
+        floor, so leaving them in the list reads as though the cap had been met
+        after all. Note this is not "only passing candidates are listed" - the
+        ordinary search shows what it tried whether it passed or not, and that
+        is the point of the panel.
+        """
+        missed = self._run(quality_target=0.95, size_target=800)
+        plain = self._run(quality_target=0.95)
+        self.assertTrue(missed.missed_size)
+        self.assertEqual(missed.new_bytes, plain.new_bytes)
+        self.assertEqual(missed.fmt, plain.fmt)
+        self.assertEqual([c[0] for c in missed.candidates],
+                         [c[0] for c in plain.candidates])
+        self.assertFalse([c for c in missed.candidates if c[1] <= 800],
+                         "a candidate that fitted the cap leaked out of the failed pass")
+
+    def test_no_cap_leaves_the_default_search_exactly_as_it_was(self):
+        with_flag = self._run(quality_target=0.95, size_target=0)
+        without = compress_file(self.path, self.dst, Settings(
+            metric="ssim", quality_target=0.95, zopfli=False, fast=True,
+            dimension_mode="none", max_dimension=0))
+        self.assertEqual(with_flag.new_bytes, without.new_bytes)
+        self.assertEqual(with_flag.fmt, without.fmt)
+        self.assertFalse(with_flag.missed_size)
 
     def test_never_grows_across_containers_either(self):
         """A tiny GIF whose candidates all come out bigger must pass through

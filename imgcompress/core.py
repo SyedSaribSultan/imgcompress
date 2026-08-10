@@ -46,13 +46,39 @@ class Settings:
     formats are allowed and whether a dimension cap is enforced."""
 
     max_dimension: int = 2560
-    """Longest edge in pixels. 0 disables resizing."""
+    """The edge `dimension_mode` governs, in pixels. 0 disables resizing."""
+
+    dimension_mode: str = "longest"
+    """Which edge `max_dimension` caps: longest | width | height | none.
+
+    Only ever downscales. An image already inside the limit is left as it is
+    rather than enlarged: a larger frame cannot add detail, so enlarging inside
+    a compressor produces a blurrier file that is also a bigger one, which is
+    the opposite of the job. A batch pinned to `width` therefore comes out at
+    that width or narrower, never wider.
+    """
 
     metric: str = ""
     """ssimulacra2 (default when installed) or ssim."""
 
     quality_target: float | None = None
-    """Perceptual floor. Defaults to 90 for SSIMULACRA2, 0.97 for SSIM."""
+    """The floor the result may not fall below. Defaults to 90 for
+    SSIMULACRA2, 0.97 for SSIM.
+
+    It means the same thing in both searches, which is why there is only one of
+    it: with no size cap it is what the search descends to, and under a size cap
+    it is the point past which shrinking further is not worth doing.
+    """
+
+    size_target: int = 0
+    """Byte ceiling. 0 runs the default search - the smallest file that still
+    clears `quality_target`. Non-zero inverts it: the highest quality that fits
+    under this many bytes.
+
+    The two are one search read in opposite directions, and exactly one of them
+    runs at a time. Quality is the currency either way, which is why a cap can
+    be honoured at all: something has to give, and this is the thing that does.
+    """
 
     keep_metadata: bool = False
     zopfli: bool = True
@@ -86,6 +112,16 @@ class CompressionResult:
     error: str = ""
     warnings: list[str] = field(default_factory=list)
 
+    size_target: int = 0
+    """The byte ceiling this run was given, if any. Carried so the caller can
+    say what was asked for without having to hold the settings alongside."""
+
+    missed_size: bool = False
+    """A size cap was set and could not be met without going below the quality
+    floor. `new_bytes` is then the smallest file that was still worth shipping,
+    and it is over the cap - deliberately, and said out loud, rather than a
+    wrecked image that happens to fit."""
+
     @property
     def saved_bytes(self) -> int:
         return max(self.original_bytes - self.new_bytes, 0)
@@ -112,6 +148,42 @@ def _is_animated(img: Image.Image) -> bool:
     return getattr(img, "n_frames", 1) > 1
 
 
+DIMENSION_MODES = ("longest", "width", "height", "none")
+
+
+def frame_for(size: tuple, mode: str, limit: int, hard_cap: int = 0) -> tuple | None:
+    """The frame this image will be drawn into, or None to leave it alone.
+
+    `mode` decides which edge `limit` governs. `hard_cap` is a destination's own
+    ceiling and always applies to the longest edge whatever the mode is - design
+    tools rescale above it destructively on import, and that is true of the long
+    edge regardless of which edge the caller chose to pin.
+
+    Never enlarges. Every mode returns None for an image already inside its
+    limit, so a folder pinned to a width comes out at that width or narrower and
+    a small source is left alone. Enlarging would cost bytes to add blur.
+    """
+    width, height = size
+    scale = 1.0
+
+    if limit and mode != "none":
+        if mode == "width":
+            edge = width
+        elif mode == "height":
+            edge = height
+        else:
+            edge = max(width, height)
+        if edge > limit:
+            scale = limit / float(edge)
+
+    if hard_cap and max(width, height) * scale > hard_cap:
+        scale = hard_cap / float(max(width, height))
+
+    if scale >= 1.0:
+        return None
+    return (max(1, round(width * scale)), max(1, round(height * scale)))
+
+
 def _normalise(img: Image.Image, settings: Settings) -> tuple:
     img = ImageOps.exif_transpose(img)
 
@@ -124,15 +196,16 @@ def _normalise(img: Image.Image, settings: Settings) -> tuple:
 
     # Some destinations enforce a ceiling regardless of what was asked for -
     # design tools rescale above 4096px themselves, destructively, so the
-    # choice is between our Lanczos and theirs. The rule lives in one place so
-    # that what the CLI prints and what the engine does cannot disagree.
-    limit = dest.effective_limit(settings.target, settings.max_dimension)
+    # choice is between our Lanczos and theirs. The clamp is handed to
+    # `frame_for` rather than folded into the limit, because a ceiling on the
+    # long edge and a pin on the width are not the same number and collapsing
+    # them was only ever safe while `longest` was the only mode.
+    cap = dest.get(settings.target).hard_cap if dest.exists(settings.target) else 0
+    frame = frame_for(img.size, settings.dimension_mode, settings.max_dimension, cap)
 
-    if limit and max(img.size) > limit:
-        scale = limit / float(max(img.size))
-        new_size = (max(1, round(img.width * scale)), max(1, round(img.height * scale)))
-        img = img.resize(new_size, Image.LANCZOS)
-        resized_to = new_size
+    if frame:
+        img = img.resize(frame, Image.LANCZOS)
+        resized_to = frame
 
     if not settings.keep_metadata:
         # Rebuild from raw pixels: fast C path, leaves EXIF/XMP/ICC behind.
@@ -192,6 +265,65 @@ def _search_one(
     return data, levels[chosen], score
 
 
+def _search_under_size(
+    img: Image.Image,
+    encoder: enc.Encoder,
+    metric: Metric,
+    cap: int,
+    fast: bool,
+) -> tuple | None:
+    """Highest level of `encoder` that still fits in `cap` bytes.
+
+    The mirror image of `_search_one`: same ladder, same bisection, opposite
+    question. Size rises with quality just as score does, so a rung that
+    overshoots the cap proves every rung above it would too, and the search is
+    the same shape.
+
+    Returns None when even the lowest rung overshoots - this format cannot hold
+    this image that small, and the caller should try another one.
+    """
+    levels = encoder.levels
+
+    if encoder.lossless or len(levels) == 1:
+        data = encoder.encode(img, levels[-1], fast=fast)
+        if len(data) > cap:
+            return None
+        return data, None, metric.perfect
+
+    chosen = None
+    lo, hi = 0, len(levels) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if len(encoder.encode(img, levels[mid], fast=True)) <= cap:
+            chosen, lo = mid, mid + 1
+        else:
+            hi = mid - 1
+
+    if chosen is None:
+        return None
+
+    data = encoder.encode(img, levels[chosen], fast=fast)
+
+    # Fast encodes run larger than full-effort ones - mozjpeg and zopfli only
+    # ever take bytes away - so the bisection above is conservative and may have
+    # rejected a rung that fits once those passes have run. One probe upward
+    # recovers the quality that would otherwise be left on the table.
+    if chosen < len(levels) - 1:
+        better = encoder.encode(img, levels[chosen + 1], fast=fast)
+        if len(better) <= cap:
+            chosen, data = chosen + 1, better
+
+    # Belt and braces. Shipping over a cap the person set is the one thing this
+    # search must never do, so the final bytes are measured rather than assumed.
+    while len(data) > cap and chosen > 0:
+        chosen -= 1
+        data = encoder.encode(img, levels[chosen], fast=fast)
+    if len(data) > cap:
+        return None
+
+    return data, levels[chosen], metric.score(img, _decode(data))
+
+
 def _candidate_names(settings: Settings, has_alpha: bool) -> list[str]:
     names = settings.formats or dest.formats_for(settings.target)
     # A destination names the formats it *wants*; this machine decides which of
@@ -201,6 +333,67 @@ def _candidate_names(settings: Settings, has_alpha: bool) -> list[str]:
     if has_alpha:
         names = [n for n in names if enc.ALL[n].supports_alpha]
     return names
+
+
+def _broken(result: CompressionResult, encoder: enc.Encoder, exc: Exception) -> None:
+    result.warnings.append(
+        f"{encoder.name} could not be written for this image, so it was "
+        f"left out of the comparison ({type(exc).__name__})")
+
+
+def _bake_off(img, encoders, metric, target, settings, result):
+    """Every candidate at the lowest quality that clears the floor. Smallest wins.
+
+    A candidate that failed the floor may only ship when *nothing* cleared it -
+    the old single-`best` bookkeeping let an early failing JPEG hold the spot
+    against a later, passing lossless PNG purely because it was smaller, which
+    is how a file below the promised floor once shipped without even a warning
+    that anything better existed.
+    """
+    best_passing = None
+    best_failing = None
+    for encoder in encoders:
+        try:
+            found = _search_one(img, encoder, metric, target, settings.fast)
+        except Exception as exc:  # a broken candidate must not kill the file
+            _broken(result, encoder, exc)
+            continue
+        if not found:
+            continue
+        data, level, score = found
+        result.candidates.append((encoder.name, len(data), score))
+        if score >= target:
+            if best_passing is None or len(data) < len(best_passing[0]):
+                best_passing = (data, level, score, encoder)
+        elif (best_failing is None or score > best_failing[2]
+              or (score == best_failing[2] and len(data) < len(best_failing[0]))):
+            best_failing = (data, level, score, encoder)
+    return best_passing or best_failing
+
+
+def _bake_off_under_size(img, encoders, metric, cap, floor, settings, result):
+    """Every candidate at the highest quality that fits the cap. Best-looking wins.
+
+    Note which way this reads: under a cap the winner is the one that looks
+    best, not the one that is smallest. Everything here already fits, so size
+    has stopped being the thing worth competing on.
+
+    Returns None when nothing fitted at a quality still worth shipping.
+    """
+    best = None
+    for encoder in encoders:
+        try:
+            found = _search_under_size(img, encoder, metric, cap, settings.fast)
+        except Exception as exc:
+            _broken(result, encoder, exc)
+            continue
+        if not found:
+            continue
+        data, level, score = found
+        result.candidates.append((encoder.name, len(data), score))
+        if score >= floor and (best is None or score > best[2]):
+            best = (data, level, score, encoder)
+    return best
 
 
 # --------------------------------------------------------------------------- #
@@ -255,34 +448,27 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
                         "Allow more formats, or choose a different destination.")
         return result
 
-    # The smallest candidate that clears the floor wins. A candidate that
-    # failed the floor may only ship when *nothing* cleared it - the old
-    # single-`best` bookkeeping let an early failing JPEG hold the spot against
-    # a later, passing lossless PNG purely because it was smaller, which is how
-    # a file below the promised floor once shipped without even a warning that
-    # anything better existed.
-    best_passing = None
-    best_failing = None
-    for encoder in enc.build(names, zopfli=settings.zopfli, background=settings.jpeg_background):
-        try:
-            found = _search_one(img, encoder, metric, target, settings.fast)
-        except Exception as exc:  # a broken candidate must not kill the file
-            result.warnings.append(
-                f"{encoder.name} could not be written for this image, so it was "
-                f"left out of the comparison ({type(exc).__name__})")
-            continue
-        if not found:
-            continue
-        data, level, score = found
-        result.candidates.append((encoder.name, len(data), score))
-        if score >= target:
-            if best_passing is None or len(data) < len(best_passing[0]):
-                best_passing = (data, level, score, encoder)
-        elif (best_failing is None or score > best_failing[2]
-              or (score == best_failing[2] and len(data) < len(best_failing[0]))):
-            best_failing = (data, level, score, encoder)
+    encoders = enc.build(names, zopfli=settings.zopfli, background=settings.jpeg_background)
+    result.size_target = settings.size_target
 
-    best = best_passing or best_failing
+    if settings.size_target:
+        best = _bake_off_under_size(
+            img, encoders, metric, settings.size_target, target, settings, result)
+        if best is None:
+            # Nothing fitted the cap at a quality still worth shipping, so fall
+            # back to the ordinary search and hand over the smallest file that
+            # is - over the cap, and said out loud. A wrecked image that happens
+            # to fit is not a result. This is the one path that pays for two
+            # bake-offs, and only ever when the cap was unreachable anyway.
+            #
+            # The capped attempt's candidates are dropped rather than listed
+            # beside the winner: every one of them is below the floor, and
+            # showing them reads as if they had been real options.
+            result.candidates.clear()
+            best = _bake_off(img, encoders, metric, target, settings, result)
+    else:
+        best = _bake_off(img, encoders, metric, target, settings, result)
+
     if best is None:
         result.error = ("None of the formats could be written for this image. "
                         "It may be damaged; try re-exporting it.")
@@ -309,6 +495,7 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
         result.skipped = True
         result.note = "already smaller than anything we could make - left as it is"
         result.fmt = encoder.name
+        _note_size_miss(result, settings, metric, target)
         return result
 
     result.data = data
@@ -319,7 +506,27 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
     result.fmt = encoder.name
     result.resized_from = original_size
     result.resized_to = resized_to
+    _note_size_miss(result, settings, metric, target)
     return result
+
+
+def _note_size_miss(result, settings: Settings, metric: Metric, floor: float) -> None:
+    """Record, and explain, a size cap that could not be met.
+
+    Read off the bytes that are actually being shipped rather than set where
+    the fallback was chosen, so the flag cannot claim a miss on a file that in
+    the end came in under the cap.
+    """
+    if not settings.size_target or result.new_bytes <= settings.size_target:
+        return
+    result.missed_size = True
+    label = "visual match" if metric.name == "ssimulacra2" else metric.name
+    over = result.new_bytes - settings.size_target
+    result.warnings.append(
+        f"could not fit {settings.size_target:,} bytes without dropping below a "
+        f"{label} of {floor:g}; this is {over:,} bytes over. Allow a lower "
+        f"{label}, or a smaller frame."
+    )
 
 
 def write_result(result: CompressionResult, destination_dir: Path) -> Path | None:
