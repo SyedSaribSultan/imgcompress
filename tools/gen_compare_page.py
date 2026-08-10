@@ -196,7 +196,7 @@ def render(data: dict) -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>How imgcompress compares &mdash; measured, at matched quality</title>
 <meta name="description" content="Every strategy searched for the smallest file that still looks close enough to the original, on the same six images. Including the one case where imgcompress loses.">
-<link rel="canonical" href="https://imgcompress-app.vercel.app/compare.html">
+<link rel="canonical" href="https://imgcompress-app.vercel.app/compare">
 <meta name="theme-color" content="#070605" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="color-scheme" content="dark light">

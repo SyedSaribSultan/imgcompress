@@ -1,8 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Extensionless URLs, because vercel.json sets cleanUrls: true and the .html
+     form 308-redirects to these. A sitemap that lists the redirecting form asks
+     every crawler to take two hops to reach one page. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://imgcompress-app.vercel.app/</loc>
-    <lastmod>2026-08-05</lastmod>
+    <lastmod>2026-08-10</lastmod>
     <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://imgcompress-app.vercel.app/compare</loc>
+    <lastmod>2026-08-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://imgcompress-app.vercel.app/download</loc>
+    <lastmod>2026-08-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>
