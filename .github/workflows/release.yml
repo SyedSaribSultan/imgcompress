@@ -357,7 +357,19 @@ jobs:
           [Run]
           Filename: "{app}\imgcompress-gui.exe"; Description: "Open Image Compressor"; Flags: nowait postinstall skipifsilent
           ISS
-          "$ISCC" \
+          # MSYS_NO_PATHCONV, or none of the /D options survive the trip.
+          #
+          # `shell: bash` on a Windows runner is Git Bash, and Git Bash rewrites
+          # any argument that looks like a POSIX path before handing it to a
+          # native .exe. `/DOutDir=...` looks exactly like one, so it arrived as
+          # `C:/Program Files/Git/DOutDir=...` - no longer an option, and now
+          # containing spaces. Inno Setup saw several filenames instead of one
+          # and said so: "You may not specify more than one script filename."
+          #
+          # Nothing about this is visible on a developer machine, because you
+          # cannot run ISCC without a Windows runner in the first place. It cost
+          # the first release build.
+          MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' "$ISCC" \
             "/DAppVersion=$IMGCOMPRESS_VERSION" \
             "/DOutDir=$(cygpath -w "$PWD/installer")" \
             "/DOutName=${ARTIFACT_NAME}-setup" \
