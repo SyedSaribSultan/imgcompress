@@ -289,9 +289,30 @@ function parseSize(text) {
   return value > 0 ? Math.round(value) : 0;
 }
 
+/* Paint each pick's chosen words into the span that gives it its width.
+
+   Without this every slot is as wide as its own longest option and the
+   sentence collapses into a column of boxes. The select stays where it is and
+   stays native - it is simply transparent, sitting over the words. */
+function fitPicks() {
+  for (const sel of document.querySelectorAll(".plan-pick > select")) {
+    let shadow = sel.parentNode.querySelector(".plan-shadow");
+    if (!shadow) {
+      shadow = document.createElement("span");
+      shadow.className = "plan-shadow";
+      // The select is the accessible control; this is paint, and announcing it
+      // would read every choice twice.
+      shadow.setAttribute("aria-hidden", "true");
+      sel.parentNode.insertBefore(shadow, sel);
+    }
+    shadow.textContent = sel.options[sel.selectedIndex]?.textContent ?? "";
+  }
+}
+
 /* Show or hide the parts of the sentence the current goal does not use, and
    keep the one hidden number the engine runs on in step with the words. */
 function reflectPlan() {
+  fitPicks();
   const capping = $("plan-goal").value === "cap";
   $("plan-cap").hidden = !capping;
   $("plan-join").textContent = capping
@@ -347,6 +368,9 @@ function reflectQualityHint() {
   // No floor number here. What it means is the line under the plan; what it
   // *is* is an implementation detail of the metric.
   custom.textContent = wordsForQuality(q);
+  // This just changed which words are selected, so the painted copy has to
+  // catch up or the sentence shows the previous choice.
+  fitPicks();
 }
 
 /* --------------------------- lifetime statistics -------------------------- */
@@ -917,9 +941,25 @@ function render() {
   }
   $("app-empty").hidden = state.items.length > 0;
   $("app-full").hidden = state.items.length === 0;
+  mountPlan();
   renderView();
   renderBatchProgress();
   renderTitle();
+}
+
+/* The plan is one element with two homes: under the hero while there is
+ * nothing to compare, and in the drawer once there is.
+ *
+ * Moved, never copied. A second copy would be a second set of controls holding
+ * a second set of values, and keeping them honest with each other is the class
+ * of bug this whole rebuild is about - the app must not be able to hold two
+ * answers to the same question. Moving a live node costs nothing and cannot
+ * drift, because there is only ever one of it.
+ */
+function mountPlan() {
+  const plan = $("bar-controls");
+  const home = $(state.items.length ? "plan-home-panel" : "plan-home-empty");
+  if (plan && home && plan.parentNode !== home) home.appendChild(plan);
 }
 
 /* --------------------------- which view is on ----------------------------
@@ -2109,6 +2149,7 @@ function onDestination() {
 }
 
 function onFormatPin() {
+  fitPicks();
   const one = $("plan-format").value;
   const n = alphaItemCount();
   if (!one || CARRIES_ALPHA[one] !== false || !n) { pushSettings(); return; }

@@ -647,57 +647,86 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    slots instead, which keeps each clause readable at any width. */
 .plan-txt { white-space: nowrap; }
 
+/* A <select> is as wide as its widest option. Left native, that turns this
+   sentence into a column of boxes - "indistinguishable" was being sized for
+   "indistinguishable unless you compare", and every clause got its own line.
+
+   So the chosen words are painted in a span that sets the width, and the real
+   select lies transparently on top of it. It is still a native select: the
+   keyboard, the screen reader and the phone's own picker all behave exactly as
+   they would have. Only the width comes from somewhere else. */
 .plan-pick { position: relative; display: inline-block; max-width: 100%; }
-/* On the wrapper, so the select itself can stay a plain inline box with no
-   appearance of its own to fight. */
+.plan-shadow,
+.plan-num {
+  display: inline-block;
+  font-weight: var(--oz-weight-semibold);
+  color: var(--oz-color-content-primary);
+  border-bottom: var(--oz-stroke-3) solid var(--oz-color-border-brand-secondary);
+  padding: 0 var(--oz-space-1) var(--oz-space-1);
+  white-space: nowrap;
+  transition: border-color var(--oz-duration-fast) var(--oz-ease-standard),
+              background var(--oz-duration-fast) var(--oz-ease-standard);
+}
+/* Room for the caret, which hangs off the end of the words rather than sitting
+   in a box with them. Sized to actually read as a caret: at 2.5px of border it
+   rendered as a stray middot, which looked like punctuation the sentence had
+   picked up rather than a control. */
+.plan-shadow { padding-right: var(--oz-space-6); }
 .plan-pick::after {
   content: ""; position: absolute; pointer-events: none;
-  right: var(--oz-space-3); top: 50%; margin-top: -1px;
+  right: var(--oz-space-2); top: 50%; margin-top: -2px;
   width: 0; height: 0;
   border-left: var(--oz-stroke-6) solid transparent;
   border-right: var(--oz-stroke-6) solid transparent;
   border-top: var(--oz-stroke-6) solid var(--oz-color-content-tertiary);
 }
-.plan-pick > select,
+.plan-pick:hover::after { border-top-color: var(--oz-color-border-brand); }
+.plan-pick > select {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  appearance: none; -webkit-appearance: none;
+  font: inherit; color: transparent; background: transparent; border: 0;
+  cursor: pointer;
+}
 .plan-num {
   appearance: none; -webkit-appearance: none;
-  font: inherit;
-  font-weight: var(--oz-weight-semibold);
-  color: var(--oz-color-content-primary);
-  background: var(--oz-color-fill-secondary);
-  border: 0;
-  border-bottom: var(--oz-stroke-4) solid var(--oz-color-border-brand-secondary);
-  border-radius: var(--oz-radius-3) var(--oz-radius-3) 0 0;
-  padding: var(--oz-space-1) var(--oz-space-3);
-  max-width: 100%;
-  cursor: pointer;
-  transition: background var(--oz-duration-fast) var(--oz-ease-standard),
-              border-color var(--oz-duration-fast) var(--oz-ease-standard);
-}
-.plan-pick > select { padding-right: var(--oz-space-9); }
-.plan-num {
+  background: transparent; border-top: 0; border-left: 0; border-right: 0;
   font-family: var(--oz-font-mono);
   font-size: var(--oz-text-body-sm);
-  text-align: right;
+  text-align: center;
   cursor: text;
-  width: 7ch;
+  width: 6ch;
 }
-#plan-cap { width: 8ch; }
-.plan-pick > select:hover,
+#plan-cap { width: 7ch; }
+.plan-pick:hover .plan-shadow,
 .plan-num:hover {
-  background: var(--oz-color-fill-secondary-hover);
+  background: var(--oz-color-fill-brand-secondary);
   border-bottom-color: var(--oz-color-border-brand);
 }
-.plan-pick > select:focus-visible,
+/* The ring goes on the painted words, because the select itself is invisible
+   and an outline on a transparent box lands in the wrong place. */
+.plan-pick:focus-within .plan-shadow,
 .plan-num:focus-visible {
   outline: var(--oz-focus-ring-width) solid var(--oz-color-border-focus);
   outline-offset: var(--oz-focus-ring-offset);
+  border-bottom-color: var(--oz-color-border-brand);
 }
 /* No spinner. The step is 64px and nobody nudges a pixel count one rung at a
    time; typing is the interaction, and the arrows only crowd the mono digits. */
 .plan-num { -moz-appearance: textfield; }
 .plan-num::-webkit-outer-spin-button,
 .plan-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Standing on its own under the hero rather than inside the drawer's column,
+   so it has to supply the width and the air the drawer was giving it. Set a
+   step larger here: on the landing screen this is the only thing on the page
+   making a promise, and it is competing with a 64px headline. */
+#plan-home-empty {
+  width: min(100%, 760px);
+  margin: var(--oz-space-12) auto 0;
+  text-align: left;
+}
+#plan-home-empty > #bar-controls { padding: 0; border: 0; }
+#plan-home-empty .plan { font-size: var(--oz-text-body-lg); }
 
 /* What the chosen floor means, in the metric's own published words. Sits
    under the sentence rather than beside a slider, because it explains the

@@ -176,6 +176,20 @@
           cookies, no tracking.
         </p>
       </div>
+
+      <!-- Where the plan sits before there is anything to compare. It is the
+           same element as the one in the drawer, moved rather than copied:
+           two of them would be two settings that could disagree, which is the
+           thing this rebuild exists to stop.
+
+           Nothing here is a step. A drop still goes straight through and the
+           work starts on the next frame, exactly as before - the sentence is
+           readable in advance for the person who already knows they need a
+           WebP under 200 KB, and ignorable by everyone else. Adjusting against
+           a visible result is still the better move when you have no
+           particular outcome in mind, which is why it also lives in the
+           drawer once a result exists. -->
+      <div id="plan-home-empty"></div>
     </div>
 
     <!-- A drop goes straight here. There is no step in between: the original is
@@ -408,6 +422,10 @@
                  is still on the page, but as a hidden input: it is a fact about
                  the machine, not a question for a person. The words above it
                  were always the real control. -->
+            <!-- app.js moves #bar-controls in here once a result exists, and
+                 back out to #plan-home-empty when the queue empties. -->
+            <div id="plan-home-panel"></div>
+
             <section class="panel-sec" id="bar-controls">
               <h4 class="micro">The plan <span class="hint-inline">for every image</span></h4>
 
@@ -417,8 +435,7 @@
                   <!-- Options filled by app.js from destinations.js, generated
                        from imgcompress/destinations.py. Destinations only now. -->
                   <select id="target" aria-label="Where these images are going"></select>
-                </span>
-                <span class="plan-txt">, make them</span>
+                </span><span class="plan-txt">, make them</span>
                 <span class="plan-pick">
                   <select id="plan-goal" aria-label="What to aim for">
                     <option value="small">as small as they go</option>
@@ -442,12 +459,10 @@
                     <option value="70">clean at thumbnail size</option>
                     <option value="custom" hidden>as close as you asked for</option>
                   </select>
-                </span>
-                <span class="plan-txt">, as</span>
+                </span><span class="plan-txt">, as</span>
                 <span class="plan-pick">
                   <select id="plan-format" aria-label="Which format to write"></select>
-                </span>
-                <span class="plan-txt">, at</span>
+                </span><span class="plan-txt">, at</span>
                 <input class="plan-num" id="maxdim" type="number" min="16" step="64"
                        value="2560" size="5" aria-label="Pixels">
                 <span class="plan-pick">
@@ -457,8 +472,7 @@
                     <option value="height">px tall</option>
                     <option value="none">whatever size they already are</option>
                   </select>
-                </span>
-                <span class="plan-txt">.</span>
+                </span><span class="plan-txt">.</span>
               </p>
 
               <!-- The floor the engine actually runs on. Driven entirely by the
