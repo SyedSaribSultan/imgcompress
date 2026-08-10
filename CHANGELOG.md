@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.7.0] - 2026-08-08
 
 ### Changed
 - **One design system, and the desktop app is inside it.** There were two

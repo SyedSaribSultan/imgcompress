@@ -416,5 +416,43 @@ class CompressTests(unittest.TestCase):
         self.assertEqual(res.output.suffix, ".jpg")
 
 
+class FrozenBundleSafety(unittest.TestCase):
+    """The pool must not be able to re-launch the application.
+
+    `compress_tree` uses a ProcessPoolExecutor. Under the spawn start method -
+    always on Windows, the default on macOS - each worker re-executes the
+    program to import the module it needs. Frozen, there is no python to
+    re-execute: the child runs the app's own executable again, starts a whole
+    new imgcompress, and opens a pool of its own. A folder of images becomes a
+    fork bomb.
+
+    It hid because `compress_tree` takes a single-process path when there is one
+    job, so every one-image smoke test passed. These two assertions are cheap
+    and they are the only thing standing between a build and that.
+    """
+
+    def test_freeze_support_is_called_at_import(self):
+        source = (Path(__file__).resolve().parent.parent
+                  / "imgcompress" / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("freeze_support()", source,
+                      "multiprocessing.freeze_support() is gone from the package "
+                      "__init__; a frozen build will fork-bomb on a folder")
+
+    def test_a_real_pool_still_runs_more_than_one_job(self):
+        """The path the guard protects has to keep working, or the guard is
+        protecting nothing."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        src = root / "many"
+        src.mkdir()
+        for i in range(3):
+            sample((240, 200)).save(src / f"a{i}.png")
+        results = compress_tree(src, root / "out", Settings(**FAST), workers=3)
+        self.assertEqual(len(results), 3)
+        self.assertTrue(all(r.error == "" for r in results),
+                        [r.error for r in results])
+
+
 if __name__ == "__main__":
     unittest.main()

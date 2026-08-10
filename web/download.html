@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Get imgcompress — on your machine, or in your browser</title>
+<meta name="description" content="Images 70–90% smaller with no visible quality loss. Desktop builds for Windows and both kinds of Mac, a pip install for everything else, or run the whole thing in a browser tab — nothing is uploaded.">
+<link rel="canonical" href="https://imgcompress-app.vercel.app/download.html">
+<!-- Literal by necessity: a meta content attribute cannot read a CSS variable.
+     These two are color/background from the token layer, dark and light. -->
+<meta name="theme-color" content="#070605" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="imgcompress">
+<meta property="og:url" content="https://imgcompress-app.vercel.app/download.html">
+<meta property="og:title" content="Get imgcompress — on your machine, or in your browser">
+<meta property="og:description" content="70–90% smaller, with no visible quality loss. Desktop builds for Windows and both kinds of Mac, or run it in a browser tab — nothing is uploaded.">
+<meta property="og:image" content="https://imgcompress-app.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://imgcompress-app.vercel.app/og.png">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/heyoz-tokens.css">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/app.css">
+<!-- The theme, before first paint, so somebody who chose light does not get a
+     dark flash on the way in. Byte-for-byte the script index.html and
+     compare.html carry: the site's CSP allows exactly one inline script, by
+     hash, so a variation of it would be refused outright. -->
+<script>try{var t=localStorage.getItem("imgc-theme");if(!t||t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=t}catch(e){}</script>
+<!-- The platform highlight, and the only other script on the page. External
+     for that same one-hash CSP, and deferred because the page is finished
+     without it. -->
+<script src="/download.js" defer></script>
+</head>
+<body>
+
+<header class="site-head">
+  <a class="brand" href="/" aria-label="imgcompress home">
+    <svg width="20" height="20" viewBox="0 0 17 17" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="var(--oz-color-border-secondary)"/>
+      <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="var(--oz-color-fill-brand)"/>
+      <circle cx="6.2" cy="5.6" r="1.25" fill="var(--oz-color-content-secondary)"/>
+    </svg>
+    <b>imgcompress</b>
+  </a>
+  <div class="head-right">
+    <a class="btn ghost" href="/">Compress an image</a>
+  </div>
+</header>
+
+<main class="learn download-page">
+  <h1>Images 70–90% smaller, on your own machine</h1>
+
+  <p class="lede">Every image comes out as small as it can go without you being
+     able to see the difference — and you get the side by side to check that for
+     yourself. Each one is saved several different ways, every version is
+     compared to your original, and the smallest one that still looks close
+     enough is the one you keep. It is free, it is open source, and no image
+     ever leaves your computer.</p>
+
+  <h2>Get the app</h2>
+  <div class="dl-grid">
+    <a class="dl-card" data-os="windows" rel="noopener"
+       href="https://github.com/SyedSaribSultan/imgcompress/releases/latest">
+      <span class="dl-you micro" hidden>Probably yours</span>
+      <span class="dl-os">Windows</span>
+      <span class="dl-arch num">64-bit · x64</span>
+      <span class="dl-go">Download<span aria-hidden="true"> ↓</span></span>
+    </a>
+    <a class="dl-card" data-os="mac-arm" rel="noopener"
+       href="https://github.com/SyedSaribSultan/imgcompress/releases/latest">
+      <span class="dl-you micro" hidden>Probably yours</span>
+      <span class="dl-os">Mac</span>
+      <span class="dl-arch num">Apple silicon · arm64</span>
+      <span class="dl-go">Download<span aria-hidden="true"> ↓</span></span>
+    </a>
+    <a class="dl-card" data-os="mac-intel" rel="noopener"
+       href="https://github.com/SyedSaribSultan/imgcompress/releases/latest">
+      <span class="dl-you micro" hidden>Probably yours</span>
+      <span class="dl-os">Mac</span>
+      <span class="dl-arch num">Intel · x86_64</span>
+      <span class="dl-go">Download<span aria-hidden="true"> ↓</span></span>
+    </a>
+  </div>
+
+  <p class="dl-heads-up">None of these are signed yet, so Windows and macOS will
+     each stop you the first time you open one.
+     <a href="#first-run">Here is what they say and how to go on</a> — please
+     read it before you click, because the wording sounds worse than what is
+     happening.</p>
+
+  <p class="metric-note">Every button opens the releases page on GitHub, where
+     the builds are listed by platform. No version number is written into this
+     page, so it can never send you to a build that has been replaced — and if
+     the one you want is not up there yet, the pip install further down works on
+     all three today. There is no Linux build; on Linux, pip is the way in.</p>
+
+  <p class="metric-note">Not sure which Mac you have? Apple menu → About This
+     Mac. A chip whose name starts with <b>Apple</b> takes the Apple silicon
+     build; anything that says Intel takes the other one.</p>
+
+  <!-- The browser version gets a band rather than a sentence. For most people
+       it is the right answer, and it has to reach somebody who came here to
+       download something and stopped reading at the buttons. -->
+  <div class="dl-alt">
+    <p>Nothing to install and nothing to hand over: the browser version runs the
+       same comparison, with the same measure, inside the page on your own
+       machine.</p>
+    <a class="btn primary big" href="/">Try it without installing — nothing is
+       uploaded</a>
+  </div>
+
+  <h2 id="first-run">What your computer will say the first time</h2>
+  <p>These builds are not signed. A signing certificate is a yearly bill this
+     project does not carry, and a signature is a receipt for who built
+     something rather than proof that it is safe — but your computer cannot tell
+     the difference, so it will interrupt you once, in language that sounds
+     worse than what is going on. Here is exactly what you will see.</p>
+
+  <details>
+    <summary>Windows: “Windows protected your PC”</summary>
+    <p>A blue window from Microsoft Defender SmartScreen, with a
+       <b>Don't run</b> button and apparently no other way out.</p>
+    <ol class="dl-steps">
+      <li>Click <b>More info</b>, the small line under the message.</li>
+      <li>Click <b>Run anyway</b>, which appears once you do.</li>
+    </ol>
+    <p>SmartScreen shows this for any program it has not yet seen enough people
+       run. It is a reputation count, not a verdict, and it stops appearing on
+       its own once a build has been downloaded enough times.</p>
+  </details>
+
+  <details>
+    <summary>macOS: “Apple could not verify” it</summary>
+    <p>Recent versions say Apple could not verify the app is free of malware;
+       older ones say it cannot be opened because the developer cannot be
+       verified. Same thing: the app is not signed and notarised.</p>
+    <ol class="dl-steps">
+      <li>In Finder, Control-click (or right-click) the app and choose
+          <b>Open</b> — then <b>Open</b> again in the dialog that follows.</li>
+      <li>On macOS 15 Sequoia and newer, that shortcut is gone. Open
+          <b>System Settings → Privacy &amp; Security</b>, scroll down to the
+          <b>Security</b> section, and click <b>Open Anyway</b> next to the
+          message naming the app.</li>
+    </ol>
+    <p>Either way you are asked once, and never again for that copy.</p>
+  </details>
+
+  <p>If you would rather not do any of that, both of the other routes skip it
+     entirely: the browser version installs nothing at all, and a pip install is
+     not something the operating system gates.</p>
+
+  <h2>What the app adds over the browser version</h2>
+  <p class="lede">The two compress to the same measured standard with the same
+     class of encoders — <a href="/compare.html">the comparison</a> holds both of
+     them, and everything else, to it row by row. What the app adds is
+     workflow:</p>
+  <ul class="checks">
+    <li><b>Folder watching</b> — point it at your export folder and new arrivals
+        are compressed as they land</li>
+    <li><b>A whole batch straight to disk</b> — no downloads folder to sort out,
+        no zip to unpack</li>
+    <li><b>A scriptable command line</b> — for build steps, CI, and anything you
+        would rather not do by hand twice</li>
+    <li><b>Two more engines</b> — libimagequant and zopfli, worth a few percent
+        on flat artwork with only a handful of colours</li>
+  </ul>
+  <p>That is the whole of the difference. On photographs and screenshots the two
+     hand you the same file, so if none of the above is something you need, the
+     browser version is not a cut-down edition — it is the same tool without the
+     install.</p>
+
+  <h2>The evidence, before you install anything</h2>
+  <p>A size claim means nothing on its own, because anything can be made smaller
+     by making it look worse. So on the comparison page every strategy — this
+     tool, single-format pipelines, and the quality settings people normally
+     reach for — was searched for the smallest file that still looks close
+     enough to the original, all of them held to the same visual match of 90 out
+     of 100. It includes the one image where the browser version loses to the
+     app, because leaving that out would make the rest worth less.</p>
+  <p class="cta-line"><a class="btn big" href="/compare.html">See how it
+     compares</a></p>
+
+  <h2 id="pip">Or install it with pip</h2>
+  <p>If you already have Python 3.9 or newer, this is the shortest way in — and
+     on Linux it is the only one:</p>
+  <pre class="code"><code>pip install "imgcompress[full,app]"
+imgcompress-gui            # the app
+imgcompress photos/        # or the command line</code></pre>
+  <p class="metric-note">The extras pull in the parts that do the real work: the
+     perceptual measure, libimagequant and zopfli. All of them ship prebuilt
+     wheels for Windows, so there is nothing to compile and no binaries to
+     chase. <code>imgcompress --check</code> prints which engines came out
+     active on your machine.</p>
+  <p><a class="btn" href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">The
+     source, on GitHub</a></p>
+</main>
+
+<footer class="site-foot">
+  <span>MIT licence</span>
+  <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
+  <span>by HeyOz</span>
+  <!-- No version number here on purpose. index.html's footer is the one place
+       it is written, and exported reports read it from there; a second copy is
+       a second thing to forget. -->
+  <span class="foot-privacy">No uploads · no cookies · no tracking</span>
+</footer>
+
+</body>
+</html>
