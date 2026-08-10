@@ -21,7 +21,7 @@ const IMAGES = [
   ["camera, 4.9 MP", path.join(REF, "camera_12mp.png")],
 ];
 const CHOICES = [
-  ["Automatic — design tools", "figma"],
+  ["Automatic — design tools", "documents"],
   ["Automatic — web", "web"],
   ["JPEG only", "one-jpeg"],
   ["WebP only", "one-webp"],

@@ -41,7 +41,11 @@ const JPEG_QUALITY = [40, 50, 58, 65, 70, 74, 78, 82, 85, 88, 90, 92, 94, 96, 97
 const WEBP_QUALITY = [40, 50, 58, 65, 70, 75, 80, 84, 87, 90, 92, 94, 96, 98];
 const AVIF_QUALITY = [30, 38, 45, 52, 58, 64, 70, 76, 82, 88, 93, 96];
 
-const FIGMA_MAX_DIMENSION = 4096;
+/* Where the image is going: DESTINATION_FORMATS, OLD_TARGET_NAMES,
+ * DOCUMENTS_MAX_DIMENSION and destinationOf() all come from here. The file is
+ * generated from imgcompress/destinations.py by tools/gen_destinations.py and
+ * committed; nothing in this worker restates any of those values. */
+importScripts("destinations.js");
 
 // SSIM constants for 8-bit data (Wang et al. 2004)
 const C1 = (0.01 * 255) ** 2;
@@ -56,11 +60,8 @@ const TILE_BUDGET = 1_200_000;
 // worse of the two wins — a halo you cannot see on white is still a defect.
 const BACKDROPS = [[26, 26, 26], [230, 230, 230]];
 
-const TARGETS = {
-  figma: ["jpeg", "png8", "png"],
-  web: ["jpeg", "png8", "png", "webp", "webp-lossless", "avif"],
-  lossless: ["png", "png8x", "webp-lossless"], // png8x = palette PNG only when pixel-exact
-};
+// DESTINATION_FORMATS, OLD_TARGET_NAMES and destinationOf() come from
+// destinations.js, imported above. Nothing here restates them.
 
 /** Formats with no alpha channel at all - not "loses quality on alpha", but
  *  has nowhere to put it. Only jpeg, among everything here. */
@@ -1141,8 +1142,8 @@ let DCACHE = null;
 
 function limitFor(settings) {
   let limit = settings.maxDimension || 0;
-  if (settings.target === "figma") {
-    limit = limit ? Math.min(limit, FIGMA_MAX_DIMENSION) : FIGMA_MAX_DIMENSION;
+  if (destinationOf(settings.target) === "documents") {
+    limit = limit ? Math.min(limit, DOCUMENTS_MAX_DIMENSION) : DOCUMENTS_MAX_DIMENSION;
   }
   return limit;
 }
@@ -1167,7 +1168,7 @@ async function runJob(msg) {
         type: "done",
         result: {
           passthrough: true, skipped: true,
-          note: "animated — passed through unchanged",
+          note: "animated — left exactly as it is",
           fmt: "gif", ext: ".gif", mime: "image/gif",
           bytes: buffer, originalBytes, newBytes: originalBytes,
           level: null, score: null, metric: metric.name,
@@ -1191,7 +1192,7 @@ async function runJob(msg) {
     } catch {
       post({
         type: "failed",
-        error: "could not decode — the file is corrupt or this browser cannot read it",
+        error: "This file looks damaged and couldn't be read. Try re-exporting it.",
       });
       return;
     }
@@ -1235,7 +1236,7 @@ async function runJob(msg) {
   const encoders = makeEncoders(job);
   let names = settings.formats && settings.formats.length
     ? settings.formats
-    : TARGETS[settings.target] || TARGETS.figma;
+    : DESTINATION_FORMATS[destinationOf(settings.target)];
   // Codecs load lazily, but availability gating needs them resolved first.
   // The first job of a session pays for the download; say so out loud.
   onCodecStatus = (codec) => post({ type: "progress", stage: "codec", detail: codec, frac: 0 });
@@ -1258,7 +1259,7 @@ async function runJob(msg) {
      saying why it is not the format they picked. Silence is the one option
      that is never right here. */
   if (!names.length && chosen) {
-    names = (TARGETS[settings.target] || TARGETS.figma).filter((n) => {
+    names = DESTINATION_FORMATS[destinationOf(settings.target)].filter((n) => {
       const e = encoders[n];
       return e && !(alpha && !e.supportsAlpha) && !(e.available && !e.available());
     });
@@ -1271,7 +1272,9 @@ async function runJob(msg) {
   if (alphaNote) warnings.push(alphaNote);
 
   if (!names.length) {
-    post({ type: "failed", error: "no candidate format can carry this image in this browser" });
+    post({ type: "failed",
+           error: "No format your browser can write is able to hold this image. "
+                + "Try a different destination, or the desktop version." });
     return;
   }
 
@@ -1382,7 +1385,10 @@ async function runJob(msg) {
   if (!best) best = bestFailing;   // nothing cleared the floor; warned about below
 
   if (!best) {
-    post({ type: "failed", error: "no candidate produced usable output", warnings, engines: engineFlags() });
+    post({ type: "failed",
+           error: "None of the formats could be written for this image. "
+                + "It may be damaged; try re-exporting it.",
+           warnings, engines: engineFlags() });
     return;
   }
 
@@ -1418,8 +1424,11 @@ async function runJob(msg) {
   }
 
   if (best.score < target) {
-    warnings.push(`could not reach ${metric.name} ${target}; best was ${
-      best.score.toFixed(metric.name === "ssim" ? 4 : 1)}`);
+    warnings.push(
+      `Couldn't get this close enough to your original — the best any format `
+      + `managed was ${metric.name === "ssim" ? best.score.toFixed(4) : Math.round(best.score)}`
+      + `${metric.name === "ssim" ? "" : " out of 100"} against your target of `
+      + `${target}. Lower the target, or keep the original.`);
   }
 
   // Never ship a bigger file. (Stricter than the desktop rule: any regrowth
@@ -1431,7 +1440,7 @@ async function runJob(msg) {
       type: "done",
       result: {
         passthrough: true, skipped: true,
-        note: "already well compressed — passed through unchanged",
+        note: "already smaller than anything we could make — left as it is",
         fmt: best.encoder.name, ext: null, mime,
         bytes: buffer, originalBytes, newBytes: originalBytes,
         level: null, score: null, metric: metric.name,

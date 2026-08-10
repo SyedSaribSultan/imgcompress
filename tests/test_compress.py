@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PIL import Image, ImageDraw  # noqa: E402
 
 from imgcompress import Settings, compress_file, compress_tree  # noqa: E402
+from imgcompress import destinations as dest  # noqa: E402
 from imgcompress import encoders as enc  # noqa: E402
 from imgcompress.quality import (  # noqa: E402
     HAVE_SSIMULACRA2,
@@ -96,10 +97,96 @@ class EncoderTests(unittest.TestCase):
             self.assertEqual(out.mode, "P")
             self.assertLessEqual(len(out.getcolors(maxcolors=1024)), 32)
 
-    def test_figma_target_never_offers_webp(self):
-        self.assertNotIn("webp", enc.TARGETS["figma"])
-        self.assertNotIn("webp-lossless", enc.TARGETS["figma"])
-        self.assertIn("webp", enc.TARGETS["web"])
+    def test_every_named_format_has_an_encoder(self):
+        """A destination may only offer formats the engine knows how to write.
+
+        `available()` decides whether this machine can actually run one; this
+        is the earlier question, and getting it wrong is a KeyError at the
+        moment somebody's image is being compressed.
+        """
+        for d in dest.DESTINATIONS.values():
+            for name in d.formats:
+                self.assertIn(name, enc.ALL, f"{d.name} offers unknown format {name}")
+
+
+class DestinationTests(unittest.TestCase):
+    """The table is a promise about where an image is going. Pin all of it.
+
+    These same five entries are duplicated in `web/worker.js`, `web/app.js` and
+    the desktop UI, which cannot be checked from here - but the Python side is
+    the reference, so at least it cannot drift on its own.
+    """
+
+    EXPECTED = {
+        # name:        (formats,                  max_dimension, hard_cap, ss2)
+        "web":         (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
+                        2560, 0, 90.0),
+        # 2560 is the everyday downscale; 4096 is a clamp that only fires when
+        # somebody explicitly asks for more. Two numbers, two jobs.
+        "documents":   (("jpeg", "png8", "png"), 2560, 4096, 90.0),
+        "email":       (("jpeg", "png8", "png"), 1920, 0, 88.0),
+        "thumbnail":   (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
+                        512, 0, 80.0),
+        "original":    (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
+                        0, 0, 95.0),
+    }
+
+    def test_documents_downscales_to_2560_by_default(self):
+        """The clamp is not the setting. Defaulting to the ceiling would ship
+        roughly 2.5x the pixels on every design asset."""
+        self.assertEqual(dest.get("documents").max_dimension, 2560)
+        self.assertEqual(dest.get("documents").max_dimension,
+                         dest.get("web").max_dimension)
+
+    def test_every_destination_matches_the_brief(self):
+        for name, (formats, max_dim, cap, ss2) in self.EXPECTED.items():
+            with self.subTest(destination=name):
+                d = dest.get(name)
+                self.assertEqual(d.formats, formats)
+                self.assertEqual(d.max_dimension, max_dim)
+                self.assertEqual(d.hard_cap, cap)
+                self.assertEqual(d.ss2_target, ss2)
+
+    def test_the_five_are_the_ones_offered(self):
+        self.assertEqual(dest.names(), list(self.EXPECTED))
+
+    def test_the_default_is_the_web(self):
+        """Not a design tool. The old default silently refused WebP to everyone."""
+        self.assertEqual(dest.DEFAULT, "web")
+        self.assertEqual(Settings().target, "web")
+        self.assertIn("webp", dest.formats_for(Settings().target))
+
+    def test_documents_never_offers_webp_or_avif(self):
+        formats = dest.formats_for("documents")
+        for lossy_modern in ("webp", "webp-lossless", "avif"):
+            self.assertNotIn(lossy_modern, formats)
+
+    def test_documents_is_capped_at_4096(self):
+        """The ceiling, which is a different number from the default."""
+        self.assertEqual(dest.get("documents").hard_cap, 4096)
+        self.assertNotEqual(dest.get("documents").max_dimension,
+                            dest.get("documents").hard_cap)
+
+    def test_only_documents_enforces_a_hard_cap(self):
+        capped = [d.name for d in dest.DESTINATIONS.values() if d.hard_cap]
+        self.assertEqual(capped, ["documents"])
+
+    def test_old_names_still_resolve(self):
+        """Scripts written against 2.6 keep working."""
+        self.assertEqual(dest.resolve("figma"), "documents")
+        self.assertEqual(dest.resolve("archive"), "original")
+        self.assertEqual(dest.get("figma").formats, dest.get("documents").formats)
+
+    def test_unknown_destination_is_rejected_not_guessed(self):
+        self.assertFalse(dest.exists("nowhere"))
+        with self.assertRaises(KeyError):
+            dest.get("nowhere")
+
+    def test_hidden_destinations_are_reachable_but_not_offered(self):
+        self.assertIn("lossless", dest.DESTINATIONS)
+        self.assertNotIn("lossless", dest.names())
+        for name in dest.formats_for("lossless"):
+            self.assertTrue(enc.ALL[name].lossless, f"{name} is not pixel-exact")
 
 
 class CompressTests(unittest.TestCase):
@@ -138,12 +225,106 @@ class CompressTests(unittest.TestCase):
         with Image.open(res.output) as out:
             self.assertEqual(max(out.size), 1000)
 
-    def test_figma_target_caps_at_4096_even_when_unlimited(self):
+    def test_documents_caps_at_4096_even_when_unlimited(self):
+        """Design tools rescale above this destructively, so asking for more is
+        not a request the destination can honour."""
         path = self.src / "huge.png"
         sample((5000, 1200)).save(path)
-        res = compress_file(path, self.dst, Settings(max_dimension=0, **FAST))
+        res = compress_file(path, self.dst,
+                            Settings(target="documents", max_dimension=0, **FAST))
         with Image.open(res.output) as out:
             self.assertLessEqual(max(out.size), 4096)
+
+    def test_documents_clamps_an_explicit_oversized_request(self):
+        """`-m 8000` is the only way to reach the ceiling now that the default
+        sits at 2560, so this is the branch that would otherwise go untested.
+
+        It must *clamp*, not refuse. The person's intent is perfectly
+        reasonable; the destination simply cannot carry it, and turning that
+        into an error would make them go and find a number the tool already
+        knows.
+        """
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        res = compress_file(path, self.dst,
+                            Settings(target="documents", max_dimension=8000, **FAST))
+        self.assertEqual(res.error, "")
+        with Image.open(res.output) as out:
+            self.assertLessEqual(max(out.size), 4096)
+            self.assertEqual(max(out.size), 4096)
+
+    def test_the_clamp_is_reported_not_applied_in_silence(self):
+        """A dimension that changes without saying so is the defect the whole
+        destination rework exists to remove. It must not survive on the
+        override path just because the override path is rarer.
+
+        `effective_limit` is the one place the rule lives, so the CLI header
+        and the engine cannot disagree - which they did: the header advertised
+        `up to 8000px` for a run that produced 4096.
+        """
+        from imgcompress import destinations as d
+        self.assertEqual(d.effective_limit("documents", 8000), 4096)
+        self.assertEqual(d.effective_limit("documents", 800), 800)
+        self.assertEqual(d.effective_limit("documents", 0), 4096)
+        # Only documents clamps; asking web for 8000 gets 8000.
+        self.assertEqual(d.effective_limit("web", 8000), 8000)
+        self.assertEqual(d.effective_limit("original", 0), 0)
+
+    def test_the_engine_uses_the_same_rule_the_cli_prints(self):
+        from imgcompress import destinations as d
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        for name, asked in (("documents", 8000), ("documents", 800), ("web", 3000)):
+            with self.subTest(destination=name, asked=asked):
+                res = compress_file(path, self.dst / f"{name}{asked}",
+                                    Settings(target=name, max_dimension=asked, **FAST))
+                expected = d.effective_limit(name, asked)
+                with Image.open(res.output) as out:
+                    # 5000px source, so any limit at or below it must bite.
+                    self.assertEqual(max(out.size), min(expected, 5000))
+
+    def test_the_clamp_does_not_inflate_a_smaller_request(self):
+        """A ceiling only ever lowers. Asking for 800 must give 800."""
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        res = compress_file(path, self.dst,
+                            Settings(target="documents", max_dimension=800, **FAST))
+        with Image.open(res.output) as out:
+            self.assertEqual(max(out.size), 800)
+
+    def test_documents_downscale_matches_web_by_default(self):
+        """The everyday behaviour of the two destinations differs in format
+        policy, not in how many pixels survive."""
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        sizes = {}
+        for name in ("web", "documents"):
+            res = compress_file(path, self.dst / name,
+                                Settings(target=name, **FAST))
+            with Image.open(res.output) as out:
+                sizes[name] = out.size
+        self.assertEqual(sizes["web"], sizes["documents"])
+        self.assertEqual(max(sizes["documents"]), 2560)
+
+    def test_the_cap_belongs_to_documents_and_not_to_everything(self):
+        """`original` means what it says. The 4096 ceiling was a Figma fact that
+        used to apply to the default and therefore to everyone."""
+        path = self.src / "huge.png"
+        sample((5000, 1200)).save(path)
+        res = compress_file(path, self.dst,
+                            Settings(target="original", max_dimension=0, **FAST))
+        with Image.open(res.output) as out:
+            self.assertEqual(max(out.size), 5000)
+
+    def test_documents_ships_no_webp_even_on_artwork_that_would_win_with_it(self):
+        path = self.src / "alpha.png"
+        img = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+        ImageDraw.Draw(img).ellipse([40, 40, 360, 360], fill=(255, 0, 0, 255))
+        img.save(path)
+        res = compress_file(path, self.dst, Settings(target="documents", **FAST))
+        tried = {c[0] for c in res.candidates}
+        self.assertFalse(tried & {"webp", "webp-lossless", "avif"})
+        self.assertIn(res.output.suffix, (".png", ".jpg"))
 
     def test_transparency_survives(self):
         path = self.src / "alpha.png"
@@ -233,6 +414,44 @@ class CompressTests(unittest.TestCase):
         res = compress_file(path, self.dst, Settings(formats=["jpeg"], **FAST))
         self.assertEqual(res.fmt, "jpeg")
         self.assertEqual(res.output.suffix, ".jpg")
+
+
+class FrozenBundleSafety(unittest.TestCase):
+    """The pool must not be able to re-launch the application.
+
+    `compress_tree` uses a ProcessPoolExecutor. Under the spawn start method -
+    always on Windows, the default on macOS - each worker re-executes the
+    program to import the module it needs. Frozen, there is no python to
+    re-execute: the child runs the app's own executable again, starts a whole
+    new imgcompress, and opens a pool of its own. A folder of images becomes a
+    fork bomb.
+
+    It hid because `compress_tree` takes a single-process path when there is one
+    job, so every one-image smoke test passed. These two assertions are cheap
+    and they are the only thing standing between a build and that.
+    """
+
+    def test_freeze_support_is_called_at_import(self):
+        source = (Path(__file__).resolve().parent.parent
+                  / "imgcompress" / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("freeze_support()", source,
+                      "multiprocessing.freeze_support() is gone from the package "
+                      "__init__; a frozen build will fork-bomb on a folder")
+
+    def test_a_real_pool_still_runs_more_than_one_job(self):
+        """The path the guard protects has to keep working, or the guard is
+        protecting nothing."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        src = root / "many"
+        src.mkdir()
+        for i in range(3):
+            sample((240, 200)).save(src / f"a{i}.png")
+        results = compress_tree(src, root / "out", Settings(**FAST), workers=3)
+        self.assertEqual(len(results), 3)
+        self.assertTrue(all(r.error == "" for r in results),
+                        [r.error for r in results])
 
 
 if __name__ == "__main__":

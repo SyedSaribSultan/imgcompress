@@ -4,6 +4,7 @@ batch/
 downloads/
 ss2_vectors/
 shot-*.png
+same-product-*.png
 counts-*.json
 bench-*.json
 node_modules/

@@ -3,6 +3,280 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] - 2026-08-08
+
+### Changed
+- **One design system, and the desktop app is inside it.** There were two
+  interfaces and they looked like two products. `web/` rendered from a token
+  layer with an automated gate; the desktop app had its own palette baked into
+  the file — its own greys, its own brass, its own three corner radii, its own
+  two transition shorthands and its own system-font stack — and nothing checked
+  any of it. That is the real answer to "how do I get consistency": not a
+  component library, but one interface sitting outside the gate.
+
+  The token layer and the self-hosted faces are now copied into
+  `imgcompress/webui/` by `tools/sync_webui_assets.py` and committed, the same
+  pattern as `web/destinations.js`: no build step, and CI fails on a stale copy.
+  The desktop app's private palette is gone — every colour, corner, face and
+  spring comes from the shared tokens, and it shares the browser app's
+  `--app-*` alias names so the two are one product rather than two that happen
+  to share a name.
+- **Motion is enforced, not just available.** The token layer already shipped a
+  closed set (`--oz-duration-*`, `--oz-ease-*`, and the `--oz-spring-*` pairs);
+  what was missing was anything rejecting a value from outside it.
+  `verify_tokens.mjs` now fails on a hand-typed duration or easing curve,
+  `transition: all`, and any transition of a layout property.
+- **Three progress bars stopped animating `width`.** The batch hairline, the
+  per-row hairline and the version-chip meter all transitioned `width`, which
+  makes the browser recompute layout on every frame of every bar. They now
+  scale a `transform`, which is composited and cannot reflow anything. The
+  fraction arrives as a unitless `--p` instead of a percentage.
+- **`prefers-reduced-motion` is handled once**, in the token layer, for both
+  interfaces. The desktop app's own blanket `transition-duration: .01ms
+  !important` is gone: the shared version collapses spatial travel and takes
+  the overshoot off the springs while leaving fades alone, and a fade is often
+  the thing carrying the meaning.
+
+### Fixed
+- **The desktop app labelled a rejected version as the winner.** Its versions
+  list badged `Math.min(bytes)` — the smallest candidate — rather than the one
+  that actually shipped, and hid that candidate's score behind the badge. On a
+  real photograph it read `webp 229.6 KB WINNER` while the file it wrote was
+  `webp-lossless` at 344.1 KB, with no way to see that WebP had scored 87
+  against a target of 90. This is precisely the bug `core.py` fixed in the
+  engine, reappearing in the picture of it. The badge now follows the shipped
+  format, every version shows how close it came, and each one carries the same
+  one-sentence reason the browser app gained in the vocabulary pass.
+- **The desktop app was one 403 away from rendering in Times New Roman.** A
+  `<link>` and a `url()` inside a stylesheet cannot carry the query string the
+  page was opened with, so the token check refused the app's own stylesheets and
+  Chrome dropped them for having a JSON MIME type. Static assets under
+  `/webui/` are now served before the token check — they are files shipped in
+  the package with no user data in them, the loopback-Host check still applies,
+  and the token still gates every API route and every image. Found by the new
+  runtime gate on its first run; every static check was green throughout.
+- Faces are served as `font/woff2`. `mimetypes` has no woff2 entry on a stock
+  Windows Python, so they went out as `application/octet-stream`.
+- The desktop app has the product's icon. Without one linked the browser asked
+  for `/favicon.ico`, which answered 403 — one console error on every launch,
+  saying nothing useful.
+- `Now` became `New size` in the browser app's result panel — a vocabulary-pass
+  miss, caught by looking at a screenshot rather than at the code.
+
+### Added
+- **`tests/web/verify_desktop.mjs`** — the desktop app in real Chrome: the
+  shared stylesheets arrive with a CSS type, the faces arrive as `font/woff2`,
+  the tokens resolve to real values, six faces register, nothing renders above
+  600, the private palette is undefined, and no request leaves the machine. The
+  static gate can only prove the app *references* the token layer; this proves
+  the browser receives it.
+- **`tests/test_design_system.py`** — 22 tests covering everything reachable
+  without a browser: the copies are current, the copy tool fails on an edited,
+  missing or CRLF copy, the face URLs are rewritten for `/webui/` while the
+  source is left alone, the desktop app declares no palette of its own, and
+  neither app layer transitions a layout property.
+- **`probe_a11y.mjs` and `probe_mobile.mjs` can now fail.** Both printed
+  measurements and exited 0 whatever they said, which made them reports rather
+  than tests — running them and seeing no errors carried almost no information,
+  and it blocked Phase 4, whose criteria they are supposed to enforce.
+  `probe_mobile` now measures at **375px**, not 390.
+- `tests/web/shoot_both.mjs`, which screenshots both interfaces in both themes,
+  so "recognisably the same product" is something you can look at.
+
+- **The interface speaks English.** Eleven invented words for three ideas meant
+  it was possible to look at this product and not know what it was telling you.
+  One concept now gets one word everywhere a person can see it — the browser
+  app, the desktop app, the command line, every error message and the README:
+
+  | Was | Is |
+  | --- | --- |
+  | bake-off | the comparison |
+  | candidate | version |
+  | floor / quality floor | your target / minimum visual match |
+  | passes, still passes | close enough to the original |
+  | survives | wins |
+  | untouched | left exactly as it is |
+  | force a format | always use |
+  | redo just this image | try different settings |
+  | SSIMULACRA 2 82.8 | visual match 83 out of 100 |
+
+  The measure's real name moved into the details panel, where it belongs: which
+  measure produced the number is a fact about our implementation, and how close
+  the result came is the fact somebody is actually here for. The SSIM fallback
+  keeps its name, because that scale runs 0–1 and calling it the same thing
+  would mislead.
+- **What the tool does is described as a benefit, not as machinery.** "Every
+  image is encoded several different ways, scored against the original with a
+  perceptual metric, and only the smallest version that still passes survives"
+  became "every image comes out as small as it can go without you being able to
+  see the difference — and you get the side-by-side to check that for
+  yourself."
+- **Every version that lost now says why**, in one sentence: bigger than your
+  original, too different from it (with both numbers), lost too much colour
+  detail, or close enough but larger than the one chosen. A list of rejects
+  with no reasons showed the machinery working without saying anything. The
+  sentence for whichever version is on screen is shown under the row rather
+  than hidden in a tooltip.
+- **Error messages say what happened, then what to do next.** No apology, no
+  blame, no error code as the headline. "Error: unsupported format" became
+  "Those file types aren't supported yet. Try PNG, JPEG, WebP, AVIF, GIF, BMP
+  or TIFF."
+- **"How this was measured" is written for a person.** It explains that the
+  comparison looks at local contrast and detail the way eyes do rather than
+  counting pixel differences, and that 100 means indistinguishable — and it now
+  carries the fact that makes this tool beat the obvious alternative: colour is
+  never thrown away, because matching the same quality with colour detail
+  discarded needed setting 97 instead of 76, a file 3.8× larger.
+
+  Zero output bytes changed; both byte snapshots are identical.
+
+- **Presets are now destinations, and the default is no longer a design tool.**
+  There used to be two overlapping settings — `--preset` chose size and
+  quality, `--target` chose which formats were allowed — and both defaulted to
+  `figma`. That meant a person compressing a photograph for their website got
+  JPEG or PNG and nothing else, for a reason that is true of Figma and of
+  nothing they were doing. The restriction was researched and correct; making
+  it everyone's default was not.
+
+  One list replaces both, named after the only question somebody can answer
+  without knowing anything about compression — where is this image going?
+
+  | `--for` | Formats | Size | Visual match |
+  | --- | --- | --- | --- |
+  | `web` *(new default)* | all, incl. WebP and AVIF | 2560px | 90 |
+  | `documents` | JPEG / PNG only | 2560px, ceiling 4096px | 90 |
+  | `email` | JPEG / PNG only | 1920px | 88 |
+  | `thumbnail` | all | 512px | 80 |
+  | `original` | all | never resized | 95 |
+
+  `--preset` still works as a synonym and the old names (`figma` → `documents`,
+  `archive` → `original`) still resolve, so existing scripts do not break. The
+  CLI says out loud when you have used one.
+- **`documents` keeps every restriction `figma` had**, because the restriction
+  is the feature: those tools re-encode WebP to PNG on import, so a beautifully
+  compressed 40 KB file becomes a multi-megabyte one inside the saved document.
+  What changed is who pays for it — the people actually sending images there.
+- **Choosing a destination applies all three of its numbers**, in both
+  interfaces. Setting only the format list would make "Thumbnail or avatar"
+  mean nothing but a shorter list, and leave the person to work out that two
+  more controls in Advanced needed changing for it to do what it says. Both
+  remain editable afterwards; this moves the starting point, it does not lock
+  it.
+- **The desktop app builds its destination list from the server's table**
+  rather than carrying its own copy of five numbers that have to agree.
+- **`imgcompress --help` no longer names a specific product**, and prints what
+  each destination actually does. Its output is ASCII, because a middot that
+  arrives as a replacement character on a cp1252 console undoes the point of
+  writing readable help.
+
+### Added
+- **The two engines are held together by CI on every pull request.** The claim
+  that the browser scores an image the way the Python reference does had
+  nothing enforcing it — `ss2_validate.mjs` existed and had to be remembered.
+  A drift there is the worst kind of break: the app keeps working, it just
+  stops being right. The job runs on every PR rather than only ones touching
+  `ss2.js`, because the case that actually worries us is `quality.py` or a
+  pinned dependency moving the numbers out from under a file nobody edited.
+- **AVIF is a Python encoder**, feature-detected. Pillow only carries AVIF
+  where the wheel was built against libavif, so on most machines this changes
+  nothing; where it is present, AVIF now competes in the bake-off on the same
+  terms as everything else — it ships only if it is both smaller and still
+  clears the floor. This is what lets the destination table be literally the
+  same in all four places rather than "the same except Python."
+- **The browser's destination table is generated, not maintained.**
+  `tools/gen_destinations.py` writes `web/destinations.js` from
+  `imgcompress/destinations.py`; `worker.js` imports it, `index.html` loads it
+  before `app.js`, and the Format control's options are rendered from it rather
+  than typed into the markup. The generated file is committed, because `web/`
+  has no build step and should not grow one — CI regenerates it and fails on
+  any difference, so the commit is the check. Testing copies catches drift
+  afterwards; not having copies prevents it.
+- **A parity test for the destination table**, `tests/test_destination_parity.py`.
+  The table now exists in Python, in `worker.js`, in `app.js` and in the
+  markup, and nothing checked that they agreed — the same hazard `ss2.js` had
+  before the CI job above, and it bit immediately: `app.js` was already
+  claiming 4096px for `documents` and quality 85 for `thumbnail` while Python
+  said 2560 and 80, so every browser compression would have used numbers the
+  reference had already rejected, silently. Now that the copies are generated,
+  the test guards the generator instead: the committed file must be current,
+  and no consumer may hand-write a destination's name, frame size or format
+  list. It found one more copy while being written — `app.js` restated the
+  default destination's numbers in its initial state, where a stale value would
+  have been wrong for exactly the people arriving for the first time.
+- **`tests/web/check_ss2_corpus.py`**, wired into CI. `make_ss2_vectors.py`
+  skips AVIF where Pillow cannot write it, which is right on a Windows laptop
+  and wrong in CI: a failed plugin install would run 48 vectors instead of 60,
+  print VALIDATED, and show the same green tick with AVIF parity untested from
+  then on. The plugin install is no longer allowed to fail, and the vector
+  count and codec coverage are asserted rather than merely reported.
+- Tests pinning every destination's formats, size cap and minimum visual
+  match, that only `documents` enforces a ceiling, that an explicit `-m 8000`
+  is clamped to 4096 rather than refused, that a smaller request is never
+  inflated, and that the old names still resolve. Previously the 4096px cap was
+  tested but *only* the half that fires — nothing asserted that `original`
+  leaves an image alone. The Python suite goes from 24 tests to 64; the browser
+  suite from 72 assertions to 76.
+
+### Fixed
+- `make_ss2_vectors.py` no longer dies on a Pillow built without libavif. It
+  says the twelve AVIF pairs are missing instead of quietly shrinking the
+  corpus and still printing VALIDATED.
+
+### Notes for anyone measuring this
+- **Output is byte-identical at matched settings.** `bench.mjs` passes clean on
+  both `documents` and `web`, at the real defaults — it takes the destination's
+  own frame rather than a pinned one, which it can do because `documents` and
+  `web` agree on 2560 and the format list is genuinely the only difference.
+- **`--preset thumbnail` changed** from 800px to 512px. The quality target
+  stays at 80. Nothing in the history records why 800 was chosen — it arrived
+  in the initial import — so 512 is the change that can be argued for and the
+  target was left alone: artefacts are *less* visible at a smaller size, so if
+  anything it could fall, and raising it would have been a second change with
+  no reason behind it.
+
+- **A rule, in CONTRIBUTING.md: every new gate must be observed failing.**
+  Four checks on this branch reported success while checking nothing — a
+  snapshot with a hand-pinned frame, an AVIF skip that still printed
+  `VALIDATED`, parser-based assertions that could match zero lines, and a
+  `diff` against a file the job had not written yet. Two were caught in review
+  and one by a file timestamp, which is not a process. Breaking a gate and
+  watching it go red costs a minute and is the only thing separating it from a
+  comment.
+- **`tests/test_corpus_guard.py`**, because `check_ss2_corpus.py` was itself
+  only verified by hand — the same posture `ss2_validate.mjs` was in before it
+  was wired into CI. Nine tests, including the argparse bug it shipped with:
+  `action="append"` adds to a list default rather than replacing it, so
+  `--require-codec jpeg` meant "jpeg *and* the three defaults" and the
+  narrowing path had never run.
+
+### Fixed since
+- **The clamp announces itself.** `-m 8000 --for documents` printed
+  `up to 8000px` and produced 4096 — a dimension changing without saying so,
+  which is the defect this whole rework exists to remove, surviving on the
+  override path because that path is rarer. The rule now lives in one function,
+  `destinations.effective_limit`, which both the engine and the CLI header
+  call, so they cannot disagree. The header states the real limit and, when it
+  differs from the request, says which destination clamped it and why.
+
+### A bug this branch introduced and then removed
+Recorded because the shape of it is worth remembering, not because it shipped.
+
+`documents` briefly carried **one** size number where the old `figma` preset
+had two. `figma` downscaled to 2560 and separately clamped at 4096 — the clamp
+being the thing that fires when somebody explicitly asks for more, which is why
+the original code described it as applying *regardless*. Collapsing them handed
+the ceiling over as the everyday setting, so every design-asset compression
+would have shipped roughly 2.5× the pixels it should, and downscaling saves
+more than the encoder does.
+
+`bench.mjs` caught the resulting byte change immediately, and it was
+misdiagnosed as a test-isolation problem: the fix applied was to pin the frame
+size so the comparison stayed clean. That was a correct testing instinct
+reached for at the wrong moment. It isolated the variable and certified a
+configuration no user would ever run — a green gate over a setting that does
+not exist, which is worse than a red one. The pin is gone and the two numbers
+are back to doing two jobs.
+
 ## [2.6.0] - 2026-08-07
 
 ### Changed

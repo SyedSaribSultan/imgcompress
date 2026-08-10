@@ -5,10 +5,14 @@
 
 **Image compression that proves it didn't ruin your image.**
 
-Most compressors ask you to pick a quality number and hope. This one encodes
-each image several different ways, decodes every candidate back, scores it
-against the original with a real perceptual metric, and keeps the smallest file
-that still clears the quality floor you set. Then it shows you the evidence.
+Most compressors ask you to pick a quality number and hope. This one saves each
+image several different ways, opens every version back up, compares it to your
+original, and keeps the smallest one that still looks close enough. Then it
+shows you the evidence.
+
+Put plainly: every image comes out as small as it can go without you being able
+to see the difference — and you get the side-by-side to check that for
+yourself.
 
 Typical result on design assets: **70–90% smaller**, at a measured
 visually-lossless quality level.
@@ -22,16 +26,16 @@ imgcompress photos/        # or the command line
 ```
 
 Or skip the install: **[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app)**
-runs the same bake-off entirely in your browser — including SSIMULACRA 2
+runs the same comparison entirely in your browser — including SSIMULACRA 2
 itself, ported to JavaScript and validated against the reference
 implementation. Nothing is uploaded; images never leave your device.
 
 [tests/BENCHMARK.md](tests/BENCHMARK.md) holds a reproducible head-to-head
 against single-format pipelines and fixed-quality defaults, every strategy
-searched to the same SSIMULACRA 2 ≥ 90 floor. On that corpus imgcompress is
+searched to the same visual match of 90 or better. On that corpus imgcompress is
 the smallest or tied-smallest passing file on every image; on the 12 MP
 photograph the browser version ships 362 KB where searched single-format
-JPEG needs 517–544 KB — and every fixed-quality default fails the floor
+JPEG needs 517–544 KB — and every fixed-quality default misses the target
 outright. The one caveat is spelled out there too: on one hard palette image
 the desktop's optional libimagequant quantizer beats the browser quantizer
 by ~2.5 KB.
@@ -41,7 +45,7 @@ by ~2.5 KB.
 ## Two ideas, both load-bearing
 
 **1. Quality is measured, not guessed.**
-Every candidate encode is decoded and scored with
+Every version is opened back up and compared to the original with
 [SSIMULACRA 2](https://github.com/cloudinary/ssimulacra2) — the metric the
 image-compression community converged on, which correlates with human judgement
 at r≈0.88 versus SSIM's ≈0.76, and unlike SSIM can actually see chroma damage.
@@ -49,10 +53,10 @@ The encoder quality setting is *found* by binary search, not assumed. Flat UI
 artwork survives a very low setting; a noisy photograph automatically gets a
 high one.
 
-**2. The format is a bake-off, not an assumption.**
-Each image is encoded as JPEG *and* palette PNG *and* lossless PNG (plus WebP if
-you allow it), each searched independently, and the smallest passing result
-wins. The winner is genuinely content-dependent:
+**2. The format is a comparison, not an assumption.**
+Each image is saved as JPEG *and* palette PNG *and* lossless PNG (plus WebP if
+you allow it), each searched separately, and the smallest one that still looks
+close enough wins. The winner is genuinely content-dependent:
 
 | Image | jpeg | png8 | png | webp | webp-lossless | winner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -82,8 +86,8 @@ score.
 - **Split comparison** — drag the divider, or press <kbd>Space</kbd> to flip
   between original and compressed. Zoom to 100%, 200%, 400% and pan around.
   This is the point of the whole thing: you can *check*.
-- **Candidates panel** — see every encoding that was tried and why the winner
-  won, then override the format or quality for that one image.
+- **Versions panel** — see every version that was tried, why each one lost in a
+  single sentence, and switch to any of them instantly.
 - **Nothing is written until you press Save.** Review the whole batch, then
   save it or throw it away.
 - **Watch a folder** — point it at your Figma export folder and it compresses
@@ -107,27 +111,45 @@ browser otherwise. Both are the same full application.
 imgcompress                            # ./input -> ./output
 imgcompress photos/ -o small/          # any folder
 imgcompress hero.png                   # a single file
-imgcompress input/ --target web        # allow WebP output
-imgcompress input/ -q 95               # near-lossless
+imgcompress input/ --for documents     # safe to import into a design tool
+imgcompress input/ --for email         # small enough to attach
+imgcompress input/ -q 95               # hold a higher visual match
 imgcompress input/ --fast              # quicker, a few percent bigger
 imgcompress --check                    # which engines are active
 ```
 
+### Where is it going?
+
+That is the only question you have to answer, and you can answer it without
+knowing anything about compression. Everything else follows from it — which
+formats are allowed, how large the frame may be, and how close the result has
+to look.
+
+| `--for` | For | Formats | Size | Visual match |
+| --- | --- | --- | --- | --- |
+| `web` | **Default.** Anything that loads in a browser | all, incl. WebP + AVIF | 2560px | 90 |
+| `documents` | Design tools, office suites, docs | JPEG / PNG only | 2560px, hard ceiling 4096px | 90 |
+| `email` | Attachments and chat | JPEG / PNG only | 1920px | 88 |
+| `thumbnail` | Avatars, list icons, previews | all | 512px | 80 |
+| `original` | Print, masters, archives | all | never resized | 95 |
+
+`--preset` is accepted as a synonym, and the older names (`figma`, `archive`)
+still resolve, so existing scripts keep working.
+
 | Flag | What it does |
 | --- | --- |
-| `--target figma \| web \| lossless` | Which formats may be emitted. `figma` (default) = JPEG/PNG only |
-| `--preset figma \| web \| thumbnail \| archive` | Size + quality starting points |
+| `--for web \| documents \| email \| thumbnail \| original` | Where the image is going (default: `web`) |
 | `-m, --max-dimension 1920` | Cap the longest edge. `0` keeps original dimensions |
-| `-q, --quality-target 95` | Perceptual floor on the SSIMULACRA 2 scale |
+| `-q, --quality-target 95` | Minimum visual match, 0–100 (100 = indistinguishable) |
 | `--metric ssimulacra2 \| ssim` | `ssim` is ~5× faster and cruder |
-| `-f, --format jpeg` | Force a candidate; repeat to allow several |
+| `-f, --format jpeg` | Always use this format; repeat to allow several |
 | `--fast` / `--no-zopfli` | Trade a few percent of size for speed |
 | `--keep-metadata` | Preserve EXIF/ICC instead of stripping it |
-| `-j 8` / `-v` | Workers / show every candidate |
+| `-j 8` / `-v` | Workers / show every version tried |
 
 ### Choosing a quality target
 
-SSIMULACRA 2 runs to 100. The author's published scale:
+The visual match runs to 100, where 100 means indistinguishable:
 
 | Value | Feels like |
 | --- | --- |
@@ -139,30 +161,38 @@ SSIMULACRA 2 runs to 100. The author's published scale:
 
 ---
 
-## Why it defaults to JPEG and PNG, not WebP
+## Why `documents` refuses WebP
 
-"Just use WebP" is the standard advice and it is wrong if your images are going
-into Figma.
+"Just use WebP" is the standard advice and it is wrong if your image is going
+into a design tool or a document. This looks like a limitation and is the
+feature.
 
 Figma's docs list WebP as an accepted upload format. But Figma's plugin API only
 knows PNG, JPEG and GIF — `figma.createImage` rejects everything else — and the
 standing community answer is that a WebP dropped onto the canvas is **decoded
 and re-encoded as PNG**, with no way to recover the original. TIFF import
 working *only in Safari* points the same way: Figma leans on the browser's
-decoder, then re-encodes.
+decoder, then re-encodes. Office suites and document editors behave much the
+same way.
 
-If that's right, handing Figma a beautifully compressed 40 KB WebP photo gets you
-a multi-megabyte PNG inside the `.fig`. The downside is severe and the upside is
-a few percent, so the default target sticks to formats Figma is documented to
-store byte-for-byte. AVIF isn't supported by Figma at all, and neither is JPEG XL.
+If that's right, handing one of these tools a beautifully compressed 40 KB WebP
+photo gets you a multi-megabyte PNG inside the saved file. The downside is
+severe and the upside is a few percent, so `--for documents` sticks to formats
+those tools are documented to store byte-for-byte. AVIF isn't supported by
+Figma at all, and neither is JPEG XL.
 
-`--target web` re-enables WebP for anything not bound for Figma.
+`documents` carries two size numbers, doing two different jobs. **2560px** is
+the everyday downscale, the same as `web` — memory pressure in these tools comes
+from pixel dimensions more than from bytes, and no codec recovers what a 6000px
+export wastes when it renders at 1200px. **4096px** is a ceiling, not a setting:
+it clamps even an explicit `-m 8000`, because anything above it is downscaled
+destructively on import with no control over the resampling, so the choice is
+between our Lanczos and theirs. Asking for more is not refused, just quietly
+brought down — the intent is reasonable, the destination simply cannot carry
+it.
 
-Two other Figma facts are baked in: anything over **4096px** is downscaled
-destructively on import (so this caps dimensions itself, with Lanczos, and never
-lets the `figma` target exceed it), and Figma's memory pressure comes from pixel
-dimensions more than from bytes — which is why the default 2560px cap is doing
-more work than the encoder is.
+Every other destination allows the modern formats, which is why `web` is the
+default: the restriction is a fact about design tools, not about images.
 
 ---
 
@@ -197,8 +227,8 @@ with weaker built-ins.
 1. **Caps the pixel dimensions.** The single biggest win; no codec recovers the
    bytes wasted on a 6000px export that renders at 1200px.
 2. **Strips metadata** — EXIF, camera junk, colour profiles, XMP blobs.
-3. **Runs the bake-off**, binary-searching each candidate format for the lowest
-   quality that still clears the perceptual floor.
+3. **Runs the comparison**, searching each format for the smallest setting that
+   still looks close enough to the original.
 4. **Keeps the smallest winner**, and never writes a file bigger than the source.
 
 Transparency is preserved, and scored against both a dark and a light backdrop
@@ -218,7 +248,7 @@ survives in most hand-rolled compressors.
 ```bash
 git clone https://github.com/SyedSaribSultan/imgcompress && cd imgcompress
 pip install -e ".[full,app,dev]"
-python -m unittest discover -s tests     # 20 tests, ~20s
+python -m unittest discover -s tests     # 33 tests, ~40s
 python tests/make_fixtures.py            # build the benchmark corpus
 python tests/bench_formats.py            # the format table above
 python tests/bench_versions.py           # matched-quality comparison vs v1
@@ -229,7 +259,7 @@ change that affects output needs a measurement at **matched perceptual quality**
 — a smaller file at a lower score isn't an improvement, it's a different
 setting. And never validate a metric change using that same metric.
 
-The screenshots in this README were compressed by the tool (`--target web`),
+The screenshots in this README were compressed by the tool (`--for web`),
 which is the least I could do.
 
 ## Licence

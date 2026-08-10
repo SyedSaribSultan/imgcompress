@@ -52,6 +52,71 @@ jobs:
           imgcompress --check
           python -m unittest discover -s tests -v
 
+  engine-parity:
+    # The product's central claim is that the browser scores an image the same
+    # way the Python reference does. Every unvalidated edit to ss2.js is a slow
+    # leak in that claim, and a leak nobody would notice: the app keeps working,
+    # it just stops being right. This job regenerates the vectors from the
+    # reference implementation and holds the JS port to them.
+    #
+    # It runs on every pull request rather than only on ones touching ss2.js.
+    # Path filters would miss the case that actually worries us - a change to
+    # quality.py, or to the reference package's pinned version, moving the
+    # numbers out from under a file nobody edited.
+    name: JS scorer matches the Python reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install the reference implementation
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[full]"
+      - name: Add an AVIF encoder
+        # NOT allowed to fail. This job runs on Linux, where AVIF is available,
+        # and the graceful skip that make_ss2_vectors.py performs on a Pillow
+        # without libavif is meant for a developer's Windows laptop - not here.
+        # If it were tolerated here, an install failure would drop twelve AVIF
+        # pairs, print VALIDATED, and show the same green tick with AVIF parity
+        # untested from then on. A weaker check that looks identical to a strong
+        # one is the thing this whole job exists to prevent.
+        run: python -m pip install pillow-avif-plugin
+      - name: Build the validation vectors from the Python reference
+        run: python tests/web/make_ss2_vectors.py
+      - name: The corpus must be the full one
+        # The count is asserted, not merely printed. Reporting a shortfall only
+        # helps somebody who reads a passing job's logs, which nobody does.
+        run: python tests/web/check_ss2_corpus.py --expect 60
+      - name: The JS port must match them
+        run: node tests/web/ss2_validate.mjs
+
+  generated:
+    # web/ has no build step and should not grow one, so the browser's
+    # destination table is generated from the Python reference and committed
+    # like source. Regenerating here and failing on a diff is what makes the
+    # committed file trustworthy: there is no copy to drift, only a file that
+    # is either current or a red build.
+    name: generated files are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python tools/gen_destinations.py --check
+      # The desktop app's copy of the design system. Same reasoning: the file
+      # people edit is in web/, the copy is committed so a pip install needs no
+      # build, and a stale copy is a red build rather than two visual identities.
+      - run: python tools/sync_webui_assets.py --check
+      # The comparison page. Generated from tests/benchmark.json so the page
+      # cannot claim one thing while the measurement says another.
+      - run: python tools/gen_compare_page.py --check
+
   lint:
     runs-on: ubuntu-latest
     steps:

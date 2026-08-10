@@ -1,6 +1,6 @@
 # Guide to this repository
 
-About 1,600 lines total, four source files that matter. Here's the tour.
+About 1,800 lines total, five source files that matter. Here's the tour.
 
 ## The mental model
 
@@ -13,7 +13,24 @@ The second rule follows from the first: **the best format is content-dependent.*
 A photograph wants JPEG, a screenshot wants palette PNG, a smooth gradient wants
 lossless PNG. So the tool doesn't pick — it tries them all and keeps the winner.
 
-## The four files that matter
+## The five files that matter
+
+### `imgcompress/destinations.py` — "where is this going?"
+
+Five entries — `web` (the default), `documents`, `email`, `thumbnail`,
+`original` — each naming the formats it may write, how large the frame may be,
+and how close the result has to look. It is deliberately the smallest file here
+and imports nothing from the rest of the package, because three other engines
+mirror it and a table with logic in it is a table that cannot be mirrored.
+
+A destination is the one question a person can answer without knowing anything
+about compression. Before 2.7 there were two overlapping ideas — `--preset` set
+size and quality, `--target` set the format list — and both defaulted to
+`figma`, so someone compressing a photograph for their website silently got no
+WebP for a reason about design tools.
+
+`hard_cap` is the only conditional behaviour: `documents` enforces 4096px even
+when asked for more. Aliases keep `figma` and `archive` working.
 
 ### `imgcompress/quality.py` — "how good does this look?"
 
@@ -41,12 +58,16 @@ Two things here are subtle and worth not breaking:
 
 ### `imgcompress/encoders.py` — "how do I write the bytes?"
 
-Five candidates — `jpeg`, `png8`, `png`, `webp`, `webp-lossless` — each exposing
-an ascending ladder of quality levels, so the search can bisect over any of them
-generically without knowing what the levels mean.
+Six candidates — `jpeg`, `png8`, `png`, `webp`, `webp-lossless`, `avif` — each
+exposing an ascending ladder of quality levels, so the search can bisect over any
+of them generically without knowing what the levels mean. `avif` only reports
+`available()` where Pillow was built against libavif, which most Windows wheels
+are not; the browser engine has had it since the WASM codec tier landed.
 
-`TARGETS` maps `figma` / `web` / `lossless` to which candidates are allowed.
-**This is the single place the Figma format policy lives.**
+Which candidates a run is allowed to use comes from `destinations.py`, not from
+here. **That is the single place the format policy lives**, and it is shared with
+`web/worker.js`, `web/app.js` and the desktop UI — the same five entries with the
+same numbers in all four.
 
 `JpegEncoder` is hardcoded to 4:4:4 chroma. That's deliberate: on saturated
 content, matching 4:4:4's quality-76 score with 4:2:0 required quality 97 and
@@ -96,9 +117,10 @@ actually installed. Worth running first on any new machine.
 
 | You want to… | Go to |
 | --- | --- |
-| Change what formats Figma gets | `encoders.py` → `TARGETS` |
-| Add a format (AVIF, JPEG XL) | Subclass `Encoder`, add to `ALL` and to a target |
-| Change quality or size defaults | `cli.py` → `PRESETS` |
+| Change what formats a destination gets | `destinations.py` → `DESTINATIONS` |
+| Add a format (JPEG XL) | Subclass `Encoder`, add to `ALL` and to a destination |
+| Change quality or size defaults | `destinations.py` → `DESTINATIONS` |
+| Add or rename a destination | `destinations.py`, then mirror it in `worker.js`, `app.js`, `app.html` |
 | Change how quality is judged | `quality.py` → `Metric` |
 | Change the search strategy | `core.py` → `_search_one` |
 | Change resize / metadata behaviour | `core.py` → `_normalise` |
@@ -127,9 +149,13 @@ learn:
 * the percentile aggregation really is stricter than the mean
 * transparent pixels are composited, not dropped
 * JPEG output is 4:4:4, asserted by reading the sampling factors back out
-* the `figma` target never offers WebP
+* every destination's formats, size cap and minimum visual match, entry by entry
+* the `documents` destination never offers WebP or AVIF
 * images with alpha are never routed to JPEG
-* the `figma` target caps at 4096px even when you ask for unlimited
+* `documents` caps at 4096px even when you ask for unlimited — and no other
+  destination does, which is the half that used to be untested when the cap
+  applied to the default and therefore to everybody
+* the older names (`figma`, `archive`) still resolve
 * the bake-off winner is the smallest passing candidate, not just any candidate
 
 If you change behaviour and one of these fails, read the README section it maps
@@ -137,11 +163,14 @@ to before "fixing" the test.
 
 ## Two things to know before extending it
 
-**The Figma format policy rests on one unverified claim** — that Figma
+**The `documents` format policy rests on one unverified claim** — that Figma
 transcodes WebP to PNG on import. It comes from a Figma forum expert, not a
 changelog. The downside if it's true is severe and the upside is a few percent,
-so JPEG/PNG is the right default either way. But if you ever add a format or
-loosen `TARGETS`, re-check that first: it's the hinge the whole policy turns on.
+so JPEG/PNG is the right answer for that destination either way. But if you ever
+add a format or loosen it, re-check that first: it's the hinge the whole policy
+turns on. Note this is now one destination's rule rather than everyone's — it was
+the default until 2.7, which meant people who had never opened a design tool
+silently got no WebP.
 To settle it: import a WebP into Figma and have any plugin call
 `getBytesAsync()` on it. Bytes starting `RIFF` mean WebP survived.
 
@@ -308,14 +337,16 @@ Two rules, both learned the hard way:
 
 The toolbar asks for two decisions and defaults both to delegation.
 
-* **Format** is one `<select>` spanning `figma` / `web` / `lossless` (the
-  automatic sets) and `one-jpeg` / `one-webp` / `one-png` / `one-avif`. The
-  `one-` prefix is parsed in `parseFormatChoice`, which is also why the value
-  space *extends* the old target names rather than replacing them — every
-  saved setting and every test that drives `#target` still means what it did.
-  A single pick sets `settings.formats` and moves the target to `web`, the
-  same thing the per-image format override has always done, which also drops
-  the design-tool dimension cap along with the preset.
+* **Going to** is one `<select>` spanning the five destinations (`web`,
+  `documents`, `email`, `thumbnail`, `original`) and `one-jpeg` / `one-webp` /
+  `one-png` / `one-avif`. The `one-` prefix is parsed in `parseFormatChoice`.
+  Picking a destination applies all three of its numbers — formats, size cap
+  and minimum visual match — because otherwise "Thumbnail or avatar" would mean
+  nothing but a shorter format list and the person would have to know to open
+  Advanced and change two more things. A single-format pick sets
+  `settings.formats` and *keeps* the destination, so someone who chose "Email
+  or chat" and then "JPEG only" still gets something that fits in an email.
+  Pre-2.7 stored names are mapped by `destinationOf`.
 * **Quality** is `#quality-preset` (words) sitting on top of `#quality` (the
   60–99 floor, in Advanced). *One setting, two views* — the words write the
   number and `reflectQualityHint` writes back, showing a hidden `custom`
@@ -456,9 +487,9 @@ Two related rules, both straight out of the system's layout primitives:
 ### Speed, and the invariants that make it safe
 
 The engine got about **2.2× faster** (min-of-3 on a mixed corpus with a 12MP
-photograph: 30.9s → 14.1s) with **byte-identical output** on both the Figma and
-Web targets. Four changes did it, and each rests on an invariant that must hold
-if anyone touches this code:
+photograph: 30.9s → 14.1s) with **byte-identical output** on both the documents
+and web destinations. Four changes did it, and each rests on an invariant that
+must hold if anyone touches this code:
 
 * **oxipng runs only where it could change the winner.** It was 37% of all
   worker CPU, most of it spent losslessly shrinking a 25MB PNG of a photograph

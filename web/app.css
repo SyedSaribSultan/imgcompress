@@ -444,12 +444,154 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    box, and grid auto-placement shifted every later child up a track: the body
    fell into an auto row and the results bar inherited the 1fr, leaving an empty
    185px of track beneath it. Flex simply ignores absent children. */
+/* ======================= THE SHELL: three views ==========================
+   One thing on screen at a time, decided by what the person is doing. The
+   shell is a flex column so the active view takes all the height that is not
+   the progress hairline, and `position: relative` so the panel and the
+   finished-bar can be positioned against it rather than against the page.
+   ======================================================================== */
 .app {
   display: flex; flex-direction: column;
   height: 100%; min-height: 0; min-width: 0;
+  position: relative; overflow: hidden;
 }
-.app > .bar, .app > .advanced, .app > .batch, .app > .summary { flex: none; }
-.app > .body { flex: 1 1 auto; min-height: 0; }
+.app > .batch { flex: none; }
+/* Every view fills what is left. `min-height: 0` on a flex child is what lets
+   an inner scroller actually scroll instead of pushing the column taller. */
+.app > .view { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; }
+
+/* -------------------------- view: work happening -----------------------
+   Its own screen. The original at size, one sentence, one bar, one estimate.
+   Centred in a single column because there is exactly one thing to look at
+   and nothing to compare it to yet. */
+.view-working {
+  grid-template-rows: minmax(0, 1fr) auto;
+  place-items: center; gap: var(--oz-space-6);
+  padding: var(--oz-space-6);
+  background: var(--oz-color-background);
+}
+.working-frame {
+  max-width: 100%; max-height: 100%; min-height: 0;
+  display: grid; place-items: center;
+  border-radius: var(--app-radius-md); overflow: hidden;
+  box-shadow: var(--oz-elevation-small);
+}
+.working-frame img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.working-say {
+  display: grid; justify-items: center; gap: var(--oz-space-3);
+  width: min(56ch, 100%); text-align: center;
+  padding-bottom: var(--oz-space-6);
+}
+.working-track {
+  width: 100%; height: 3px; border-radius: var(--app-radius-pill);
+  background: var(--oz-color-fill-tertiary); overflow: hidden;
+}
+.working-track i {
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-border-tertiary);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+}
+.working-eta, .working-now {
+  margin: 0; font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+}
+
+/* ---------------------------- view: one image --------------------------
+   The comparison IS the screen. No padding, no card, no bands: the two bars
+   float on top of the picture and everything else is one panel away. */
+.view-single { grid-template-rows: minmax(0, 1fr); }
+.view-single > .stage { border-radius: 0; }
+
+.float-bar {
+  position: absolute; left: var(--oz-space-4); right: var(--oz-space-4);
+  z-index: 2;
+  display: flex; align-items: center; gap: var(--oz-space-3);
+  padding: var(--oz-space-2) var(--oz-space-3);
+  border-radius: var(--app-radius-md);
+  /* Floating over a photograph, so it needs its own ground rather than the
+     page's - and a blur so the picture stays legible underneath it. */
+  background: var(--oz-color-surface-overlay);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--oz-elevation-small);
+}
+.float-bar.top { top: var(--oz-space-4); }
+.float-bar.bottom { bottom: var(--oz-space-4); }
+/* They float over the picture, so they cannot push the page wide - they have
+   to fold instead. At 375px the mode switch and the zoom cluster together are
+   wider than the screen, and the first thing probe_mobile said about this
+   layout was that the zoomer ran to 457px on a 375px phone. */
+.float-bar { flex-wrap: wrap; }
+.float-bar > * { min-width: 0; }
+.float-bar .segmented, .float-bar .zoomer { flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .float-bar { left: var(--oz-space-2); right: var(--oz-space-2); gap: var(--oz-space-2); }
+  /* The keycap hints are a desktop affordance; a phone has no Space bar to
+     press, so they are noise taking the width the controls need. */
+  .float-bar kbd { display: none; }
+  .float-bar .spacer { display: none; }
+}
+.float-bar .insp-title { margin: 0; display: flex; align-items: baseline; min-width: 0; }
+.result-size { font-size: var(--oz-text-body-md); font-weight: var(--oz-weight-semibold); }
+.result-saved { font-size: var(--oz-text-body-sm); color: var(--oz-color-content-success); }
+
+/* ---------------------------- view: the list ---------------------------
+   Full width. The rail this replaced was 17% of the screen whether it held
+   one row or eighty. */
+.view-list {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--oz-color-surface-primary);
+}
+.list-head {
+  display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap;
+  padding: var(--oz-space-4) var(--oz-space-6);
+  border-bottom: var(--oz-stroke-1) solid var(--oz-color-border-secondary);
+}
+
+/* ------------------------------- the panel -----------------------------
+   One direction for everything deeper. Slides from the right, over the view
+   rather than beside it, so no view has to reserve room for it and the
+   comparison keeps the whole screen when it is shut.
+
+   Translated, never widthed: animating width would relayout every frame, and
+   verify_tokens.mjs refuses a transition on a layout property outright. */
+.panel {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 3;
+  width: min(420px, 100%);
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  background: var(--oz-color-surface-primary);
+  box-shadow: var(--oz-elevation-large);
+  transform: translateX(100%);
+  transition: transform var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default);
+}
+.panel.on { transform: translateX(0); }
+.panel-head {
+  display: flex; align-items: center; gap: var(--oz-space-3);
+  padding: var(--oz-space-4) var(--oz-space-5);
+  border-bottom: var(--oz-stroke-1) solid var(--oz-color-border-secondary);
+}
+.panel-body { overflow-y: auto; min-height: 0; padding: var(--oz-space-5); }
+.panel-sec { padding-bottom: var(--oz-space-6); }
+.panel-sec + .panel-sec {
+  padding-top: var(--oz-space-6);
+  border-top: var(--oz-stroke-1) solid var(--oz-color-border-secondary);
+}
+.panel-sec h4 { margin: 0 0 var(--oz-space-4); }
+.panel-sec .field { margin-bottom: var(--oz-space-4); }
+
+/* --------------------------- the end of the task ----------------------- */
+.done-bar {
+  position: absolute; left: 50%; bottom: var(--oz-space-7); z-index: 4;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  padding: var(--oz-space-3) var(--oz-space-5);
+  border-radius: var(--app-radius-pill);
+  background: var(--oz-color-surface-overlay);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--oz-elevation-small);
+  font-size: var(--oz-text-body-sm);
+}
+
 .bar {
   display: flex; align-items: center; gap: var(--oz-space-4); flex-wrap: wrap;
   padding: var(--oz-space-3) var(--oz-space-5); min-height: 52px;
@@ -486,9 +628,14 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .batch.on { opacity: 1; }
 /* Neutral, not brand. A full-width orange line under the toolbar reads as an
    alarm; work in progress is not an error, and the accent is reserved. */
+/* scaleX, not width. Animating width makes the browser redo layout on every
+   frame of every bar; transform is composited and cannot reflow anything. The
+   fraction arrives as a unitless --p from renderBatchProgress. */
 .batch i {
-  display: block; height: 100%; width: 0; background: var(--oz-color-border-tertiary);
-  transition: width var(--oz-spring-effects-slow-ms) var(--oz-spring-effects-slow);
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-border-tertiary);
+  transition: transform var(--oz-spring-effects-slow-ms) var(--oz-spring-effects-slow);
 }
 
 .body {
@@ -539,13 +686,45 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-sm);
 }
 
+/* The row got the width the sidebar used to take, so it can carry what it
+   did rather than only that it is finished: thumb, name and sizes, the
+   saving drawn to the batch's scale, the format that won, and its state. */
 .row {
-  display: grid; grid-template-columns: 46px minmax(0,1fr) auto;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(90px, 22%) 7rem auto;
   gap: var(--oz-space-4); align-items: center;
   width: 100%; text-align: left;
   padding: var(--oz-space-3); border-radius: var(--app-radius-md);
   background: transparent;
   transition: background-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
+}
+.saving { display: flex; align-items: center; gap: var(--oz-space-3); min-width: 0; }
+.saving-bar {
+  flex: 1 1 auto; height: 6px; min-width: 0;
+  border-radius: var(--app-radius-pill);
+  background: var(--oz-color-fill-tertiary); overflow: hidden;
+}
+/* scaleX, never width: a transitioned width relayouts the whole list on every
+   frame of every bar, and verify_tokens refuses it outright. */
+.saving-bar i {
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-content-success);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+}
+.saving-pct {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-success);
+  white-space: nowrap;
+}
+.won {
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Below a tablet the two measured columns have nowhere to go; the sizes are
+   still in .meta, so nothing is lost by dropping them. */
+@media (max-width: 720px) {
+  .row { grid-template-columns: 46px minmax(0, 1fr) auto; }
+  .row .saving, .row .won { display: none; }
 }
 .row + .row { margin-top: var(--app-gap-tight); }
 .row:hover { background: var(--oz-color-fill-secondary-hover); }
@@ -615,9 +794,10 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 /* Also neutral: three orange hairlines stacked under three filenames looked
    like three failures. */
 .track i {
-  display: block; height: 100%; width: 0;
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
   background: var(--oz-color-border-tertiary); border-radius: var(--app-radius-pill);
-  transition: width var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .row.enter { animation: oz-enter-rise var(--oz-spring-spatial-default-ms) var(--oz-spring-spatial-default) both; }
 
@@ -909,6 +1089,18 @@ kbd {
   color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
   margin: var(--oz-space-4) 0 0; max-width: 60ch;
 }
+/* Where the saving actually came from, and the check on transparent edges.
+   Both are findings rather than readouts, so they read as sentences and sit
+   just under the verdict they qualify. The transparency one gets the success
+   colour because it is the only line on screen that reports a test the image
+   passed that nobody asked for. */
+.split-note, .alpha-note {
+  font-size: var(--oz-text-body-xs); line-height: var(--oz-leading-body-xs);
+  margin: var(--oz-space-3) 0 0; max-width: 60ch;
+  color: var(--oz-color-content-secondary);
+}
+.alpha-note { color: var(--oz-color-content-success); }
+#keep-size { margin-top: var(--oz-space-3); }
 .hint-inline {
   font-family: var(--oz-font-body); text-transform: none; letter-spacing: 0;
   font-weight: var(--oz-weight-regular); color: var(--oz-color-content-tertiary);
@@ -975,6 +1167,10 @@ kbd {
   padding-bottom: var(--oz-space-2); margin-bottom: calc(var(--oz-space-2) * -1);
   scrollbar-width: thin;
 }
+/* In the panel there is no width to scroll sideways into, so they wrap. A
+   sideways scroller inside a 420px drawer hides its own contents. */
+.panel .cands { flex-wrap: wrap; overflow-x: visible; }
+.panel .cand { flex: 1 1 calc(50% - var(--oz-space-2)); }
 /* Equal width, always: `flex: 1 0 <basis>` gives every chip the same basis and
    the same share of any slack, and forbids shrinking. That is not a tidiness
    preference — the meter along the bottom edge is a percentage of the chip, so
@@ -1026,13 +1222,23 @@ kbd {
    neutral in every chip — the ring says which one is showing and the badge says
    which one won, so a coloured meter would be a third voice saying nothing new. */
 .cand .meter {
-  position: absolute; left: 0; bottom: 0; height: 2px; width: var(--w, 0%);
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  transform: scaleX(var(--w, 0)); transform-origin: left center;
   background: var(--oz-color-border-tertiary);
-  transition: width var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
+  transition: transform var(--oz-spring-spatial-slow-ms) var(--oz-spring-spatial-slow);
 }
 .cand-wait {
   font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
   font-family: var(--oz-font-mono); align-self: center;
+}
+/* Why the version on screen won, or why the one you picked did not. Sits
+   directly under the row it explains, in the same register as the narration -
+   a sentence, not a readout, so it is prose rather than mono. */
+.cand-why {
+  margin: var(--oz-space-2) 0 0;
+  font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+  line-height: var(--oz-leading-body-xs);
 }
 /* The answer to clicking "prefer something else?". One pass, on an effects
    spring so it cannot overshoot, and it is a response to an action rather than
@@ -1141,8 +1347,12 @@ kbd {
    the download actions on the right and nothing in between. The toast sits in
    that gap. `probe_theme.mjs` asserts it covers no control, because the next
    person to move it will not know any of the above. */
+/* Clear of the floating bottom bar, which is itself `bottom: --oz-space-4`.
+   A toast that covers a control is a toast that hides the button somebody was
+   reaching for - probe_theme asserts it outright, over every visible control
+   on the page, and it caught this the moment the bar started floating. */
 .toast {
-  position: fixed; left: 50%; bottom: var(--oz-space-4); top: auto;
+  position: fixed; left: 50%; bottom: var(--oz-space-15); top: auto;
   max-width: min(46ch, calc(100vw - var(--oz-space-7)));
   transform: translate(-50%, calc(8px * var(--oz-motion-spatial-scale)));
   z-index: var(--oz-layer-toast);
@@ -1248,6 +1458,77 @@ td.win::before {
   content: "●"; color: var(--oz-color-content-brand); font-size: 8px;
   margin-right: var(--oz-space-2); vertical-align: 2px;
 }
+
+/* ======================= 8. THE COMPARISON PAGE ==========================
+   compare.html, generated from tests/benchmark.json. It reuses .learn, the
+   table rules above and the buttons, so the argument looks like the product
+   making it rather than like a separate document. Only what is genuinely new
+   to this page lives here. */
+/* Shared with the download page, which opens the same way. Both are standalone
+   pages rather than app screens, and a second display size for the same job
+   would make them read as two products. */
+.compare-page h1,
+.download-page h1 {
+  font-family: var(--oz-font-heading);
+  font-size: var(--oz-text-display-sm); line-height: var(--oz-leading-display-sm);
+  letter-spacing: var(--oz-tracking-display-sm);
+  font-weight: var(--oz-default-weight-heading);
+  margin: 0 0 var(--oz-space-6); max-width: 30ch;
+}
+/* The three numbers the page rests on. Auto-fit rather than a fixed count, so
+   a corpus change that adds a claim does not need a breakpoint. */
+.claims {
+  display: grid; gap: var(--oz-space-5); margin: var(--oz-space-11) 0;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.claim {
+  padding: var(--oz-space-6);
+  background: var(--oz-color-surface-secondary);
+  border-radius: var(--app-radius-lg);
+}
+.claim-n {
+  font-size: var(--oz-text-heading-xl); line-height: 1;
+  color: var(--oz-color-content-brand);
+  font-weight: var(--oz-weight-semibold); margin-bottom: var(--oz-space-4);
+}
+.claim p {
+  margin: 0; font-size: var(--oz-text-body-sm);
+  line-height: var(--oz-leading-body-sm); color: var(--oz-color-content-secondary);
+}
+.corpus-image { margin: var(--oz-space-13) 0; }
+.corpus-what {
+  max-width: 62ch; color: var(--oz-color-content-secondary);
+  margin: var(--oz-space-3) 0 0;
+}
+.corpus-meta {
+  color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
+  margin: var(--oz-space-2) 0 0;
+}
+/* The smallest file that actually cleared the standard. The only row on the
+   page that deserves emphasis, so it is the only one that gets it. */
+.compare-page tbody tr.best th,
+.compare-page tbody tr.best td {
+  color: var(--oz-color-content-primary); font-weight: var(--oz-weight-semibold);
+}
+.compare-page tbody tr.best { background-color: var(--oz-color-fill-brand-secondary); }
+/* A row that did not clear it. Dimmed rather than coloured red: it is not an
+   error, it is a setting somebody chose that did not do what they wanted. */
+.compare-page tbody tr.missed th,
+.compare-page tbody tr.missed td { color: var(--oz-color-content-tertiary); }
+.compare-page tbody tr.ours th { color: var(--oz-color-content-brand); }
+.compare-page .verdict-cell {
+  white-space: nowrap; font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+}
+.compare-page tbody tr.best .verdict-cell { color: var(--oz-color-content-success); }
+.repro {
+  background: var(--oz-color-surface-secondary);
+  border-radius: var(--app-radius-md);
+  padding: var(--oz-space-5); overflow-x: auto;
+  font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
+  line-height: var(--oz-leading-body-sm); color: var(--oz-color-content-secondary);
+}
+.cta-line { margin: var(--oz-space-13) 0 0; }
 
 .checks { padding-left: 0; margin: var(--oz-space-5) 0; list-style: none; display: grid; gap: var(--oz-space-3); }
 .checks li {
@@ -1377,6 +1658,129 @@ html.theming body, html.theming body * {
   input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }
   .row { padding: var(--oz-space-4) var(--oz-space-3); }
 }
+
+/* ======================== 9. THE DOWNLOAD PAGE ===========================
+   download.html. It reuses .learn, .checks, .code, .metric-note, the buttons,
+   the site chrome and the comparison page's display heading, so the page that
+   asks somebody to install this looks like the thing being installed rather
+   than a landing page bolted on beside it. Only what is new to it lives here.
+
+   The accent budget is why this block is as plain as it is. The page spends
+   brand orange twice: on the primary action that offers the browser version,
+   and on whichever build the visitor probably wants. Give the other two cards
+   an accent too and the guess stops being visible - which is the only thing
+   the guess is for. */
+
+/* Three builds, three equal cards. auto-fit rather than three named columns so
+   the grid folds to one column on a phone with no breakpoint of its own, and
+   `min(100%, 220px)` rather than a bare 220px because a fixed track floor is
+   exactly what makes a grid wider than the screen it is on. */
+.dl-grid {
+  display: grid; gap: var(--oz-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  margin: var(--oz-space-7) 0;
+}
+/* The whole card is the link, so the stroke is the control's boundary rather
+   than a separator.  job: affordance */
+.dl-card {
+  position: relative; min-width: 0;
+  display: grid; gap: var(--oz-space-1); align-content: start;
+  padding: var(--oz-space-6);
+  border: var(--oz-stroke-2) solid var(--oz-color-border-primary);
+  border-radius: var(--app-radius-lg);
+  background: var(--oz-color-surface-primary);
+  text-decoration: none;
+  transition-property: background-color, border-color, transform;
+  transition-duration: var(--oz-spring-effects-fast-ms);
+  transition-timing-function: var(--oz-spring-effects-fast);
+}
+.dl-card:hover {
+  background: var(--oz-color-surface-secondary);
+  border-color: var(--oz-color-border-primary-hover);
+}
+/* The same 1px dip as .btn:active, for the same reason: the press has to
+   register before the download does. */
+.dl-card:active { transform: translateY(1px); }
+.dl-os {
+  font-family: var(--oz-font-heading);
+  font-size: var(--oz-text-body-lg); line-height: var(--oz-leading-heading-xs);
+  font-weight: var(--oz-weight-semibold);
+}
+.dl-arch { font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary); }
+.dl-go {
+  margin-top: var(--oz-space-4);
+  font-size: var(--oz-text-body-sm); font-weight: var(--oz-weight-medium);
+}
+/* The guess. Selected-ness is a state, so the stroke may carry it, and the
+   ground is the brand *surface* step rather than a brand fill - a card is a
+   surface, and `fill-*` is for controls. It is deliberately the tint and not
+   the brand itself: this card is still one of three choices and it might be the
+   wrong one, which is also why the label says "probably".
+
+   `.row[aria-selected="true"]` refuses a brand tint on purpose, because at 15%
+   over a white page it renders pink and reads destructive rather than selected.
+   Taken and answered rather than missed: there the tint had to carry "selected"
+   on its own, here a brand stroke and a brand label already say which card this
+   is, so the ground only has to agree with them. */
+.dl-card.likely {
+  border-color: var(--oz-color-border-brand);
+  background: var(--oz-color-surface-brand);
+}
+/* Out of the flow. Reserved space would leave a hole in the two cards that
+   never get the label, and revealing it inside the third would push that
+   card's platform name out of line with its neighbours'. */
+.dl-you {
+  position: absolute; top: var(--oz-space-4); right: var(--oz-space-5);
+  color: var(--oz-color-content-brand);
+}
+
+/* An unsigned build means the operating system will interrupt somebody who
+   trusted this page, so this line sits at the buttons rather than only in the
+   section that explains it - which is not where a person who has already
+   clicked will be. Warning colour, because that is what it is.
+
+   Scoped to the page rather than written as a bare class: `.learn p` is a class
+   and a type, so it outranks a lone class, and the first version of this line
+   came out the same grey as the prose around it - the one thing it must not
+   be. */
+.download-page .dl-heads-up {
+  color: var(--oz-color-content-warning);
+  font-size: var(--oz-text-body-sm); max-width: 62ch;
+}
+.dl-heads-up a { color: inherit; text-decoration-color: currentColor; }
+
+/* The browser version, given its own ground instead of a line of prose. For
+   most people it is the right answer, and it has to reach somebody who came
+   here to download something and stopped reading at the buttons. */
+.dl-alt {
+  display: grid; gap: var(--oz-space-5); justify-items: start;
+  margin: var(--oz-space-11) 0; padding: var(--oz-space-7);
+  background: var(--oz-color-surface-secondary);
+  border-radius: var(--app-radius-lg);
+}
+.dl-alt p {
+  margin: 0; max-width: 54ch;
+  font-size: var(--oz-text-body-md); color: var(--oz-color-content-primary);
+}
+/* The one button in this product whose label is a sentence. .btn is nowrap
+   because a wrapped control breaks a toolbar row, but here the label IS the
+   offer and it is 46 characters long: held on one line it overhung a 375px
+   phone by more than a finger's width. */
+.dl-alt .btn {
+  white-space: normal; text-align: center;
+  padding-top: var(--oz-space-3); padding-bottom: var(--oz-space-3);
+}
+
+/* The per-platform steps sit inside .learn's <details>, whose paragraphs carry
+   the drawer's own padding; the list has to answer to the same edges or the
+   steps stand outside the prose they belong to. */
+.dl-steps {
+  margin: 0;
+  padding: 0 var(--oz-space-5) var(--oz-space-5) var(--oz-space-11);
+  color: var(--oz-color-content-secondary);
+  font-size: var(--oz-text-body-sm); line-height: var(--oz-leading-body-md);
+}
+.dl-steps li + li { margin-top: var(--oz-space-2); }
 
 /* No blanket motion reset here: the token layer's reduced-motion block already
    collapses spatial travel, repoints spatial springs and stops ambient loops,

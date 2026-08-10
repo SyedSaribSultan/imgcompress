@@ -75,6 +75,14 @@ for i in range(14):
 d.rectangle([0, 0, 1200, 28], fill=(24, 26, 32))
 ui.save(OUT / "ui.png")
 
+# The same screenshot under a name exactly 60 characters long, which is what a
+# real export out of a design tool or a screen grabber looks like. The layout
+# has to survive it in two places - the row in the list and the heading over the
+# comparison - and neither can be checked with a fixture called ui.png.
+LONG_NAME = "screenshot-2026-08-10-settings-panel-dark-theme-retina2x.png"
+assert len(LONG_NAME) == 60, len(LONG_NAME)
+ui.save(OUT / LONG_NAME)
+
 # alpha logo
 logo = Image.new("RGBA", (600, 600), (0, 0, 0, 0))
 d = ImageDraw.Draw(logo)
@@ -93,5 +101,12 @@ img.resize((300, 200)).convert("RGB").save(OUT / "small.jpg", quality=30)
 
 # corrupt
 (OUT / "corrupt.png").write_bytes(b"definitely not a png" * 3)
+
+# A second damaged file, so "every image in the batch failed" can be reached
+# with two different failures rather than the same bytes twice. This one opens
+# with a real JPEG start-of-image marker, so the browser commits to a JPEG
+# decode and fails partway in - the plausible version of damage, where sniffing
+# the first bytes is not enough to reject it.
+(OUT / "corrupt.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"not really a jpeg" * 8)
 
 print("fixtures:", sorted(p.name for p in OUT.iterdir()))

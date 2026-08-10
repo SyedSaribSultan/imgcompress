@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -267,6 +268,11 @@ def main() -> int:
     ap.add_argument("--corpus", default="tests/bench_corpus")
     ap.add_argument("--web", default="tests/bench_web_out")
     ap.add_argument("--out", default="tests/BENCHMARK.md")
+    # The same run, also as data. The markdown is for a reader; the JSON is so
+    # the public comparison page can be generated from the measurements instead
+    # of transcribed from them - a hand-copied table is a table that will
+    # eventually disagree with the benchmark it claims to report.
+    ap.add_argument("--json", default="tests/benchmark.json")
     args = ap.parse_args()
 
     corpus = Path(args.corpus)
@@ -281,6 +287,7 @@ def main() -> int:
     web_root = Path(args.web)
 
     lines: list[str] = []
+    data: dict = {"floor": FLOOR, "images": []}
     lines.append("# Head-to-head, at matched perceptual quality\n")
     lines.append(f"Every strategy below is searched for the **smallest file that still scores "
                  f"SSIMULACRA 2 >= {FLOOR:g}** against the same normalised source — the metric the "
@@ -301,8 +308,8 @@ def main() -> int:
         ref_bytes = ref_path.stat().st_size
 
         web: dict[str, bytes] = {}
-        for target_dir, label in (("figma", "imgcompress web (Figma target)"),
-                                  ("web", "imgcompress web (Web target)")):
+        for target_dir, label in (("documents", "imgcompress web (documents)"),
+                                  ("web", "imgcompress web (web)")):
             d = web_root / target_dir
             if not d.is_dir():
                 continue
@@ -344,8 +351,31 @@ def main() -> int:
             lines.append(f"| {r.strategy}{star} | {r.fmt} | {r.setting} | {human(len(r.data))} "
                          f"| {rel} | {s2:.1f} | {s:.4f} | {mark} |")
 
+        data["images"].append({
+            "name": src.name,
+            "width": ref.size[0],
+            "height": ref.size[1],
+            "sourceBytes": orig_bytes,
+            "referenceBytes": ref_bytes,
+            "rows": [
+                {
+                    "strategy": r.strategy,
+                    "format": r.fmt,
+                    "setting": r.setting,
+                    "searched": r.searched,
+                    "bytes": len(r.data),
+                    "ss2": round(s2, 1),
+                    "ssim": round(s, 4),
+                    "clearsFloor": bool(s2 >= FLOOR),
+                    "winner": bool(winner and r is winner[0]),
+                }
+                for r, s2, s in sorted(rows, key=lambda x: len(x[0].data))
+            ],
+        })
+
     Path(args.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"\nwritten to {args.out}")
+    Path(args.json).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+    print(f"\nwritten to {args.out} and {args.json}")
     return 0
 
 

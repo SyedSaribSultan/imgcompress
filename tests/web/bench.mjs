@@ -6,8 +6,8 @@
  * may not move the results.
  *
  *   node tests/web/setup_bench.mjs            # once, to build bench/
- *   node tests/web/bench.mjs <label>          # gate against snap-figma.json
- *   BENCH_TARGET=web node tests/web/bench.mjs <label>
+ *   node tests/web/bench.mjs <label>          # gate against snap-documents.json
+ *   BENCH_TARGET=web node tests/web/bench.mjs <label>   # or email, thumbnail, original
  *   BENCH_DIR=batch SNAP=batch node tests/web/bench.mjs <label>
  *   BENCH_WRITE=1 ...                         # rewrite a snapshot on purpose
  */
@@ -22,7 +22,7 @@ import { uploadAndStart } from "./drive.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BENCH = path.join(here, process.env.BENCH_DIR || "bench");
 const label = process.argv[2] || "run";
-const target = process.env.BENCH_TARGET || "figma";
+const target = process.env.BENCH_TARGET || "documents";
 
 if (!existsSync(BENCH)) {
   console.error(`${BENCH} missing — run: node tests/web/setup_bench.mjs`);
@@ -42,11 +42,21 @@ try {
   await pg.setViewport({ width: 1600, height: 1000 });
   pg.on("pageerror", (e) => console.log("[pageerror]", String(e)));
   await pg.goto("http://127.0.0.1:8171/", { waitUntil: "networkidle0" });
-  if (target !== "figma") {
+  if (target !== "web") {
     await pg.select("#target", target);
     await pg.evaluate(() => document.getElementById("target").dispatchEvent(new Event("change")));
     await new Promise((r) => setTimeout(r, 500));
   }
+  /* No pin on the size cap: `documents` and `web` both downscale to 2560, so
+   * the format list is already the only thing that differs between them and
+   * the snapshot measures the configuration a person actually gets.
+   *
+   * This was briefly pinned to 2560 by hand, during a spell when `documents`
+   * defaulted to its own 4096 ceiling. The pin isolated the variable correctly
+   * and certified a setting nobody would ever run, which is the worse failure:
+   * a green gate over a configuration that does not exist. If a destination is
+   * ever given a different frame again, fix the destination or snapshot it
+   * separately - do not hold it still here. */
   // Warm the codecs first so the measurement is steady-state, not first-load.
   await pg.evaluate(() => addSamples());
   await pg.waitForFunction(() => state.items.length === 2 &&

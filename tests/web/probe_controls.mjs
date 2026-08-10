@@ -44,8 +44,8 @@ try {
     settings: JSON.parse(JSON.stringify(state.settings)),
   }));
   console.log("  defaults:", JSON.stringify(d));
-  ok(d.format === "figma" && d.preset === "90" && d.floor === "90",
-     "defaults: automatic format, High quality, floor 90");
+  ok(d.format === "web" && d.preset === "90" && d.floor === "90",
+     "defaults: going to the web, High quality, floor 90");
   ok(d.settings.formats === null, "defaults: no format restriction");
 
   // ---- the words drive the number, and back -----------------------------
@@ -123,7 +123,7 @@ try {
      `the opaque image still honours the JPEG choice (${keep.find((x) => x.n === "ui.png").fmt})`);
 
   // Flatten: same choice, other answer.
-  await rerun(pg, () => pg.select("#target", "figma"));
+  await rerun(pg, () => pg.select("#target", "documents"));
   await rerun(pg, async () => {
     await pg.select("#target", "one-jpeg");
     await settle(400);

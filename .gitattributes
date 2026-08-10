@@ -1,0 +1,23 @@
+# Let git decide what is text, and check text out with LF everywhere.
+#
+# This repo is written on Windows with core.autocrlf=true, which rewrites line
+# endings on checkout. That is harmless for files people edit and not harmless
+# for a file a tool regenerates and compares: `tools/gen_destinations.py`
+# emits LF, a CRLF working copy differs from it on every single line, and
+# `--check` reports "out of date" over a diff that looks empty because the only
+# difference is invisible. Pinning the whole tree removes the class of problem
+# rather than the one instance.
+* text=auto eol=lf
+
+# Binary, so git must not touch them at all. Corrupting a byte here would break
+# the snapshot gates in a way that looks like an engine regression.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.avif  binary
+*.gif   binary
+*.ico   binary
+*.woff2 binary
+*.wasm  binary
+*.rgb   binary

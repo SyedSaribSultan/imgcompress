@@ -28,6 +28,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from PIL import Image
 
 from . import __version__
+from . import destinations as dest
 from . import encoders as enc
 from .core import (
     SUPPORTED_SUFFIXES,
@@ -48,6 +49,18 @@ MAX_BODY = 512 * 1024 * 1024
 
 # Characters Windows refuses in filenames, plus control characters.
 _BAD_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+# Content types for the files served out of `webui/`. Stated rather than looked
+# up because `mimetypes` has no entry for woff2 on a stock Windows Python, and
+# a face delivered as application/octet-stream is a font the browser may refuse
+# - which would show up as the app silently falling back to a system typeface.
+STATIC_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".woff2": "font/woff2",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -100,9 +113,9 @@ class Session:
         self.results: dict[str, CompressionResult] = {}
         self.previews: dict[str, bytes] = {}
         self.settings = {
-            "target": "figma",
+            "target": dest.DEFAULT,
             "quality_target": 90.0 if HAVE_SSIMULACRA2 else 0.97,
-            "max_dimension": 2560,
+            "max_dimension": dest.get(dest.DEFAULT).max_dimension,
             "metric": "ssimulacra2" if HAVE_SSIMULACRA2 else "ssim",
             "fast": False,
             "keep_metadata": False,
@@ -144,6 +157,19 @@ class Session:
                 "version": __version__,
                 "items": items,
                 "settings": dict(self.settings),
+                # The interface builds its destination list from this rather
+                # than carrying its own copy. One table, no drift.
+                #
+                # `formats` is what this machine can actually write, not what
+                # the destination would like to - a tooltip promising AVIF on a
+                # Pillow built without libavif is a promise the engine cannot
+                # keep, and the person would only find out by its absence.
+                "destinations": [
+                    {"name": d.name, "label": d.label, "help": d.help,
+                     "formats": enc.usable(d.formats), "max_dimension": d.max_dimension,
+                     "quality_target": d.ss2_target if HAVE_SSIMULACRA2 else d.ssim_target}
+                    for d in dest.visible()
+                ],
                 "watch_folder": self.watch_folder,
                 "last_folder": self.last_folder,
                 "engines": {**enc.capabilities(), "ssimulacra2 (perceptual metric)": HAVE_SSIMULACRA2},
@@ -224,8 +250,13 @@ class Session:
         merged = dict(self.settings)
         merged.update(item.override or {})
         formats = merged.pop("formats", None) or None
+        # An older session's saved target may be a pre-2.7 name; resolve it
+        # rather than letting `figma` reach the engine as an unknown place.
+        going_to = dest.resolve(merged.get("target") or dest.DEFAULT)
+        if not dest.exists(going_to):
+            going_to = dest.DEFAULT
         return Settings(
-            target=merged.get("target", "figma"),
+            target=going_to,
             max_dimension=int(merged.get("max_dimension", 2560)),
             metric=merged.get("metric", ""),
             quality_target=float(merged["quality_target"]) if merged.get("quality_target") is not None else None,
@@ -469,6 +500,22 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return self.rfile.read(length) if length else b""
 
+    def _serve_static(self, route: str):
+        """A file from `webui/`, or None if the path does not name one.
+
+        The traversal guard is the `parents` test: `..` segments resolve out of
+        the directory, and a resolved path whose parents do not include WEBUI is
+        refused. Returning None rather than a 404 lets the caller fall through
+        to the authorised routes, so this cannot shadow them.
+        """
+        candidate = (WEBUI / unquote(route[len("/webui/"):])).resolve()
+        if WEBUI.resolve() not in candidate.parents or not candidate.is_file():
+            return None
+        mime = (STATIC_TYPES.get(candidate.suffix.lower())
+                or mimetypes.guess_type(candidate.name)[0]
+                or "application/octet-stream")
+        return self._send(200, candidate.read_bytes(), mime)
+
     def _json_body(self) -> dict:
         raw = self._body()
         if not raw:
@@ -491,6 +538,26 @@ class Handler(BaseHTTPRequestHandler):
             html = (WEBUI / "app.html").read_bytes()
             html = html.replace(b"__TOKEN__", self.token.encode("ascii"))
             return self._send(200, html, "text/html; charset=utf-8")
+
+        # The app's own stylesheets and faces, served before the token check.
+        #
+        # A <link> or a url() inside a stylesheet cannot carry the query string
+        # the page was opened with, so gating these produced a 403 with a JSON
+        # body - which Chrome reports as "refused to apply style, MIME type
+        # application/json" and then renders the whole app in Times New Roman
+        # with no tokens at all. Every static gate stayed green through that,
+        # which is why verify_desktop.mjs now looks at the real page.
+        #
+        # Safe to exempt, and only this: these are static files shipped inside
+        # the package. They carry no user data, nothing about the images being
+        # compressed, and no session state. `_host_ok` still refuses any Host
+        # that is not loopback, so a hostile page cannot reach them from a
+        # domain of its own, and the token still gates every API route and every
+        # image endpoint below.
+        if route.startswith("/webui/"):
+            served = self._serve_static(route)
+            if served:
+                return served
 
         if not self._authorised(query):
             return self._json({"error": "unauthorised"}, 403)
@@ -515,12 +582,6 @@ class Handler(BaseHTTPRequestHandler):
             mime = {"jpeg": "image/jpeg", "png8": "image/png", "png": "image/png",
                     "webp": "image/webp", "webp-lossless": "image/webp"}.get(fmt, "image/png")
             return self._send(200, data, mime)
-
-        if route.startswith("/webui/"):
-            candidate = (WEBUI / unquote(route[len("/webui/"):])).resolve()
-            if WEBUI.resolve() in candidate.parents and candidate.is_file():
-                mime = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
-                return self._send(200, candidate.read_bytes(), mime)
 
         return self._json({"error": "not found"}, 404)
 

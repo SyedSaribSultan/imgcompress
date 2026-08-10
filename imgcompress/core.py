@@ -3,8 +3,9 @@
 Strategy, in order of how much size it actually saves:
 
 1.  Cap the pixel dimensions. A 6000px export that renders at 1200px is mostly
-    wasted bytes, and for Figma specifically the dimensions drive canvas memory
-    more than the byte count does.
+    wasted bytes, and inside a design tool the dimensions drive canvas memory
+    more than the byte count does. How large is a property of the destination
+    - see `destinations.py`.
 2.  Strip metadata (EXIF, ICC, XMP).
 3.  Run a **bake-off**: encode the image as JPEG *and* as palette PNG *and* as
     lossless PNG, binary-searching each one for the lowest quality that still
@@ -28,6 +29,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+from . import destinations as dest
 from . import encoders as enc
 from .quality import Metric, get_metric
 
@@ -36,15 +38,12 @@ Image.MAX_IMAGE_PIXELS = 512_000_000
 
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 
-# Figma rescales anything above this on import, destructively and with no
-# control over the resampling. Better to do it ourselves with Lanczos.
-FIGMA_MAX_DIMENSION = 4096
-
 
 @dataclass
 class Settings:
-    target: str = "figma"
-    """figma | web | lossless - which output formats are allowed."""
+    target: str = dest.DEFAULT
+    """Where the image is going - see `destinations.py`. Decides which output
+    formats are allowed and whether a dimension cap is enforced."""
 
     max_dimension: int = 2560
     """Longest edge in pixels. 0 disables resizing."""
@@ -123,9 +122,11 @@ def _normalise(img: Image.Image, settings: Settings) -> tuple:
     original_size = img.size
     resized_to = None
 
-    limit = settings.max_dimension or 0
-    if settings.target == "figma":
-        limit = min(limit, FIGMA_MAX_DIMENSION) if limit else FIGMA_MAX_DIMENSION
+    # Some destinations enforce a ceiling regardless of what was asked for -
+    # design tools rescale above 4096px themselves, destructively, so the
+    # choice is between our Lanczos and theirs. The rule lives in one place so
+    # that what the CLI prints and what the engine does cannot disagree.
+    limit = dest.effective_limit(settings.target, settings.max_dimension)
 
     if limit and max(img.size) > limit:
         scale = limit / float(max(img.size))
@@ -192,7 +193,11 @@ def _search_one(
 
 
 def _candidate_names(settings: Settings, has_alpha: bool) -> list[str]:
-    names = settings.formats or enc.TARGETS[settings.target]
+    names = settings.formats or dest.formats_for(settings.target)
+    # A destination names the formats it *wants*; this machine decides which of
+    # them it can write. The two are not the same list - the table offers AVIF
+    # everywhere the browser engine does, and most Pillow builds cannot make one.
+    names = enc.usable(names)
     if has_alpha:
         names = [n for n in names if enc.ALL[n].supports_alpha]
     return names
@@ -235,7 +240,7 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
                 result.suffix = source.suffix
                 result.new_bytes = result.original_bytes
                 result.skipped = True
-                result.note = "animated - passed through unchanged"
+                result.note = "animated - left exactly as it is"
                 return result
 
             img, original_size, resized_to = _normalise(opened, settings)
@@ -246,7 +251,8 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
     has_alpha = _has_alpha(img)
     names = _candidate_names(settings, has_alpha)
     if not names:
-        result.error = "no candidate format can carry this image"
+        result.error = ("No format available here can hold this image. "
+                        "Allow more formats, or choose a different destination.")
         return result
 
     # The smallest candidate that clears the floor wins. A candidate that
@@ -261,7 +267,9 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
         try:
             found = _search_one(img, encoder, metric, target, settings.fast)
         except Exception as exc:  # a broken candidate must not kill the file
-            result.warnings.append(f"{encoder.name} failed: {type(exc).__name__}")
+            result.warnings.append(
+                f"{encoder.name} could not be written for this image, so it was "
+                f"left out of the comparison ({type(exc).__name__})")
             continue
         if not found:
             continue
@@ -276,13 +284,16 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
 
     best = best_passing or best_failing
     if best is None:
-        result.error = "no candidate produced usable output"
+        result.error = ("None of the formats could be written for this image. "
+                        "It may be damaged; try re-exporting it.")
         return result
 
     data, level, score, encoder = best
     if score < target:
+        label = "visual match" if metric.name == "ssimulacra2" else metric.name
         result.warnings.append(
-            f"could not reach {metric.name} {target:g}; best was {score:.1f}"
+            f"could not reach a {label} of {target:g}; the closest was {score:.1f}. "
+            f"Lower the target, or keep the original."
         )
 
     # Never ship a bigger file. The one exception is a caller who *forced* a
@@ -296,7 +307,7 @@ def compress(source: Path, settings: Settings) -> CompressionResult:
         result.suffix = source.suffix
         result.new_bytes = result.original_bytes
         result.skipped = True
-        result.note = "already well compressed - passed through unchanged"
+        result.note = "already smaller than anything we could make - left as it is"
         result.fmt = encoder.name
         return result
 

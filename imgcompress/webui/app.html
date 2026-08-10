@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Image Compressor</title>
+<!-- The same design system the web app loads. Both files are copied in from
+     web/ by tools/sync_webui_assets.py and checked by CI, so the two
+     interfaces cannot drift into two visual identities. Tokens first: the
+     styles below consume them and hand-type nothing. -->
+<link rel="icon" href="/webui/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/webui/heyoz-tokens.css">
+<link rel="stylesheet" href="/webui/fonts.css">
 <style>
 /* ---------------------------------------------------------------------------
    The interface is chrome around photographs, so it stays achromatic. Exactly
@@ -11,53 +18,31 @@
    and the badge on the encoding that won. If you can see it more than twice in
    a viewport, something has started shouting.
    --------------------------------------------------------------------------- */
+/* No palette of its own. Every colour, corner, face and spring below comes
+   from the token layer in heyoz-tokens.css, which is the same file the web app
+   loads - copied in by tools/sync_webui_assets.py and checked by CI. What is
+   left here are the app-level aliases, deliberately identical to web/app.css
+   so the two interfaces are the same product rather than two products that
+   happen to share a name. */
 :root {
-  --surface: #141518;
-  --panel: #1a1c20;
-  --raised: #212429;
-  --raised-hi: #282c32;
-  --line: #2b2f36;
-  --line-soft: #22262b;
-  --ink: #e9eaec;
-  --ink-2: #9ba0aa;
-  --ink-3: #6a6f79;
-  --accent: #d29a5e;
-  --accent-ink: #1a1206;
-  --accent-soft: #3a2b18;
-  --ok: #62b98a;
-  --bad: #e07a6e;
-  --shadow: 0 8px 28px rgba(0,0,0,.45);
-  --checker-a: #1e2126;
-  --checker-b: #23262c;
+  /* The comparison stage's transparency checkerboard: two surface steps, so it
+     tracks the theme instead of being a pair of fixed greys. */
+  --checker-a: var(--oz-color-surface-secondary);
+  --checker-b: var(--oz-color-surface-tertiary);
 
-  --r-sm: 5px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  /* Three corners, same three as the web app. */
+  --app-radius-sm: var(--oz-radius-3);       /* 6px  - controls, chips, thumbs */
+  --app-radius-md: var(--oz-radius-4);       /* 8px  - rows, cards, tiles      */
+  --app-radius-lg: var(--oz-radius-8);       /* 16px - panels, dialogs, hero   */
+  --app-radius-pill: var(--oz-radius-full);  /* tracks, dots, badges           */
 
-  --t-fast: 110ms cubic-bezier(.2,.7,.4,1);
-  --t-mid: 220ms cubic-bezier(.2,.7,.4,1);
+  /* One control height for a normal row, one for dense clusters. */
+  --app-control-h: 36px;
+  --app-control-h-sm: 28px;
 
-  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", "Cascadia Mono", Consolas, monospace;
-}
-[data-theme="light"] {
-  --surface: #f2f2ef;
-  --panel: #fbfbfa;
-  --raised: #ffffff;
-  --raised-hi: #f4f4f1;
-  --line: #dfdfd9;
-  --line-soft: #e9e9e4;
-  --ink: #1a1b1e;
-  --ink-2: #5b606a;
-  --ink-3: #868b95;
-  --accent: #8c5f26;
-  --accent-ink: #fff8ef;
-  --accent-soft: #f2e6d6;
-  --ok: #2f7d55;
-  --bad: #b3453a;
-  --shadow: 0 8px 24px rgba(28,26,22,.12);
-  --checker-a: #eeeeea;
-  --checker-b: #f7f7f4;
+  /* Below the system's 4px floor, for things that must sit *inside* something
+     without reading as separated. */
+  --app-gap-tight: 2px;
 }
 
 * { box-sizing: border-box; }
@@ -67,185 +52,366 @@
 html, body { height: 100%; }
 body {
   margin: 0;
-  font: 400 13px/1.5 var(--ui);
-  color: var(--ink);
-  background: var(--surface);
+  font: 400 13px/1.5 var(--oz-font-body);
+  color: var(--oz-color-content-primary);
+  background: var(--oz-color-surface-primary);
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-font-smoothing: antialiased;
 }
+/* The user agent renders b, strong, th and h1-h6 at `bold` (700). This app caps
+   at semibold, so the default is replaced rather than left to inherit - a
+   stylesheet that never writes 700 still gets 700 without this. The web app has
+   carried this line for a while; the desktop one had not, and its <b> tags were
+   painting at 700 while every static check passed. Only looking at the rendered
+   page found it. */
+b, strong, th, h1, h2, h3, h4, h5, h6, optgroup { font-weight: var(--oz-weight-semibold); }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; border: none; background: none; }
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--oz-color-border-focus);
   outline-offset: 2px;
   border-radius: 3px;
 }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.num { font-family: var(--oz-font-mono); font-variant-numeric: tabular-nums; }
 .micro {
   font-size: 11px; font-weight: 600; letter-spacing: .07em;
-  text-transform: uppercase; color: var(--ink-3);
+  text-transform: uppercase; color: var(--oz-color-content-tertiary);
 }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ------------------------------- shell ---------------------------------- */
-/* A three-pane inspector needs room. Rather than degrade into something
-   half-usable on a phone-width window, the app keeps a floor and scrolls. */
+/* One row of chrome and then one thing at a time. What you are doing decides
+   what is on screen: work happening, one image, several images, or nothing
+   yet. The old shell was a fixed two-column grid, so the comparison - the
+   product's entire argument - lived in whatever was left after a 330px rail
+   that held the same list whether it had one row in it or eighty. */
 .app {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  height: 100%;
-  min-width: 720px;
+  display: flex; flex-direction: column;
+  height: 100%; min-width: 640px;
+  position: relative;
 }
+.app > .view { flex: 1; min-height: 0; }
 
 /* ------------------------------ toolbar --------------------------------- */
+/* What is left in it: who we are, the two things that are true of the whole
+   session rather than of any one image, and the theme. The settings moved into
+   the panel, where each of them now appears exactly once. */
 .bar {
-  display: flex; align-items: center; gap: 18px;
-  padding: 0 14px; height: 52px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: var(--oz-space-6);
+  padding: 0 var(--oz-space-5); height: 52px; flex: none;
+  background: var(--oz-color-surface-secondary);
+  border-bottom: 1px solid var(--oz-color-border-primary);
 }
-.brand { display: flex; align-items: center; gap: 9px; padding-right: 4px; }
+.brand { display: flex; align-items: center; gap: var(--oz-space-3); padding-right: var(--oz-space-1); }
 .brand svg { display: block; }
-.brand b { font-weight: 600; font-size: 13px; letter-spacing: -.01em; }
-.bar .sep { width: 1px; height: 22px; background: var(--line); }
-.field { display: flex; align-items: center; gap: 8px; }
-.field > label { color: var(--ink-2); white-space: nowrap; }
+.brand b { font-weight: var(--oz-weight-semibold); font-size: 13px; letter-spacing: -.01em; }
+.bar .sep { width: 1px; height: 22px; background: var(--oz-color-border-primary); }
+.field { display: flex; align-items: center; gap: var(--oz-space-3); }
+.field > label { color: var(--oz-color-content-secondary); white-space: nowrap; }
 
 select, .num-input {
-  background: var(--raised); border: 1px solid var(--line);
-  border-radius: var(--r-sm); padding: 5px 8px; min-height: 30px;
-  transition: border-color var(--t-fast), background var(--t-fast);
+  background: var(--oz-color-fill-tertiary); border: 1px solid var(--oz-color-border-primary);
+  border-radius: var(--app-radius-sm); padding: 5px 8px; min-height: var(--app-control-h-sm);
+  transition: border-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast), background var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
-select:hover, .num-input:hover { border-color: var(--ink-3); }
-.num-input { width: 72px; font-family: var(--mono); }
+select:hover, .num-input:hover { border-color: var(--oz-color-content-tertiary); }
+.num-input { width: 84px; font-family: var(--oz-font-mono); }
+.muted { color: var(--oz-color-content-tertiary); }
 
 input[type="range"] {
   -webkit-appearance: none; appearance: none;
   background: none; height: 20px; width: 116px; margin: 0;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px; border-radius: 2px; background: var(--line);
+  height: 3px; border-radius: var(--app-radius-pill); background: var(--oz-color-border-primary);
 }
-input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--line); }
+input[type="range"]::-moz-range-track { height: 3px; border-radius: var(--app-radius-pill); background: var(--oz-color-border-primary); }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 13px; height: 13px; border-radius: 50%;
-  background: var(--ink); margin-top: -5px;
-  transition: transform var(--t-fast);
+  width: 13px; height: 13px; border-radius: var(--app-radius-pill);
+  background: var(--oz-color-content-primary); margin-top: -5px;
+  transition: transform var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
 input[type="range"]::-moz-range-thumb {
-  width: 13px; height: 13px; border: none; border-radius: 50%; background: var(--ink);
+  width: 13px; height: 13px; border: none; border-radius: var(--app-radius-pill); background: var(--oz-color-content-primary);
 }
 input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 
 .btn {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 0 12px; min-height: 30px;
-  border: 1px solid var(--line); border-radius: var(--r-sm);
-  background: var(--raised); color: var(--ink);
-  transition: background var(--t-fast), border-color var(--t-fast), opacity var(--t-fast);
+  padding: 0 var(--oz-space-4); min-height: var(--app-control-h-sm);
+  border: 1px solid var(--oz-color-border-primary); border-radius: var(--app-radius-sm);
+  background: var(--oz-color-fill-tertiary); color: var(--oz-color-content-primary);
+  transition: background var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast), border-color var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast), opacity var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
   white-space: nowrap;
 }
-.btn:hover { background: var(--raised-hi); border-color: var(--ink-3); }
+.btn:hover { background: var(--oz-color-fill-tertiary-hover); border-color: var(--oz-color-content-tertiary); }
 .btn:active { transform: translateY(.5px); }
 .btn[disabled] { opacity: .4; pointer-events: none; }
-.btn.ghost { background: none; border-color: transparent; color: var(--ink-2); }
-.btn.ghost:hover { background: var(--raised); color: var(--ink); }
+.btn.sm { min-height: var(--app-control-h-sm); font-size: var(--oz-text-body-xs); }
+.btn.ghost { background: none; border-color: transparent; color: var(--oz-color-content-secondary); }
+.btn.ghost:hover { background: var(--oz-color-fill-tertiary); color: var(--oz-color-content-primary); }
 .btn.primary {
-  background: var(--accent); color: var(--accent-ink);
-  border-color: var(--accent); font-weight: 600;
-  min-height: 36px; padding: 0 18px;
+  background: var(--oz-color-fill-brand); color: var(--oz-color-content-on-brand);
+  border-color: var(--oz-color-border-brand); font-weight: var(--oz-weight-semibold);
+  min-height: var(--app-control-h); padding: 0 var(--oz-space-6);
 }
 .btn.primary:hover { filter: brightness(1.08); }
-.btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); }
+.btn.on { background: var(--oz-color-fill-brand-secondary); border-color: var(--oz-color-border-brand); color: var(--oz-color-content-primary); }
 .spacer { margin-left: auto; }
-
-/* ------------------------------- body ----------------------------------- */
-.body { display: grid; grid-template-columns: 330px minmax(0, 1fr); min-height: 0; }
-
-.queue {
-  display: grid; grid-template-rows: auto minmax(0,1fr) auto;
-  border-right: 1px solid var(--line);
-  background: var(--panel); min-height: 0;
+.hint-inline {
+  font-family: var(--oz-font-body); text-transform: none; letter-spacing: 0;
+  font-weight: 400; color: var(--oz-color-content-tertiary); margin-left: var(--oz-space-3);
 }
-.queue-head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 14px 10px;
-}
-.queue-head .count {
-  font-family: var(--mono); font-size: 11px; color: var(--ink-3);
-  background: var(--raised); border-radius: 20px; padding: 1px 7px;
-}
-.queue-list { overflow-y: auto; padding: 0 8px 8px; min-height: 0; }
-.queue-foot { padding: 10px 14px; border-top: 1px solid var(--line-soft); color: var(--ink-3); font-size: 12px; }
 
+/* ------------------------- view: work happening -------------------------- */
+/* The untouched original, at size, and one sentence about what is happening to
+   it. Deliberately not a skeleton of the result: an empty dashboard held in
+   place for half a minute reads as broken far more often than as loading. */
+.view-working {
+  display: grid; grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--oz-space-6); padding: var(--oz-space-7); place-items: center;
+}
+.working-frame {
+  display: grid; place-items: center; min-height: 0; width: 100%; height: 100%;
+}
+.working-frame img {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  border-radius: var(--app-radius-md);
+}
+.working-say { text-align: center; max-width: 62ch; }
+.narration { margin: 0; color: var(--oz-color-content-primary); }
+.working-track {
+  height: 3px; width: 260px; margin: var(--oz-space-5) auto 0;
+  background: var(--oz-color-border-primary); border-radius: var(--app-radius-pill);
+  overflow: hidden;
+}
+/* scaleX, not width: a bar that resizes forces the browser to redo layout on
+   every frame, and transform is composited. */
+.working-track i {
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-content-secondary);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+}
+.working-now {
+  margin: var(--oz-space-4) 0 0; font-family: var(--oz-font-mono);
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-tertiary);
+}
+
+/* --------------------------- view: one image ---------------------------- */
+.view-single { display: grid; grid-template-rows: minmax(0, 1fr); }
+.view-single .stage { border-radius: 0; border: none; }
+
+/* The two floating bars. They sit ON the comparison rather than around it,
+   because every band of chrome around the picture was a band taken off it. */
+.float-bar {
+  position: absolute; left: var(--oz-space-5); right: var(--oz-space-5);
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  padding: var(--oz-space-3) var(--oz-space-4);
+  background: var(--oz-color-surface-overlay);
+  border: 1px solid var(--oz-color-border-primary);
+  border-radius: var(--app-radius-lg);
+  backdrop-filter: blur(10px);
+  z-index: 3; flex-wrap: wrap; row-gap: var(--oz-space-2);
+}
+.float-bar.top { top: var(--oz-space-5); }
+.float-bar.bottom { bottom: var(--oz-space-5); }
+.segmented {
+  display: inline-flex; background: var(--oz-color-fill-tertiary);
+  border-radius: var(--app-radius-sm); padding: var(--app-gap-tight);
+}
+.segmented button {
+  padding: 0 var(--oz-space-4); min-height: var(--app-control-h-sm);
+  border-radius: var(--app-radius-sm); color: var(--oz-color-content-secondary);
+  font-size: var(--oz-text-body-xs);
+}
+.segmented button[aria-pressed="true"] {
+  background: var(--oz-color-fill-brand-secondary); color: var(--oz-color-content-primary);
+}
+.zoomer { display: inline-flex; align-items: center; gap: var(--oz-space-2); }
+.zoomer button {
+  min-width: var(--app-control-h-sm); min-height: var(--app-control-h-sm);
+  border-radius: var(--app-radius-sm); color: var(--oz-color-content-secondary);
+  font-size: var(--oz-text-body-xs);
+}
+.zoomer button:hover { background: var(--oz-color-fill-tertiary); color: var(--oz-color-content-primary); }
+.zoomer .z {
+  min-width: 3.4em; text-align: center; font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+}
+.insp-title {
+  margin: 0; font-size: var(--oz-text-body-md); font-weight: var(--oz-weight-semibold);
+  max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.result-size { font-size: var(--oz-text-body-md); font-weight: var(--oz-weight-semibold); }
+.result-saved { color: var(--oz-color-content-success); font-size: var(--oz-text-body-sm); }
+.stage-none {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  margin: 0; padding: var(--oz-space-9); text-align: center;
+  color: var(--oz-color-content-tertiary);
+}
+
+/* ------------------------- view: several images -------------------------- */
+.view-list { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.list-head {
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  padding: var(--oz-space-4) var(--oz-space-6);
+  border-bottom: 1px solid var(--oz-color-border-primary);
+  flex-wrap: wrap; row-gap: var(--oz-space-3);
+}
+.qh-count { font-size: var(--oz-text-heading-xs); font-weight: var(--oz-weight-semibold); }
+.list-head .totals { display: inline-flex; align-items: baseline; gap: var(--oz-space-3); }
+.list-head .totals .big { font-size: var(--oz-text-body-sm); }
+.list-head .totals .save { color: var(--oz-color-content-success); font-size: var(--oz-text-body-xs); }
+.queue-list { overflow-y: auto; padding: var(--oz-space-4) var(--oz-space-6); min-height: 0; }
+.queue-empty { color: var(--oz-color-content-tertiary); padding: var(--oz-space-6) 0; }
+.queue-foot {
+  padding: var(--oz-space-4) var(--oz-space-6);
+  border-top: 1px solid var(--oz-color-border-secondary);
+  color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
+}
+
+/* A row is the whole width now, so it can say everything at once instead of
+   truncating two sizes into a 330px rail. */
 .row {
-  display: grid; grid-template-columns: 34px minmax(0,1fr) auto;
-  gap: 10px; align-items: center;
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) 200px 120px 90px;
+  gap: var(--oz-space-5); align-items: center;
   width: 100%; text-align: left;
-  padding: 8px; border-radius: var(--r-md);
+  padding: var(--oz-space-3); border-radius: var(--app-radius-md);
   border: 1px solid transparent;
-  transition: background var(--t-fast);
+  transition: background var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
-.row + .row { margin-top: 2px; }
-.row:hover { background: var(--raised); }
-.row[aria-selected="true"] { background: var(--raised-hi); border-color: var(--line); }
+.row + .row { margin-top: var(--app-gap-tight); }
+.row:hover { background: var(--oz-color-fill-tertiary); }
+.row[aria-selected="true"] { background: var(--oz-color-fill-tertiary-hover); border-color: var(--oz-color-border-primary); }
 .row .thumb {
-  width: 34px; height: 34px; border-radius: var(--r-sm);
-  background-color: var(--raised);
+  width: 44px; height: 44px; border-radius: var(--app-radius-sm);
+  background-color: var(--oz-color-fill-tertiary);
   background-size: cover; background-position: center;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--oz-color-border-secondary);
 }
 .row .cell { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .row .name {
   display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font-size: 13px;
+  font-size: var(--oz-text-body-sm);
 }
 .row .meta {
-  display: block; font-family: var(--mono); font-size: 12px; color: var(--ink-2);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; font-family: var(--oz-font-mono);
+  font-size: var(--oz-text-body-xs); color: var(--oz-color-content-secondary);
 }
-.row .meta .save { color: var(--ok); }
-.row .meta .err { color: var(--bad); }
-.row .tail { display: flex; align-items: center; gap: 6px; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); flex: none; }
-.dot.done { background: var(--ok); }
-.dot.failed { background: var(--bad); }
-.dot.saved { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.row .fmt {
+  font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+}
+.row .tail {
+  display: inline-flex; align-items: center; gap: var(--oz-space-3);
+  justify-content: flex-end;
+}
+/* Status as one dot, because the row already says what happened in words and a
+   second sentence saying it again is noise. */
+.row .dot {
+  width: 7px; height: 7px; border-radius: var(--app-radius-pill);
+  background: var(--oz-color-border-tertiary); flex: none;
+}
+.row .dot.done, .row .dot.saved { background: var(--oz-color-content-success); }
+.row .dot.failed { background: var(--oz-color-content-critical); }
+.row .dot.working { background: var(--oz-color-content-brand); }
+/* The saving drawn to the batch's own scale, so the bars are comparable with
+   each other rather than each being its own 100%. */
+.row .track {
+  height: 3px; background: var(--oz-color-border-primary);
+  border-radius: var(--app-radius-pill); overflow: hidden;
+}
+.row .track i {
+  display: block; height: 100%; width: 100%;
+  transform: scaleX(var(--p, 0)); transform-origin: left center;
+  background: var(--oz-color-content-secondary); border-radius: var(--app-radius-pill);
+  transition: transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
+}
 
-.track { height: 2px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 5px; }
-.track i { display: block; height: 100%; width: 40%; background: var(--ink-2); border-radius: 2px;
-  animation: slide 1.1s ease-in-out infinite; }
-@keyframes slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(360%); } }
+/* --------------------------- view: nothing yet -------------------------- */
+.view-empty { display: grid; place-items: center; padding: var(--oz-space-9); }
+.view-empty .drop-target {
+  text-align: center; max-width: 52ch;
+  padding: var(--oz-space-13); border-radius: var(--app-radius-lg);
+  border: 2px dashed var(--oz-color-border-brand);
+}
+.view-empty h1 {
+  font-family: var(--oz-font-heading); margin: 0 0 var(--oz-space-5);
+  font-size: var(--oz-text-heading-lg); font-weight: var(--oz-default-weight-heading);
+}
+.view-empty p { color: var(--oz-color-content-secondary); margin: 0 0 var(--oz-space-7); }
 
-/* --------------------------- empty states -------------------------------- */
-.empty {
-  height: 100%; display: grid; place-content: center; justify-items: center;
-  gap: 14px; padding: 40px; text-align: center;
+/* ------------------------------- the panel ------------------------------- */
+/* One drawer, one edge. It is the only way to anything deeper, so there is
+   nothing left to learn about where "more" lives. */
+.panel {
+  position: absolute; top: 52px; right: 0; bottom: 0; width: 420px; max-width: 92vw;
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  background: var(--oz-color-surface-secondary);
+  border-left: 1px solid var(--oz-color-border-primary);
+  box-shadow: var(--oz-shadow-large);
+  z-index: 5;
 }
-.empty h1 { font-size: 30px; line-height: 1.15; font-weight: 600; letter-spacing: -.025em; margin: 0; }
-.empty p { color: var(--ink-2); margin: 0; max-width: 42ch; }
-.empty .drop-target {
-  border: 1.5px dashed var(--line); border-radius: var(--r-lg);
-  padding: 34px 46px; display: grid; gap: 14px; justify-items: center;
-  transition: border-color var(--t-mid), background var(--t-mid);
+.panel-head {
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  padding: var(--oz-space-4) var(--oz-space-5);
+  border-bottom: 1px solid var(--oz-color-border-primary);
 }
-.empty .drop-target:hover { border-color: var(--ink-3); }
-.queue-empty { padding: 26px 16px; text-align: center; color: var(--ink-3); font-size: 13px; }
+.panel-body { overflow-y: auto; min-height: 0; padding: var(--oz-space-5); }
+.panel-sec { margin: 0 0 var(--oz-space-9); }
+.panel-sec > h3 { margin: 0 0 var(--oz-space-4); }
+.ov-grid {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--oz-space-4); align-items: center;
+}
+.ov-grid > label { color: var(--oz-color-content-secondary); white-space: nowrap; }
+.q-row { display: inline-flex; align-items: center; gap: var(--oz-space-3); flex-wrap: wrap; }
+.ov-actions {
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  margin-top: var(--oz-space-5); flex-wrap: wrap;
+}
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--oz-space-5);
+}
+.stat .k {
+  font-size: 11px; font-weight: var(--oz-weight-semibold); letter-spacing: .07em;
+  text-transform: uppercase; color: var(--oz-color-content-tertiary);
+  margin-bottom: var(--oz-space-2);
+}
+.stat .v { font-family: var(--oz-font-mono); font-size: var(--oz-text-body-sm); }
+.stat .v small { color: var(--oz-color-content-tertiary); }
+.metric-note {
+  color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
+  line-height: var(--oz-leading-body-xs); margin: var(--oz-space-5) 0 0; max-width: 60ch;
+}
+.note, .warn {
+  margin-top: var(--oz-space-4); font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-tertiary);
+}
+.warn { color: var(--oz-color-content-warning); }
+.panel-sec code {
+  display: inline-block; margin-top: var(--oz-space-3);
+  font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
+  background: var(--oz-color-fill-tertiary); padding: 2px 6px;
+  border-radius: var(--app-radius-sm);
+}
+
+/* ------------------------------- done bar -------------------------------- */
+/* A task with no ending leaves people unsure it worked. */
+.done-bar {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: var(--oz-space-4);
+  padding: var(--oz-space-4) var(--oz-space-6);
+  background: var(--oz-color-fill-brand-secondary);
+  border-top: 1px solid var(--oz-color-border-brand);
+  z-index: 4;
+}
 
 /* --------------------------- inspector ----------------------------------- */
-.inspector { display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
-#inspector-body {
-  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: 0; height: 100%;
-}
-.insp-head {
-  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-  padding: 12px 18px; border-bottom: 1px solid var(--line-soft);
-}
-.insp-head h2 { font-size: 20px; line-height: 1.25; font-weight: 600; letter-spacing: -.02em; margin: 0; }
-.insp-head .dims { color: var(--ink-3); font-family: var(--mono); font-size: 12px; }
 
 .stage {
   position: relative; overflow: hidden; min-height: 0;
@@ -271,136 +437,114 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .viewport .after img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .viewport.solo .after { clip-path: none; }
 
+/* The divider sits on a photograph, not on the page, so it uses the inverse
+   border - which resolves to a light value in both themes. Same reasoning and
+   the same tokens as the web app's divider. */
 .divider {
   position: absolute; top: 0; bottom: 0; left: var(--split);
-  width: 1px; background: rgba(255,255,255,.85);
-  box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none;
+  width: var(--oz-stroke-2); background: var(--oz-color-border-inverse);
+  box-shadow: var(--oz-elevation-x-small); pointer-events: none;
 }
 .divider::after {
   content: ""; position: absolute; top: 50%; left: 50%;
   width: 28px; height: 28px; margin: -14px 0 0 -14px;
-  border-radius: 50%; background: rgba(255,255,255,.92);
-  box-shadow: 0 1px 6px rgba(0,0,0,.4);
+  border-radius: var(--app-radius-pill);
+  background: var(--oz-color-border-inverse);
+  box-shadow: var(--oz-elevation-small);
 }
 .split-input {
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: ew-resize; margin: 0;
 }
-.split-input:focus-visible + .divider { background: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.split-input:focus-visible + .divider { background: var(--oz-color-fill-brand); box-shadow: 0 0 0 2px var(--oz-color-border-focus); }
 
 .tag {
   position: absolute; top: 10px; padding: 3px 8px; border-radius: 20px;
-  background: rgba(10,10,12,.72); color: #fff; font-size: 11px; font-weight: 600;
+  background: var(--oz-color-surface-overlay); color: var(--oz-color-content-primary);
+  font-size: var(--oz-text-body-xs); font-weight: var(--oz-weight-semibold);
   letter-spacing: .06em; text-transform: uppercase; backdrop-filter: blur(6px);
-  pointer-events: none; transition: opacity var(--t-fast);
+  pointer-events: none; transition: opacity var(--oz-spring-effects-fast-ms) var(--oz-spring-effects-fast);
 }
 .tag.l { left: 10px; } .tag.r { right: 10px; }
 
 .stage-bar {
   position: absolute; right: 14px; bottom: 14px;
   display: flex; align-items: center; gap: 4px; padding: 4px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  border: 1px solid var(--line); border-radius: 22px;
-  backdrop-filter: blur(10px); box-shadow: var(--shadow);
+  background: color-mix(in srgb, var(--oz-color-surface-secondary) 88%, transparent);
+  border: 1px solid var(--oz-color-border-primary); border-radius: 22px;
+  backdrop-filter: blur(10px); box-shadow: var(--oz-shadow-large);
 }
-.stage-bar button { padding: 5px 11px; border-radius: 18px; color: var(--ink-2); font-size: 13px; }
-.stage-bar button:hover { background: var(--raised); color: var(--ink); }
-.stage-bar button[aria-pressed="true"] { background: var(--raised-hi); color: var(--ink); }
-.stage-bar .z { font-family: var(--mono); font-size: 12px; color: var(--ink-3); padding: 0 6px; }
+.stage-bar button { padding: 5px 11px; border-radius: 18px; color: var(--oz-color-content-secondary); font-size: 13px; }
+.stage-bar button:hover { background: var(--oz-color-fill-tertiary); color: var(--oz-color-content-primary); }
+.stage-bar button[aria-pressed="true"] { background: var(--oz-color-fill-tertiary-hover); color: var(--oz-color-content-primary); }
+.stage-bar .z { font-family: var(--oz-font-mono); font-size: 12px; color: var(--oz-color-content-tertiary); padding: 0 6px; }
 
-/* ------------------------------ details ---------------------------------- */
-.details {
-  border-top: 1px solid var(--line);
-  background: var(--panel);
-  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
-  max-height: 260px; overflow-y: auto;
-}
-.pane { padding: 14px 18px; }
-.pane + .pane { border-left: 1px solid var(--line-soft); }
-.pane h3 { margin: 0 0 10px; }
-
-.stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px 18px; }
-@media (max-width: 1120px) { .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
-.stat .k { color: var(--ink-3); font-size: 11px; line-height: 1.4; }
-.stat .v { font-family: var(--mono); font-size: 14px; line-height: 1.4; margin-top: 2px; }
-.stat .v small { font-size: 12px; color: var(--ink-3); }
-
-.cands { display: grid; gap: 3px; }
+/* --------------------------- version chips ------------------------------- */
+.cands { display: grid; gap: var(--app-gap-tight); }
 .cand {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
-  padding: 6px 8px; border-radius: var(--r-sm); font-size: 13px;
+  /* format | bytes | how close it came | what happened to it. The score used
+     to be squeezed into the last column and vanished whenever a badge was
+     drawn there, which is how a rejected version came to read as the winner. */
+  display: grid; grid-template-columns: 1fr auto auto auto;
+  gap: var(--oz-space-4); align-items: center;
+  padding: var(--oz-space-2) var(--oz-space-3);
+  border-radius: var(--app-radius-sm); font-size: var(--oz-text-body-sm);
 }
-.cand.win { background: var(--accent-soft); }
-.cand .f { font-weight: 500; }
-.cand .b, .cand .s { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.cand.win { background: var(--oz-color-fill-brand-secondary); }
+.cand .f { font-weight: var(--oz-weight-medium); }
+.cand .b, .cand .s {
+  font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
+  color: var(--oz-color-content-secondary);
+}
+/* Semibold, not bold: nothing in this product renders above 600, and the
+   ceiling is checked in both app layers now rather than only in the web one. */
 .cand .badge {
-  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--accent);
-}
-.warn { color: var(--bad); font-size: 13px; margin-top: 8px; }
-.note { color: var(--ink-2); font-size: 13px; margin-top: 8px; }
-
-.override { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid var(--line-soft); }
-.override .line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.override .line > label { color: var(--ink-2); }
-
-/* ------------------------------ summary ---------------------------------- */
-.summary {
-  display: flex; align-items: center; gap: 18px;
-  padding: 10px 18px; min-height: 58px;
-  border-top: 1px solid var(--line); background: var(--panel);
-}
-.totals { display: flex; align-items: baseline; gap: 10px; }
-.totals .big { font-family: var(--mono); font-size: 14px; }
-.totals .save { color: var(--ok); font-family: var(--mono); font-size: 13px; line-height: 1.5; }
-.folder {
-  display: flex; align-items: center; gap: 6px; min-width: 0;
-  color: var(--ink-2); font-size: 13px;
-}
-.folder .p {
-  font-family: var(--mono); font-size: 12px; color: var(--ink-2);
-  max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; font-weight: var(--oz-weight-semibold); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--oz-color-content-brand);
 }
 
 /* ------------------------------ overlays --------------------------------- */
 .veil {
   position: fixed; inset: 0; z-index: 40;
   display: grid; place-items: center;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  background: color-mix(in srgb, var(--oz-color-surface-primary) 82%, transparent);
   backdrop-filter: blur(3px);
-  opacity: 0; pointer-events: none; transition: opacity var(--t-mid);
+  opacity: 0; pointer-events: none; transition: opacity var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .veil.on { opacity: 1; }
 .veil .box {
-  border: 2px dashed var(--accent); border-radius: var(--r-lg);
-  padding: 44px 64px; text-align: center; background: var(--panel);
-  box-shadow: var(--shadow);
+  border: 2px dashed var(--oz-color-border-brand); border-radius: var(--app-radius-lg);
+  padding: 44px 64px; text-align: center; background: var(--oz-color-surface-secondary);
+  box-shadow: var(--oz-shadow-large);
 }
 .veil .box strong { font-size: 20px; line-height: 1.25; font-weight: 600; }
-.veil .box p { margin: 6px 0 0; color: var(--ink-2); }
+.veil .box p { margin: 6px 0 0; color: var(--oz-color-content-secondary); }
 
 .toast {
   position: fixed; left: 50%; bottom: 76px; transform: translate(-50%, 8px);
   z-index: 50; padding: 9px 15px; border-radius: 22px;
-  background: var(--raised-hi); border: 1px solid var(--line);
-  box-shadow: var(--shadow); font-size: 13px;
+  background: var(--oz-color-fill-tertiary-hover); border: 1px solid var(--oz-color-border-primary);
+  box-shadow: var(--oz-shadow-large); font-size: 13px;
   opacity: 0; pointer-events: none;
-  transition: opacity var(--t-mid), transform var(--t-mid);
+  transition: opacity var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default), transform var(--oz-spring-effects-default-ms) var(--oz-spring-effects-default);
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
 
 .banner {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 18px; font-size: 13px;
-  background: var(--accent-soft); color: var(--ink);
-  border-bottom: 1px solid var(--line);
+  background: var(--oz-color-fill-brand-secondary); color: var(--oz-color-content-primary);
+  border-bottom: 1px solid var(--oz-color-border-primary);
 }
-.banner code { font-family: var(--mono); font-size: 12px; }
+.banner code { font-family: var(--oz-font-mono); font-size: 12px; }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
+/* No prefers-reduced-motion block here. The token layer handles it once, for
+   both interfaces, and does it better than this file did: it collapses spatial
+   travel and takes the overshoot off the springs while leaving fades alone. A
+   blanket `transition-duration: .01ms !important` switches off the fades too,
+   and a fade is often the thing carrying the meaning - what appeared, what
+   went away. Handling it per component, or per app, is how the two answers
+   drift apart. */
 @media (max-width: 1120px) {
   .bar { flex-wrap: wrap; height: auto; padding: 8px 14px; gap: 12px 16px; }
   .bar .sep { display: none; }
@@ -408,7 +552,7 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 @media (max-width: 900px) {
   .body { grid-template-columns: 260px minmax(0, 1fr); }
   .details { grid-template-columns: 1fr; max-height: 220px; }
-  .pane + .pane { border-left: none; border-top: 1px solid var(--line-soft); }
+  .pane + .pane { border-left: none; border-top: 1px solid var(--oz-color-border-secondary); }
 }
 </style>
 </head>
@@ -418,37 +562,19 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   <header class="bar">
     <div class="brand">
       <svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true">
-        <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="var(--ink-3)"/>
-        <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="var(--accent)"/>
-        <circle cx="6.2" cy="5.6" r="1.25" fill="var(--ink-2)"/>
+        <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="var(--oz-color-content-tertiary)"/>
+        <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="var(--oz-color-fill-brand)"/>
+        <circle cx="6.2" cy="5.6" r="1.25" fill="var(--oz-color-content-secondary)"/>
       </svg>
       <b>Image Compressor</b>
     </div>
     <div class="sep"></div>
 
-    <div class="field">
-      <label for="target">Target</label>
-      <select id="target" title="Which output formats are allowed">
-        <option value="figma">Figma (JPEG / PNG)</option>
-        <option value="web">Web (adds WebP)</option>
-        <option value="lossless">Lossless only</option>
-      </select>
-    </div>
-
-    <div class="field">
-      <label for="quality">Quality</label>
-      <input type="range" id="quality" min="60" max="99" step="1" value="90"
-             aria-describedby="quality-out">
-      <output class="num" id="quality-out" style="width:2.4em">90</output>
-    </div>
-
-    <div class="field">
-      <label for="maxdim">Max size</label>
-      <input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560"
-             aria-describedby="maxdim-hint">
-      <span id="maxdim-hint" style="color:var(--ink-3)">px</span>
-    </div>
-
+    <!-- No settings here any more. They are in the panel, once each. This bar
+         held Going to, the visual match and the size cap while the panel's
+         override pane held two of them again, so a person could set the same
+         thing in two places and watch them disagree. What is left is what is
+         true of the session rather than of an image. -->
     <div class="spacer"></div>
     <button class="btn ghost" id="watch-btn" aria-pressed="false"
             title="Compress anything new that lands in a folder">Watch folder</button>
@@ -460,123 +586,209 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
     <code>pip install -r requirements.txt</code>
   </div>
 
-  <div class="body">
-    <!-- ------------------------------ queue ------------------------------ -->
-    <aside class="queue">
-      <div class="queue-head">
-        <span class="micro">Queue</span>
-        <span class="count num" id="queue-count">0</span>
+  <!-- ===================== VIEW: work happening ======================
+       Not a skeleton of the finished result. Holding an empty dashboard in
+       place for half a minute reads as broken more often than it reads as
+       loading, so this shows the untouched original and says what is being
+       tried right now, in words.
+       ================================================================= -->
+  <section class="view view-working" id="view-working" hidden aria-label="Compressing">
+    <div class="working-frame" id="working-frame"></div>
+    <div class="working-say">
+      <p class="narration" id="narration" aria-live="polite"></p>
+      <div class="working-track" role="progressbar" aria-label="Progress"><i id="working-bar"></i></div>
+      <p class="working-now" id="working-now"></p>
+    </div>
+  </section>
+
+  <!-- ====================== VIEW: one image =========================
+       The comparison is the product's whole argument, so it gets the
+       screen. Controls float on top of it: mode and zoom above, and below
+       exactly four things - what it weighs now, how much came off, the way
+       to everything deeper, and the way to keep it.
+       ================================================================= -->
+  <section class="view view-single" id="view-single" hidden aria-label="Result">
+    <div class="stage" id="stage">
+      <div class="viewport" id="viewport">
+        <img id="img-before" alt="Original image">
+        <div class="after"><img id="img-after" alt="Compressed image"></div>
+        <input class="split-input" type="range" id="split" min="0" max="100" value="50"
+               aria-label="Comparison split position">
+        <div class="divider" id="divider">
+          <span class="tag l" id="tag-l">Original</span>
+          <span class="tag r" id="tag-r">Compressed</span>
+        </div>
+      </div>
+
+      <div class="float-bar top" id="bar-top">
+        <button class="btn ghost sm" id="back-btn" hidden title="Back to all images">&lsaquo; All images</button>
+        <div class="segmented" role="group" aria-label="Comparison mode">
+          <button id="mode-split" aria-pressed="true" title="Split view (Space to toggle)">Split</button>
+          <button id="mode-after" aria-pressed="false" title="Compressed only (Space to toggle)">After</button>
+        </div>
         <div class="spacer"></div>
-        <button class="btn ghost" id="add-btn" title="Add a folder of images">Add folder</button>
-        <button class="btn ghost" id="clear-btn" title="Remove everything from the queue">Clear</button>
-      </div>
-      <div class="queue-list" id="queue-list" role="listbox" aria-label="Images to compress" tabindex="0">
-        <div class="queue-empty">Starting up…</div>
-      </div>
-      <div class="queue-foot" id="queue-foot">Drop images anywhere in this window</div>
-    </aside>
-
-    <!-- ---------------------------- inspector ---------------------------- -->
-    <section class="inspector" id="inspector">
-      <div class="empty" id="inspector-empty">
-        <div class="drop-target">
-          <h1>Drop images to compress</h1>
-          <p>Every image is encoded several ways and scored against the original.
-             You'll see the result before anything is written to disk.</p>
-          <button class="btn" id="empty-add">Choose a folder</button>
+        <div class="zoomer" role="group" aria-label="Zoom">
+          <button id="zoom-out" aria-label="Zoom out">&minus;</button>
+          <span class="z num" id="zoom-label">Fit</span>
+          <button id="zoom-in" aria-label="Zoom in">+</button>
+          <button id="zoom-reset" title="Back to fit">Reset</button>
         </div>
       </div>
 
+      <div class="float-bar bottom" id="bar-bottom">
+        <h2 class="insp-title" id="insp-name">&mdash;</h2>
+        <span class="result-size num" id="s-size">&mdash;</span>
+        <span class="result-saved num" id="s-saved">&mdash;</span>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="insp-toggle" aria-expanded="false" aria-controls="panel">Details</button>
+        <button class="btn primary" id="save-one">Save this one</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== VIEW: several images ======================
+       The list IS the task, so it gets the width. The rail that used to
+       hold it was never navigation - it was the content, boxed into a
+       third of the window whether it held one row or eighty.
+       ================================================================= -->
+  <section class="view view-list" id="view-list" hidden aria-label="Images">
+    <div class="list-head">
+      <span class="qh-count num" id="queue-count">0</span>
+      <span class="qh-label micro">images</span>
+      <span class="totals"><span class="big num" id="t-sizes">&mdash;</span>
+        <span class="save num" id="t-saved"></span></span>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="add-btn" title="Add a folder of images">Add folder</button>
+      <button class="btn ghost sm" id="clear-btn" title="Remove everything from the queue">Clear</button>
+      <button class="btn ghost sm" id="list-details" aria-controls="panel">Details</button>
+      <button class="btn primary" id="save-btn" disabled>Save all</button>
+    </div>
+    <div class="queue-list" id="queue-list" role="listbox" aria-label="Images to compress" tabindex="0">
+      <div class="queue-empty">Starting up&hellip;</div>
+    </div>
+    <div class="queue-foot" id="queue-foot">Drop images anywhere in this window</div>
+  </section>
+
+  <!-- ======================= VIEW: nothing yet ======================= -->
+  <section class="view view-empty" id="inspector-empty">
+    <div class="drop-target">
+      <h1>Drop images to compress</h1>
+      <p>Every image comes out as small as it can go without you being able to
+         see the difference &mdash; and you get the side-by-side to check that
+         for yourself. Nothing is written until you save.</p>
+      <button class="btn primary" id="empty-add">Choose a folder</button>
+    </div>
+  </section>
+
+  <!-- =========================== THE PANEL ===========================
+       One direction for everything deeper. Before this there were four: the
+       details band sat below the stage, the override controls bottom-right,
+       the engine banner dropped from the top and the settings lived in the
+       toolbar. A person who wanted more had no learned way to go and get it.
+       ================================================================= -->
+  <aside class="panel" id="panel" hidden aria-label="Details">
+    <div class="panel-head">
+      <h3 class="micro" id="panel-title">Details</h3>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="panel-close" aria-label="Close details">&#10005;</button>
+    </div>
+    <div class="panel-body" id="panel-body">
       <div id="inspector-body" hidden>
-        <div class="insp-head">
-          <h2 id="insp-name">—</h2>
-          <span class="dims" id="insp-dims"></span>
-          <div class="spacer"></div>
-          <button class="btn ghost" id="remove-btn">Remove</button>
-        </div>
 
-        <div class="stage" id="stage">
-          <div class="viewport" id="viewport">
-            <img id="img-before" alt="Original image">
-            <div class="after"><img id="img-after" alt="Compressed image"></div>
-            <input class="split-input" type="range" id="split" min="0" max="100" value="50"
-                   aria-label="Comparison split position">
-            <div class="divider" id="divider"></div>
-            <span class="tag l" id="tag-l">Original</span>
-            <span class="tag r" id="tag-r">Compressed</span>
-          </div>
-          <div class="stage-bar">
-            <button id="mode-split" aria-pressed="true" title="Split view (Space to toggle)">Split</button>
-            <button id="mode-after" aria-pressed="false" title="Compressed only (Space to toggle)">After</button>
-            <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
-            <button id="zoom-out" aria-label="Zoom out">−</button>
-            <span class="z" id="zoom-label">Fit</span>
-            <button id="zoom-in" aria-label="Zoom in">+</button>
-            <button id="zoom-reset">Reset</button>
-          </div>
-        </div>
+        <section class="panel-sec">
+          <h3 class="micro">Every version that was tried
+            <span class="hint-inline">the one that shipped is marked kept</span></h3>
+          <div class="cands" id="cands"></div>
+        </section>
 
-        <div class="details">
-          <div class="pane">
-            <h3 class="micro">Result</h3>
-            <div class="stats">
-              <div class="stat"><div class="k">Size</div>
-                <div class="v" id="s-size">—</div></div>
-              <div class="stat"><div class="k">Saved</div>
-                <div class="v" id="s-saved">—</div></div>
-              <div class="stat"><div class="k">Format</div>
-                <div class="v" id="s-format">—</div></div>
-              <div class="stat"><div class="k" id="s-metric-k">Quality</div>
-                <div class="v" id="s-score">—</div></div>
-              <div class="stat"><div class="k">Dimensions</div>
-                <div class="v" id="s-dims">—</div></div>
-              <div class="stat"><div class="k">Floor</div>
-                <div class="v" id="s-floor">—</div></div>
-            </div>
-            <div class="note" id="s-note" hidden></div>
-            <div class="warn" id="s-warn" hidden></div>
+        <section class="panel-sec">
+          <h3 class="micro">How this was measured</h3>
+          <div class="stats">
+            <div class="stat"><div class="k">Format</div>
+              <div class="v" id="s-format">&mdash;</div></div>
+            <div class="stat"><div class="k" id="s-metric-k">Visual match</div>
+              <div class="v" id="s-score">&mdash;</div></div>
+            <div class="stat"><div class="k">Your target</div>
+              <div class="v" id="s-floor">&mdash;</div></div>
+            <div class="stat"><div class="k">Dimensions</div>
+              <div class="v" id="s-dims">&mdash;</div></div>
           </div>
+          <div class="note" id="s-note" hidden></div>
+          <div class="warn" id="s-warn" hidden></div>
+          <p class="metric-note">We compare the two images the way eyes do &mdash;
+             looking at local contrast and detail rather than counting pixel
+             differences. <b>100 means indistinguishable.</b> At 90 the
+             difference does not show even when the two are flicked back and
+             forth on top of each other.</p>
+          <p class="metric-note">Colour is never thrown away, which most JPEG
+             encoders do to save space. Matching this quality with colour detail
+             discarded needed setting 97 instead of 76 &mdash; a file
+             <b>3.8&times; larger</b>.</p>
+        </section>
 
-          <div class="pane">
-            <h3 class="micro">Candidates tried</h3>
-            <div class="cands" id="cands"></div>
-            <div class="override">
-              <div class="line">
-                <label for="ov-format">Force</label>
-                <select id="ov-format">
-                  <option value="">best of all candidates</option>
-                  <option value="jpeg">jpeg</option>
-                  <option value="png8">png8 (palette)</option>
-                  <option value="png">png (lossless)</option>
-                  <option value="webp">webp</option>
-                  <option value="webp-lossless">webp lossless</option>
-                </select>
-                <label for="ov-quality" style="min-width:auto">Quality</label>
-                <input class="num-input" type="number" id="ov-quality" min="1" max="100" placeholder="—">
-                <button class="btn" id="ov-apply">Apply to this image</button>
-              </div>
-            </div>
+        <section class="panel-sec">
+          <h3 class="micro">Try different settings
+            <span class="hint-inline">for this image only</span></h3>
+          <div class="ov-grid">
+            <label for="ov-format">Always use</label>
+            <select id="ov-format">
+              <option value="">whichever comes out smallest</option>
+              <option value="jpeg">jpeg</option>
+              <option value="png8">png8 (palette)</option>
+              <option value="png">png (lossless)</option>
+              <option value="webp">webp</option>
+              <option value="webp-lossless">webp lossless</option>
+            </select>
+            <label for="ov-quality">Min visual match</label>
+            <input class="num-input" type="number" id="ov-quality" min="1" max="100" placeholder="&mdash;">
           </div>
-        </div>
+          <div class="ov-actions">
+            <button class="btn sm" id="ov-apply">Compress again</button>
+            <button class="btn ghost sm" id="remove-btn">Remove from the queue</button>
+          </div>
+        </section>
       </div>
-    </section>
-  </div>
 
-  <!-- ------------------------------ summary ------------------------------ -->
-  <footer class="summary">
-    <div class="totals">
-      <span class="big" id="t-sizes">—</span>
-      <span class="save" id="t-saved"></span>
+      <!-- Settings, once. Quality was editable in the toolbar and in the
+           override pane, format in the toolbar and the override pane. These
+           are the whole-queue ones; the per-image ones are above. -->
+      <section class="panel-sec" id="bar-controls">
+        <h3 class="micro">Settings <span class="hint-inline">for every image</span></h3>
+        <div class="ov-grid">
+          <label for="target">Going to</label>
+          <!-- Filled from the server's destination table, which is the same
+               table the engine reads. A hardcoded list here would be a second
+               copy of five numbers that must agree. -->
+          <select id="target" title="Where these images are going"></select>
+          <label for="quality">Min visual match</label>
+          <span class="q-row"><input type="range" id="quality" min="60" max="99" step="1" value="90"
+                 aria-describedby="quality-out"><output class="num" id="quality-out">90</output></span>
+          <label for="maxdim">Max size</label>
+          <span class="q-row"><input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560"
+                 aria-describedby="maxdim-hint"><span id="maxdim-hint" class="muted">px, 0 keeps the original size</span></span>
+        </div>
+        <div class="ov-actions">
+          <span class="muted">Save to</span>
+          <button class="btn sm" id="folder-btn" title="Choose where compressed images are written">
+            <span class="p" id="folder-path">Choose a folder&hellip;</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel-sec" id="engine-banner" hidden>
+        <h3 class="micro">Engines</h3>
+        <p class="metric-note" id="engine-text"></p>
+        <code>pip install -r requirements.txt</code>
+      </section>
     </div>
+  </aside>
+
+  <!-- A task with no ending leaves people unsure it worked. -->
+  <div class="done-bar" id="done-bar" hidden role="status" aria-live="polite">
+    <span id="done-text"></span>
     <div class="spacer"></div>
-    <div class="folder">
-      <span>Save to</span>
-      <button class="btn" id="folder-btn" title="Choose where compressed images are written">
-        <span class="p" id="folder-path">Choose a folder…</span>
-      </button>
-    </div>
-    <button class="btn primary" id="save-btn" disabled>Save</button>
-  </footer>
+    <button class="btn ghost sm" id="done-again">Start over</button>
+  </div>
 </div>
 
 <div class="veil" id="veil" aria-hidden="true">
@@ -627,16 +839,22 @@ let localSettings = null; // pending edits not yet pushed
 function render(next) {
   const firstPaint = state.rev === -1;
   state = next;
+  // Options before values: setting .value against an empty select is silently
+  // a no-op, and the control would sit blank until something else touched it.
+  renderDestinations(state.destinations);
   if (!localSettings) applySettingsToControls(state.settings);
 
   renderQueue();
   renderSummary();
   renderEngines();
 
+  /* `selected` is the whole view state: null means the list, an id means that
+     image. There is no separate "is the inspector open" flag, because two
+     variables for one idea only buys a way for them to disagree. With a single
+     image there is no list to go back to, so it selects itself. */
   const still = state.items.find((i) => i.id === selected);
-  if (!still && state.items.length) selectItem(state.items[0].id, true);
-  else if (!state.items.length) { selected = null; showInspector(false); }
-  else renderInspector(still);
+  if (!still) selected = state.items.length === 1 ? state.items[0].id : null;
+  renderView();
 
   if (state.toast) toast(state.toast);
   if (firstPaint) document.body.dataset.ready = "1";
@@ -668,20 +886,36 @@ function renderQueue() {
       : `${live} of ${engines.length} engines active`;
     return;
   }
-  list.innerHTML = state.items.map((it) => `
+  /* The saving is drawn to the batch's own scale rather than each row's, so the
+     bars are comparable with each other. A row-relative bar makes the smallest
+     win look identical to the largest, which is worse than no bar at all. */
+  const best = Math.max(1, ...state.items.map(
+    (i) => (i.original_bytes || 0) - (i.new_bytes || 0)));
+
+  list.innerHTML = state.items.map((it) => {
+    const saved = (it.original_bytes || 0) - (it.new_bytes || 0);
+    const pct = it.original_bytes ? Math.round(100 * saved / it.original_bytes) : 0;
+    const ready = it.status === "done" || it.status === "saved";
+    return `
     <button class="row" role="option" data-id="${it.id}" aria-selected="${it.id === selected}">
       <span class="thumb" style="${it.status === "failed" ? "" :
         `background-image:url('${imgURL(it.id, "before")}')`}"></span>
       <span class="cell">
         <span class="name">${escapeHtml(it.name)}</span>
         <span class="meta">${statusLine(it)}</span>
-        ${it.status === "working" ? '<span class="track"><i></i></span>' : ""}
       </span>
+      <span class="cell">
+        <span class="track"><i style="--p:${ready && saved > 0
+          ? (saved / best).toFixed(3) : (it.frac || 0).toFixed(3)}"></i></span>
+        <span class="meta">${ready && saved > 0 ? `saved ${human(saved)}` : ""}</span>
+      </span>
+      <span class="fmt">${ready ? escapeHtml(it.fmt || "") : ""}</span>
       <span class="tail">
+        ${ready && pct > 0 ? `<span class="meta">-${pct}%</span>` : ""}
         ${it.override ? '<span class="micro" title="This image has its own settings">OV</span>' : ""}
         <span class="dot ${it.status}"></span>
       </span>
-    </button>`).join("");
+    </button>`; }).join("");
   const done = state.items.filter((i) => i.status === "done").length;
   const busy = state.items.filter((i) => i.status === "queued" || i.status === "working").length;
   $("queue-foot").textContent = busy
@@ -690,28 +924,94 @@ function renderQueue() {
 }
 
 /* ------------------------------ inspector -------------------------------- */
-function showInspector(on) {
-  $("inspector-empty").hidden = on;
-  $("inspector-body").hidden = !on;
+/* What you are doing decides what is on screen. Four states, one visible at a
+   time, chosen from two facts: how many images there are, and whether one of
+   them is open. Before this the answer was "all of it, always" - a rail, a
+   comparison, a two-pane details band and a footer, each permanently holding
+   whatever space it had been given. */
+function subjectItem() {
+  if (state.items.length === 1) return state.items[0];
+  return selected ? state.items.find((i) => i.id === selected) : null;
+}
+function currentView() {
+  if (!state.items.length) return "empty";
+  const it = subjectItem();
+  if (!it) return "list";
+  return (it.status === "queued" || it.status === "working") ? "working" : "single";
+}
+function renderView() {
+  const view = currentView();
+  const it = subjectItem();
+  $("inspector-empty").hidden = view !== "empty";
+  $("view-working").hidden = view !== "working";
+  $("view-single").hidden = view !== "single";
+  $("view-list").hidden = view !== "list";
+  // Only meaningful when there is a list to go back to.
+  $("back-btn").hidden = state.items.length < 2;
+  $("inspector-body").hidden = !it;
+
+  if (view === "working") renderWorking(it);
+  if (view === "single") renderInspector(it);
+  if (view === "list") renderQueue();
+  // The drawer belongs to an image; with none open there is nothing in it.
+  if (!it) setPanel(false);
+  renderDone();
+}
+
+/* One drawer, one edge, and a single function that opens it - so "deeper" has
+   exactly one direction however you got there. */
+function setPanel(on) {
+  $("panel").hidden = !on;
+  $("insp-toggle")?.setAttribute("aria-expanded", String(!!on));
+}
+
+/* Waiting is its own screen: the untouched original, one plain sentence about
+   what is being tried right now, and a bar. Not a skeleton of the result -
+   that reads as broken more often than it reads as loading. */
+function renderWorking(it) {
+  if (!it) return;
+  const frame = $("working-frame");
+  const src = imgURL(it.id, "before");
+  if (frame.dataset.src !== src) {
+    frame.dataset.src = src;
+    frame.innerHTML = `<img alt="Your original, before anything was done to it" src="${src}">`;
+  }
+  $("narration").textContent =
+    "Trying a few ways to shrink this, keeping only the one that still looks "
+    + "right next to your original.";
+  const frac = it.status === "working" ? (it.frac || 0.05) : 0;
+  $("working-bar").style.setProperty("--p", frac.toFixed(3));
+  $("working-now").textContent = it.phase || "";
+}
+
+/* A task with no ending leaves people unsure it worked. */
+function renderDone() {
+  const t = state.totals || {};
+  const items = state.items;
+  const allSaved = items.length > 0 && items.every((i) => i.status === "saved");
+  const bar = $("done-bar");
+  bar.hidden = !allSaved;
+  if (allSaved) {
+    const saved = (t.before || 0) - (t.after || 0);
+    $("done-text").textContent =
+      `Saved ${items.length} image${items.length === 1 ? "" : "s"}`
+      + (saved > 0 ? ` and ${human(saved)} of disk.` : ".");
+  }
 }
 
 function selectItem(id, quiet) {
   selected = id;
   zoom = 0; pan = { x: 0, y: 0 };
-  renderQueue();
-  renderInspector(state.items.find((i) => i.id === id));
+  renderView();
   if (!quiet) $("queue-list").querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
 }
 
+/* Visibility is renderView's job now, so this only fills things in. The
+   dimensions used to be printed here AND in the panel's own row; the same fact
+   said twice is one of them going stale. */
 function renderInspector(it) {
-  if (!it) { showInspector(false); return; }
-  showInspector(true);
-
+  if (!it) return;
   $("insp-name").textContent = it.name;
-  const dims = it.width ? `${it.width}×${it.height}` : "";
-  const out = it.out_width && (it.out_width !== it.width || it.out_height !== it.height)
-    ? ` → ${it.out_width}×${it.out_height}` : "";
-  $("insp-dims").textContent = dims + out;
 
   const before = $("img-before"), after = $("img-after");
   const wantBefore = imgURL(it.id, "before");
@@ -734,9 +1034,14 @@ function renderInspector(it) {
                         : "none")
     : "—";
   $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
-  $("s-metric-k").textContent = it.metric === "ssim" ? "SSIM" : "SSIMULACRA 2";
-  $("s-score").textContent = it.score == null ? (ready ? "lossless" : "—")
-    : (it.metric === "ssim" ? it.score.toFixed(4) : it.score.toFixed(1));
+  // "Visual match", not the measure's name. Which measure produced it is a
+  // fact about our implementation; how close the result came is the fact the
+  // person is here for. The name still appears on the SSIM fallback, because
+  // that scale is 0-1 and calling it the same thing would be misleading.
+  $("s-metric-k").textContent = it.metric === "ssim" ? "SSIM" : "Visual match";
+  $("s-score").textContent = it.score == null ? (ready ? "pixel-identical" : "—")
+    : (it.metric === "ssim" ? it.score.toFixed(4)
+                            : `${Math.round(it.score)} / 100`);
   $("s-dims").innerHTML = !it.width ? "—"
     : (it.out_width && it.out_width !== it.width
         ? `${it.out_width}×${it.out_height} <small>from ${it.width}×${it.height}</small>`
@@ -756,16 +1061,48 @@ function renderInspector(it) {
   const cands = $("cands");
   if (!it.candidates?.length) {
     cands.innerHTML = `<div class="note" style="margin:0">${
-      it.status === "failed" ? "This file could not be read." : "Encoding…"}</div>`;
+      it.status === "failed"
+        ? "This file looks damaged and couldn't be read. Try re-exporting it."
+        : "Trying formats…"}</div>`;
   } else {
-    const winner = Math.min(...it.candidates.map((c) => c.bytes));
+    /* The winner is the version that actually shipped, not the smallest one.
+       This used to badge `Math.min(bytes)`, which is wrong whenever the
+       smallest version missed the target - and it hid that version's score
+       behind the badge, so the screen said "winner" next to a file the engine
+       had rejected and gave you no way to see why. Exactly the bug core.py
+       fixed in the engine, repeated in the picture of it. */
+    const target = it.override?.quality_target ?? state.settings.quality_target;
+    const shipped = it.fmt;
+    const smallest = Math.min(...it.candidates.map((c) => c.bytes));
+    const shippedBytes = (it.candidates.find((c) => c.format === shipped) || {}).bytes;
+
+    const scoreOf = (c) => (c.score == null ? "—"
+      : c.score >= 100 ? "identical"
+      : it.metric === "ssim" ? c.score.toFixed(3)
+      : `${Math.round(c.score)}/100`);
+
+    // One plain sentence per version that lost, same as the web app.
+    const why = (c) => {
+      if (c.format === shipped) return "The smallest version that still looked close enough.";
+      if (c.bytes >= it.original_bytes) return "Bigger than your original, so it was discarded.";
+      if (c.score != null && c.score < target) {
+        return `Too different from the original — matched ${Math.round(c.score)} `
+             + `against your target of ${Math.round(target)}.`;
+      }
+      const larger = shippedBytes ? Math.round(100 * (c.bytes - shippedBytes) / shippedBytes) : 0;
+      return larger > 0
+        ? `Close enough to the original, but ${larger}% larger than the one chosen.`
+        : "Close enough to the original, but not the one chosen.";
+    };
+
     cands.innerHTML = [...it.candidates].sort((a, b) => a.bytes - b.bytes).map((c) => `
-      <div class="cand ${c.bytes === winner ? "win" : ""}">
+      <div class="cand ${c.format === shipped ? "win" : ""}" title="${escapeHtml(why(c))}">
         <span class="f">${escapeHtml(c.format)}</span>
         <span class="b">${human(c.bytes)}</span>
-        <span class="${c.bytes === winner ? "badge" : "s"}">${
-          c.bytes === winner ? "winner" :
-          (c.score >= 100 ? "lossless" : (it.metric === "ssim" ? c.score.toFixed(3) : c.score.toFixed(1)))}</span>
+        <span class="s">${escapeHtml(scoreOf(c))}</span>
+        <span class="${c.format === shipped ? "badge" : "s"}">${
+          c.format === shipped ? "kept"
+            : c.bytes === smallest ? "smallest" : ""}</span>
       </div>`).join("");
   }
   $("ov-format").value = it.override?.formats?.[0] || "";
@@ -809,7 +1146,12 @@ function renderSummary() {
   const n = t.unsaved || 0;
   const btn = $("save-btn");
   btn.disabled = n === 0;
-  btn.textContent = n === 0 ? "Save" : `Save ${n} image${n === 1 ? "" : "s"}`;
+  btn.textContent = n === 0 ? "Save all" : `Save all ${n}`;
+  // One primary way out per screen: the list saves the batch, the comparison
+  // saves the one image you are looking at.
+  const one = $("save-one");
+  if (one) one.disabled = !state.items.some(
+    (i) => i.id === selected && (i.status === "done" || i.status === "saved"));
   $("watch-btn").setAttribute("aria-pressed", state.watch_folder ? "true" : "false");
   $("watch-btn").classList.toggle("on", !!state.watch_folder);
   $("watch-btn").textContent = state.watch_folder ? "Watching" : "Watch folder";
@@ -835,8 +1177,31 @@ function toast(message) {
 }
 
 /* ------------------------------- settings -------------------------------- */
+
+/* Pre-2.7 names, so a session saved by an older build still selects something.
+   The server resolves these too; this only keeps the control from going blank
+   in the moment before the first snapshot lands. */
+const OLD_DESTINATION_NAMES = { figma: "documents", archive: "original" };
+let destinationsRendered = false;
+
+function renderDestinations(list) {
+  if (destinationsRendered || !list || !list.length) return;
+  const sel = $("target");
+  sel.innerHTML = "";
+  for (const d of list) {
+    const opt = document.createElement("option");
+    opt.value = d.name;
+    opt.textContent = d.label;
+    opt.title = `${d.help}  (${d.formats.join(", ")}; ` +
+                `${d.max_dimension ? "up to " + d.max_dimension + "px" : "never resized"})`;
+    sel.appendChild(opt);
+  }
+  destinationsRendered = true;
+}
+
 function applySettingsToControls(s) {
-  $("target").value = s.target || "figma";
+  const name = OLD_DESTINATION_NAMES[s.target] || s.target || "web";
+  if ($("target").querySelector(`option[value="${name}"]`)) $("target").value = name;
   const isSsim = s.metric === "ssim";
   const q = $("quality");
   q.min = isSsim ? 80 : 60; q.max = isSsim ? 100 : 99;
@@ -864,7 +1229,22 @@ function pushSettings() {
 }
 
 /* -------------------------------- events --------------------------------- */
-$("target").addEventListener("change", pushSettings);
+/* Picking a destination is picking all three of its numbers. Leaving the size
+   and quality where the last destination left them would make "Thumbnail"
+   mean nothing but a shorter format list, and the person would have to know
+   to go and change two more controls for it to do what it says. Both remain
+   editable afterwards - this sets a starting point, it does not lock it. */
+$("target").addEventListener("change", () => {
+  const d = (state.destinations || []).find((x) => x.name === $("target").value);
+  if (d) {
+    $("maxdim").value = d.max_dimension;
+    const q = $("quality");
+    q.value = state.settings.metric === "ssim"
+      ? Math.round(d.quality_target * 100) : d.quality_target;
+    $("quality-out").textContent = q.value;
+  }
+  pushSettings();
+});
 $("maxdim").addEventListener("change", pushSettings);
 $("quality").addEventListener("input", () => { $("quality-out").textContent = $("quality").value; });
 $("quality").addEventListener("change", pushSettings);
@@ -1022,8 +1402,36 @@ $("save-btn").addEventListener("click", async () => {
   poll(true);
 });
 
+/* Both Details buttons open the same drawer from the same edge; the close
+   button and Escape are the only ways it shuts. */
+$("insp-toggle").addEventListener("click", () => setPanel($("panel").hidden));
+$("list-details").addEventListener("click", () => setPanel($("panel").hidden));
+$("panel-close").addEventListener("click", () => setPanel(false));
+
+/* Back to the list. With one image there is no list, so the button is hidden
+   rather than disabled - a control that cannot do anything should not be
+   offered. */
+$("back-btn").addEventListener("click", () => {
+  selected = null;
+  setPanel(false);
+  renderView();
+});
+
+/* Saving one image is the same API call as saving the batch; the server writes
+   whatever is unsaved, so this saves the one you are looking at by being the
+   only one on screen. */
+$("save-one").addEventListener("click", () => $("save-btn").click());
+
+$("done-again").addEventListener("click", async () => {
+  await api("/api/clear", {});
+  selected = null;
+  setPanel(false);
+  poll(true);
+});
+
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, select, textarea")) return;
+  if (e.key === "Escape" && !$("panel").hidden) { e.preventDefault(); setPanel(false); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); $("save-btn").click(); }
   else if (e.key === "Delete" || e.key === "Backspace") {
     if (selected) { e.preventDefault(); $("remove-btn").click(); }

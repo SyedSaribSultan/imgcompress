@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="imgcompress">
 <meta property="og:url" content="https://imgcompress-app.vercel.app/">
 <meta property="og:title" content="imgcompress — compression that proves it didn't ruin your image">
-<meta property="og:description" content="70–90% smaller, with no visible quality loss. Every image is encoded several ways, scored against the original, and only the smallest version that still looks right survives. Runs entirely in your browser.">
+<meta property="og:description" content="70–90% smaller, with no visible quality loss. Every image is encoded several ways, scored against the original, and only the smallest version that still looks right is kept. Runs entirely in your browser.">
 <meta property="og:image" content="https://imgcompress-app.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -52,7 +52,7 @@
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Any",
       "browserRequirements": "Requires JavaScript and a modern browser",
-      "softwareVersion": "2.6.0",
+      "softwareVersion": "2.7.0",
       "license": "https://github.com/SyedSaribSultan/imgcompress/blob/main/LICENSE",
       "sameAs": ["https://github.com/SyedSaribSultan/imgcompress"],
       "author": { "@type": "Organization", "name": "HeyOz" },
@@ -62,7 +62,7 @@
         "Encodes each image with mozjpeg, palette PNG, lossless PNG (oxipng), WebP, lossless WebP and AVIF, and keeps the smallest that passes",
         "Quality is measured with SSIMULACRA 2 — the community's perceptual metric — running in-browser, validated against the reference implementation",
         "Before/after split comparison with zoom, a difference heatmap and a hold-to-flicker test",
-        "Figma-safe defaults: JPEG and PNG only, capped at 4096px"
+        "Pick where the image is going — website, design tool, email, thumbnail or full-quality original — and the formats, size and quality follow"
       ]
     },
     {
@@ -75,23 +75,23 @@
         },
         {
           "@type": "Question",
-          "name": "Why does it default to JPEG and PNG instead of WebP?",
-          "acceptedAnswer": { "@type": "Answer", "text": "The default target is Figma. Figma's plugin API only accepts PNG, JPEG and GIF, and the standing community answer is that WebP uploads are decoded and re-encoded as PNG on import — turning a small WebP into a large PNG inside the .fig file. Switch the target to the web to allow WebP and AVIF output." }
+          "name": "When does it avoid WebP and AVIF?",
+          "acceptedAnswer": { "@type": "Answer", "text": "It does not — the default is Website or app, which uses WebP and AVIF. Only the Design tool or document destination restricts output to JPEG and PNG, because Figma's plugin API accepts PNG, JPEG and GIF and the standing community answer is that WebP uploads are decoded and re-encoded as PNG on import, turning a small WebP into a large PNG inside the .fig file." }
         },
         {
           "@type": "Question",
           "name": "How is quality measured?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Every candidate encode is decoded back and scored against the original with SSIMULACRA 2 — the perceptual metric the image-compression community converged on, running entirely in the browser as a port validated against the reference implementation. Transparent images are scored over a dark and a light backdrop, and the worse score wins." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Every version is opened back up and compared to your original with SSIMULACRA 2 — the perceptual measure the image-compression community converged on, running entirely in the browser and checked against the reference version. It looks at local contrast and detail the way eyes do rather than counting pixel differences, and 100 means indistinguishable. Transparent images are compared over both a dark and a light background, and the worse result is the one that counts." }
         },
         {
           "@type": "Question",
           "name": "What is the difference between this and the desktop version?",
-          "acceptedAnswer": { "@type": "Answer", "text": "They compress to the same measured SSIMULACRA 2 floor with the same class of encoders. The desktop version (pip install imgcompress) adds workflow: folder watching, batch saves straight to disk and a scriptable CLI, plus libimagequant and zopfli, which are still worth a few percent on palette images." }
+          "acceptedAnswer": { "@type": "Answer", "text": "They compress to the same measured visual match with the same class of encoders. The desktop version (pip install imgcompress) adds workflow: folder watching, batch saves straight to disk and a scriptable CLI, plus libimagequant and zopfli, which are still worth a few percent on palette images." }
         },
         {
           "@type": "Question",
           "name": "Which formats can it read and write?",
-          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are passed through untouched. Output is JPEG, palette PNG, lossless PNG, WebP (lossy or lossless) or AVIF." }
+          "acceptedAnswer": { "@type": "Answer", "text": "It reads PNG, JPEG, WebP, BMP and GIF in every modern browser, and TIFF where the browser can decode it. Animated GIFs are left exactly as they are. Output is JPEG, palette PNG, lossless PNG, WebP (lossy or lossless) or AVIF." }
         },
         {
           "@type": "Question",
@@ -125,6 +125,8 @@
               aria-label="More links">⋯</button>
       <nav class="menu" id="more-menu" aria-label="Site" hidden>
         <a href="#learn">How it works</a>
+        <a href="/compare.html">How it compares</a>
+        <a href="/download.html">Download the app</a>
         <a href="#desktop">Desktop app</a>
         <a href="#faq">FAQ</a>
         <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub ↗</a>
@@ -149,9 +151,9 @@
           <span class="sd-pct num" id="sd-pct">−84%</span>
         </div>
 
-        <p>Every image is encoded several different ways, scored against the
-           original with a perceptual metric, and only the smallest version
-           that still passes survives. Then you get to check the proof.</p>
+        <p>Every image comes out as small as it can go without you being able
+           to see the difference — and you get the side-by-side to check that
+           for yourself.</p>
 
         <div class="empty-actions">
           <button class="btn primary big" id="empty-add">Choose images</button>
@@ -181,278 +183,324 @@
          old set-up step held now lives in the result view below - where it can
          be pulled and its effect seen at once, instead of being guessed at
          before there is anything to compare. -->
+    <!-- ===================================================================
+         The working shell. Three views, one at a time, plus one panel.
+
+         What this replaced: a single arrangement that showed everything at
+         once - a global toolbar, an Advanced band, a progress hairline, a
+         324px queue rail, a file-identity row, a canvas bar, the comparison,
+         the readout, a two-pane details band and a sticky summary footer. Ten
+         bands around the thing the product exists to show, which got about a
+         quarter of the pixels. Settings appeared in four places, there were
+         six ways to get a file out behind four buttons, and "deeper"
+         opened downward, rightward, upward and as a tooltip depending on
+         which deeper you meant.
+
+         The rule now: what you are doing decides what is on screen.
+           #view-working  work is happening        -> the original, and progress
+           #view-single   one image to look at     -> the comparison, full bleed
+           #view-list     several, none opened     -> the list, full bleed
+           #panel         anything deeper          -> one drawer, one edge
+
+         Every id below is unchanged from the previous arrangement even where
+         it has moved house, because the ids name concepts this rebuild keeps -
+         the stage, the viewport, the narration, the chips - and the test suite
+         is written against those concepts.
+         =================================================================== -->
     <div class="app" id="app-full" hidden>
-      <!-- toolbar: the simple promise up front, everything else behind Advanced.
-           No longer the primary way anyone finds out they have a choice - the
-           candidate chips under the image are - so this is the power-user
-           surface: change it and the whole queue is redone to match. -->
-      <div class="bar" id="bar-controls">
-        <!-- Two decisions, both the person's to make, both defaulting to
-             "let the app work it out". The groups say which is which, and
-             the single-format group says out loud what it buys: speed.
-             Values keep the original target names so a saved setting, and
-             every test that drives this control, still mean what they did. -->
-        <div class="field">
-          <label for="target">Format</label>
-          <select id="target" title="Which format to produce">
-            <optgroup label="Let the app choose — it tries these and keeps the smallest that passes">
-              <option value="figma">Best for design tools — JPEG or PNG</option>
-              <option value="web">Best for the web — adds WebP and AVIF</option>
-              <option value="lossless">Lossless only — pixel-perfect</option>
-            </optgroup>
-            <!-- Not labelled "faster". Measured on the benchmark corpus,
-                 restricting to JPEG saves only 1.1-1.4x against the design-tool
-                 set, because JPEG's own quality search is nearly the whole
-                 cost; and the choices that ARE ~2x quicker get there partly by
-                 failing to reach the floor. Promising speed here would be
-                 selling a number the engine does not owe. -->
-            <optgroup label="Use one format — skips the comparison">
-              <option value="one-jpeg">JPEG only</option>
-              <option value="one-webp">WebP only</option>
-              <option value="one-png">PNG only</option>
-              <option value="one-avif">AVIF only</option>
-            </optgroup>
-          </select>
-        </div>
-        <div class="field">
-          <label for="quality-preset">Quality</label>
-          <select id="quality-preset" title="How good the result has to look">
-            <option value="95">Maximum — for masters you'll re-edit</option>
-            <option value="90">High — you won't see the difference</option>
-            <option value="85">Balanced — imperceptible unless you compare</option>
-            <option value="80">Smaller — imperceptible side by side</option>
-            <option value="70">Smallest — fine for thumbnails</option>
-            <!-- Only ever selected by the Advanced slider landing off-preset;
-                 offering "custom" as a choice would ask for a number the
-                 control cannot take. -->
-            <option value="custom" hidden>Custom</option>
-          </select>
-        </div>
-        <button class="btn ghost" id="adv-btn" aria-expanded="false" aria-controls="advanced">
-          Advanced <span class="chev" aria-hidden="true">›</span>
-        </button>
-        <div class="spacer"></div>
-        <button class="btn ghost danger" id="stop-btn" hidden>Stop</button>
-      </div>
 
-      <div class="advanced" id="advanced" hidden>
-        <!-- The number behind the words. Same setting as the Quality control
-             above, on the scale the measurement actually uses. -->
-        <div class="field">
-          <label for="quality">Quality floor</label>
-          <input type="range" id="quality" min="60" max="99" step="1" value="90"
-                 aria-describedby="quality-note">
-          <output class="num" id="quality-out">90</output>
-        </div>
-        <p class="adv-note" id="quality-note">imperceptible side by side</p>
-        <div class="field">
-          <label for="maxdim">Max dimension</label>
-          <input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560">
-          <span id="maxdim-hint">px · 0 keeps the original size</span>
-        </div>
-        <div class="field">
-          <label class="check"><input type="checkbox" id="suffix-toggle"> Add <code>-min</code> to filenames</label>
-        </div>
-      </div>
-
-      <!-- ===================== 2. PROCESSING DASHBOARD ==================== -->
+      <!-- Belongs to the run rather than to any one view, so it sits above
+           all three and survives switching between them. -->
       <div class="batch" id="batch" role="progressbar" aria-label="Batch progress"><i id="batch-bar"></i></div>
 
-      <div class="body">
-        <aside class="queue card">
-          <!-- Batch controls and batch numbers in one bar, directly above the list -->
-          <div class="queue-head">
-            <div class="qh-stats">
-              <span class="qh-count num" id="queue-count">0</span>
-              <span class="qh-label micro">images</span>
-              <span class="live-stat num" id="live-stat"></span>
+      <!-- ==================== VIEW: work in progress ====================
+           Its own screen, not a skeleton of the finished one. Holding a fully
+           built dashboard in place with grey boxes for half a minute reads as
+           broken more often than it reads as loading - so what is on screen
+           is the thing that is true right now: your untouched original, at
+           size, and a plain sentence about what is being tried.
+           ================================================================ -->
+      <section class="view view-working" id="view-working" hidden aria-label="Compressing">
+        <div class="working-frame" id="working-frame"></div>
+        <div class="working-say">
+          <p class="narration" id="narration" aria-live="polite"></p>
+          <div class="working-track" role="progressbar" aria-label="Progress"><i id="working-bar"></i></div>
+          <p class="working-eta num" id="working-eta"></p>
+          <!-- Never a bare spinner: it names the format being measured right
+               now, so the wait is legible rather than merely long. -->
+          <p class="working-now" id="working-now"></p>
+          <button class="btn ghost sm" id="stop-btn" hidden>Stop</button>
+        </div>
+      </section>
+
+      <!-- ======================= VIEW: one image ========================
+           The comparison fills the screen. Two small bars float on top of it
+           and nothing else does: mode and zoom at the top, what happened and
+           what to do about it at the bottom.
+           ================================================================ -->
+      <section class="view view-single" id="view-single" hidden aria-label="Result">
+        <div class="stage" id="stage">
+          <div class="viewport" id="viewport">
+            <img id="img-before" alt="Original image" decoding="async">
+            <div class="after"><img id="img-after" alt="Compressed image" decoding="async"></div>
+            <canvas id="img-diff" hidden aria-label="Difference heatmap"></canvas>
+            <input class="split-input" type="range" id="split" min="0" max="100" value="50"
+                   aria-label="Comparison split position">
+            <!-- The caliper. A dark island, because it sits on a photograph
+                 and has to stay light whatever the page theme is doing - and
+                 the two weights ride it, so the measurement is attached to the
+                 thing being measured rather than parked in a corner. -->
+            <div class="divider dark" id="divider">
+              <span class="tag l" id="tag-l">Original</span>
+              <span class="tag r" id="tag-r">Compressed</span>
+            </div>
+            <span class="tag corner dark" id="stage-badge" hidden></span>
+          </div>
+          <!-- Some files this browser cannot draw at all. Saying so is the
+               honest substitute for a preview; the alternative was the broken
+               image glyph, which reads as "this app is broken". -->
+          <p class="stage-none" id="stage-none" hidden></p>
+          <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test · <kbd>D</kbd> shows what changed</div>
+
+          <!-- floating, top -->
+          <div class="float-bar top" id="bar-top">
+            <button class="btn ghost sm back" id="back-btn" hidden title="Back to all images">‹ All images</button>
+            <div class="segmented" role="group" aria-label="Comparison mode">
+              <button id="mode-split" aria-pressed="true">Split <kbd>Space</kbd></button>
+              <button id="mode-after" aria-pressed="false">After</button>
+              <button id="mode-diff" aria-pressed="false">Diff <kbd>D</kbd></button>
             </div>
             <div class="spacer"></div>
-            <button class="btn ghost sm" id="add-btn">＋ Add</button>
-            <button class="btn ghost sm" id="clear-btn" title="Remove everything from the queue">Clear</button>
+            <div class="zoomer" role="group" aria-label="Zoom">
+              <button id="zoom-out" aria-label="Zoom out" title="Zoom out (scroll wheel works too)">−</button>
+              <span class="z num" id="zoom-label">Fit</span>
+              <button id="zoom-in" aria-label="Zoom in" title="Zoom in (scroll wheel works too)">+</button>
+              <button id="zoom-reset" title="Back to fit (or double-click the image)">Reset</button>
+            </div>
           </div>
-          <div class="queue-list" id="queue-list" role="listbox" aria-label="Images to compress" tabindex="0"></div>
-          <div class="queue-foot" id="queue-foot">Drop images anywhere on this page</div>
-        </aside>
 
-        <!-- ======================== 3. PROOF PANEL ======================== -->
-        <section class="inspector" aria-label="Result inspector">
-          <div class="insp-placeholder" id="inspector-empty">Select an image from the queue.</div>
-          <div id="inspector-body" hidden>
-            <div class="insp-head">
-              <!-- Editable in place. Renaming used to live in the set-up step,
-                   and the extension is not part of it: the winning format
-                   decides that, and typing ".png" onto a JPEG would promise
-                   something untrue. -->
-              <h2 class="insp-title">
-                <input id="insp-name" type="text" spellcheck="false"
-                       aria-label="Name for this image">
-                <span class="insp-ext num" id="insp-ext"></span>
-              </h2>
-              <span class="dims num" id="insp-dims"></span>
-              <div class="spacer"></div>
-              <button class="btn" id="retry-btn" hidden>Try again</button>
-              <!-- Scoped to this image; the batch action lives in the results bar. -->
-              <button class="btn" id="dl-one">Save this one</button>
-              <!-- Clipboards accept image/png and nothing else, so this is the
-                   compressed result re-encoded losslessly for the paste - the
-                   toast says so rather than implying the bytes travelled. -->
-              <button class="btn ghost" id="copy-one"
-                      title="Copy the image to your clipboard for pasting">Copy</button>
-              <button class="btn ghost" id="remove-btn" title="Remove from the queue (Delete)">Remove</button>
-              <button class="btn ghost" id="insp-toggle" aria-expanded="true" aria-controls="details"
-                      title="Collapse the detail panel to enlarge the preview">Details ▾</button>
-            </div>
+          <!-- floating, bottom: exactly four things. The name sits above it
+               rather than inside it, because renaming is editing, not a fact
+               about the result. -->
+          <div class="float-bar bottom" id="bar-bottom">
+            <h2 class="insp-title">
+              <input id="insp-name" type="text" spellcheck="false" aria-label="Name for this image">
+              <span class="insp-ext num" id="insp-ext"></span>
+            </h2>
+            <span class="result-size num" id="s-size">—</span>
+            <span class="result-saved num" id="s-saved">—</span>
+            <div class="spacer"></div>
+            <button class="btn ghost" id="insp-toggle" aria-expanded="false" aria-controls="panel">Details</button>
+            <button class="btn primary" id="dl-one">Download</button>
+          </div>
+        </div>
+      </section>
 
-            <!-- View modes as one segmented control, docked above the canvas
-                 rather than floating over the photograph. -->
-            <div class="canvas-bar">
-              <div class="segmented" role="group" aria-label="Comparison mode">
-                <button id="mode-split" aria-pressed="true">Split <kbd>Space</kbd></button>
-                <button id="mode-after" aria-pressed="false">After</button>
-                <button id="mode-diff" aria-pressed="false">Diff <kbd>D</kbd></button>
-              </div>
-              <div class="spacer"></div>
-              <div class="zoomer" role="group" aria-label="Zoom">
-                <button id="zoom-out" aria-label="Zoom out" title="Zoom out (scroll wheel works too)">−</button>
-                <span class="z num" id="zoom-label">Fit</span>
-                <button id="zoom-in" aria-label="Zoom in" title="Zoom in (scroll wheel works too)">+</button>
-                <button id="zoom-reset" title="Back to fit (or double-click the image)">Reset</button>
-              </div>
-            </div>
+      <!-- ===================== VIEW: several images =====================
+           The list IS the task, so it gets the screen. The rail that used to
+           hold it was never navigation - it was the content, boxed into 17%
+           of the width whether there was one row in it or eighty.
+           ================================================================ -->
+      <section class="view view-list" id="view-list" hidden aria-label="Images">
+        <div class="list-head">
+          <span class="qh-count num" id="queue-count">0</span>
+          <span class="qh-label micro">images</span>
+          <span class="live-stat num" id="live-stat"></span>
+          <span class="totals"><span class="big num" id="t-sizes"></span>
+            <span class="save num" id="t-saved"></span>
+            <span class="badge-bw" id="t-bandwidth" hidden></span></span>
+          <div class="spacer"></div>
+          <button class="btn ghost sm" id="add-btn">＋ Add</button>
+          <button class="btn ghost sm" id="clear-btn" title="Remove everything from the queue">Clear</button>
+          <button class="btn ghost sm" id="list-details" aria-controls="panel">Details</button>
+          <button class="btn primary" id="save-btn" disabled>
+            <span id="save-label">Download all</span><kbd>Ctrl S</kbd>
+          </button>
+        </div>
+        <div class="queue-list" id="queue-list" role="listbox" aria-label="Images to compress" tabindex="0"></div>
+        <div class="queue-foot" id="queue-foot">Drop images anywhere on this page</div>
+      </section>
 
-            <div class="stage" id="stage">
-              <div class="viewport" id="viewport">
-                <img id="img-before" alt="Original image" decoding="async">
-                <div class="after"><img id="img-after" alt="Compressed image" decoding="async"></div>
-                <canvas id="img-diff" hidden aria-label="Difference heatmap"></canvas>
-                <input class="split-input" type="range" id="split" min="0" max="100" value="50"
-                       aria-label="Comparison split position">
-                <!-- The caliper. A dark island, because it sits on a photograph
-                     and has to stay light whatever the page theme is doing —
-                     and the two weights ride it, so the measurement is attached
-                     to the thing being measured rather than parked in a corner. -->
-                <div class="divider dark" id="divider">
-                  <span class="tag l" id="tag-l">Original</span>
-                  <span class="tag r" id="tag-r">Compressed</span>
-                </div>
-                <!-- Shown instead when there is no divider to hang them on. -->
-                <span class="tag corner dark" id="stage-badge" hidden></span>
-              </div>
-              <!-- Some files this browser cannot draw at all: a damaged export,
-                   or a format it has no decoder for. Saying so is the honest
-                   substitute for a preview - the alternative was the broken
-                   image glyph, which reads as "this app is broken". -->
-              <p class="stage-none" id="stage-none" hidden></p>
-              <div class="hint" id="hint" hidden>Drag the divider · hold <kbd>Space</kbd> to flicker-test · <kbd>D</kbd> shows what changed</div>
-            </div>
+      <!-- ========================== THE PANEL ==========================
+           One direction for everything deeper. Before this there were four,
+           and a person who wanted more had no learned way to go and get it.
+           ================================================================ -->
+      <aside class="panel" id="panel" hidden aria-label="Details">
+        <div class="panel-head">
+          <h3 class="micro" id="panel-title">Details</h3>
+          <div class="spacer"></div>
+          <button class="btn ghost sm" id="panel-close" aria-label="Close details">✕</button>
+        </div>
 
-            <!-- ====================== 3b. THE READOUT ======================= *
-                 One sentence saying what is happening or what happened, and
-                 under it every encode that was tried, as something you can
-                 touch. This band is deliberately between the picture and the
-                 numbers: it is the only place in the app that has to be
-                 understood without being read carefully, and a chip that
-                 changes the picture the instant it is tapped teaches that
-                 there was a choice here far better than any label pointing at
-                 a menu could. The sentence ends in a real action for the same
-                 reason - it is an invitation, not a caption. -->
-            <div class="readout">
-              <p class="narration" id="narration" aria-live="polite"></p>
+        <div class="panel-body" id="panel-body">
+          <!-- kept for the tests and for anything that still asks for the
+               inspector's shell; the panel is the inspector now. -->
+          <div id="inspector-empty" hidden></div>
+          <div id="inspector-body">
+
+            <section class="panel-sec" id="sec-versions">
+              <h4 class="micro">Every version that was tried
+                <span class="hint-inline">tap one — it is already made, so it
+                  appears instantly</span></h4>
+              <!-- One home for the chips. They were the discoverable format
+                   control when they sat under the picture; here they are the
+                   evidence, which is what the panel is for. Tapping one still
+                   swaps the preview instantly - the encodes already exist. -->
               <div class="cands" id="cands" role="group"
-                   aria-label="Every encode that was tried"></div>
-            </div>
+                   aria-label="Every version that was tried"></div>
+              <p class="cand-why" id="cand-why" aria-live="polite" hidden></p>
+            </section>
 
-            <div class="details" id="details">
-              <div class="pane">
-                <!-- Headline numbers only. Everything a person needs to decide
-                     whether to keep the file, at a size they can read. -->
-                <div class="stats-lead">
-                  <div class="stat-big">
-                    <div class="k micro">Now</div>
-                    <div class="v" id="s-size">—</div>
-                  </div>
-                  <div class="stat-big accent">
-                    <div class="k micro">Saved</div>
-                    <div class="v" id="s-saved">—</div>
-                  </div>
-                  <div class="stat-big name">
-                    <div class="k micro">Format</div>
-                    <div class="v" id="s-format">—</div>
-                  </div>
-                </div>
-                <p class="verdict" id="s-verdict" hidden></p>
-                <div class="note" id="s-note" hidden></div>
-                <div class="warn" id="s-warn" hidden></div>
-                <!-- The measurement is the product's claim, so it stays one
-                     click away rather than buried: quality first in the drawer. -->
-                <details class="advanced-info">
-                  <summary>How this was measured</summary>
-                  <div class="stats">
-                    <div class="stat"><div class="k">SSIMULACRA 2</div><div class="v" id="s-score">—</div></div>
-                    <div class="stat"><div class="k">Quality floor</div><div class="v" id="s-floor">—</div></div>
-                    <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
-                    <div class="stat"><div class="k">Time taken</div><div class="v" id="s-time">—</div></div>
-                  </div>
-                  <p class="metric-note">Every candidate was decoded back and scored
-                     against your original with SSIMULACRA&nbsp;2 — the metric the
-                     image-compression community converged on, colour-aware by
-                     construction. 90 means the difference doesn't survive a flicker
-                     test; 100 is identical.</p>
-                </details>
-              </div>
-              <!-- The manual overrides, for this image only. A dropdown is the
-                   right shape here and the wrong shape above: it can name a
-                   format the bake-off never tried, which no chip can, but it
-                   reads as status rather than invitation - so it lives down
-                   here with the other numbers, not next to the picture.
-                   Anything set here is a genuine re-run, not a swap. -->
-              <div class="pane">
-                <h3 class="micro">Redo just this image
-                  <span class="hint-inline">try something the bake-off didn't</span></h3>
-                <div class="ov-grid">
-                  <label for="ov-format">Force a format</label>
-                  <select id="ov-format">
-                    <option value="">best of all candidates</option>
-                    <option value="jpeg">jpeg</option>
-                    <option value="png8">png8 (palette)</option>
-                    <option value="png">png (lossless)</option>
-                    <option value="webp">webp</option>
-                    <option value="avif">avif</option>
-                  </select>
-                  <label for="ov-quality">Quality floor</label>
-                  <input class="num-input" type="number" id="ov-quality" min="60" max="99" placeholder="—">
-                </div>
-                <div class="ov-actions">
-                  <button class="btn sm" id="ov-apply">Compress again</button>
-                  <button class="btn ghost sm" id="ov-reset" hidden>Reset</button>
+            <section class="panel-sec" id="sec-measured">
+              <h4 class="micro">How this was measured</h4>
+              <div class="stats-lead">
+                <div class="stat-big name">
+                  <div class="k micro">Format</div><div class="v" id="s-format">—</div>
                 </div>
               </div>
-            </div>
+              <p class="verdict" id="s-verdict" hidden></p>
+              <!-- 5.1. Resizing and compressing are different things, and
+                   adding their savings together hides which one did the work -
+                   while the visual match sits next to the total having measured
+                   only the compression. Said apart, with the way out beside
+                   it. -->
+              <p class="split-note" id="s-split" hidden></p>
+              <button class="btn sm" id="keep-size" hidden>Redo at the original size</button>
+              <!-- 5.3. The dual-backdrop check, which as far as we know no
+                   other compressor does. Only shown when it actually ran. -->
+              <p class="alpha-note" id="s-alpha" hidden></p>
+              <div class="note" id="s-note" hidden></div>
+              <div class="warn" id="s-warn" hidden></div>
+              <div class="stats">
+                <div class="stat"><div class="k">Visual match</div><div class="v" id="s-score">—</div></div>
+                <div class="stat"><div class="k">Your target</div><div class="v" id="s-floor">—</div></div>
+                <div class="stat"><div class="k">Dimensions</div><div class="v" id="s-dims">—</div></div>
+                <div class="stat"><div class="k">Time taken</div><div class="v" id="s-time">—</div></div>
+              </div>
+              <p class="metric-note">We compare the two images the way eyes
+                 do — looking at local contrast and detail rather than counting
+                 pixel differences. <b>100 means indistinguishable.</b> At 90
+                 the difference does not show even when the two are flicked
+                 back and forth on top of each other.</p>
+              <p class="metric-note">Colour is never thrown away, which most
+                 JPEG encoders do to save space. Matching this quality with
+                 colour detail discarded needed setting 97 instead of 76 — a
+                 file <b>3.8&times; larger</b>. The measure used here can see
+                 colour damage; the older ones everybody still uses cannot.
+                 <span class="muted">(The measure is SSIMULACRA&nbsp;2, run in
+                 your browser and checked against the reference version.)</span></p>
+            </section>
+
+            <!-- Every setting, once. Quality used to be editable in four
+                 places and format in three; the ones that survive are these,
+                 plus the per-image overrides below, which are a different
+                 scope rather than a second copy. -->
+            <section class="panel-sec" id="bar-controls">
+              <h4 class="micro">Settings <span class="hint-inline">for every image</span></h4>
+              <div class="field">
+                <label for="target">Going to</label>
+                <select id="target" title="Where these images are going">
+                  <!-- Filled by app.js from destinations.js, which is generated
+                       from imgcompress/destinations.py. -->
+                  <optgroup id="target-destinations"
+                            label="Let the app choose the format — it tries several and keeps the smallest that still looks right"></optgroup>
+                  <!-- Not labelled "faster". Measured on the benchmark corpus,
+                       restricting to JPEG saves only 1.1-1.4x against the
+                       design-tool set, because JPEG's own quality search is
+                       nearly the whole cost. -->
+                  <optgroup label="Always use one format — skips the comparison">
+                    <option value="one-jpeg">JPEG only</option>
+                    <option value="one-webp">WebP only</option>
+                    <option value="one-png">PNG only</option>
+                    <option value="one-avif">AVIF only</option>
+                  </optgroup>
+                </select>
+              </div>
+              <div class="field">
+                <label for="quality-preset">Quality</label>
+                <select id="quality-preset" title="How good the result has to look">
+                  <option value="95">Maximum — for masters you'll re-edit</option>
+                  <option value="90">High — you won't see the difference</option>
+                  <option value="85">Balanced — imperceptible unless you compare</option>
+                  <option value="80">Smaller — imperceptible side by side</option>
+                  <option value="70">Smallest — fine for thumbnails</option>
+                  <option value="custom" hidden>Custom</option>
+                </select>
+              </div>
+              <!-- The number behind the words, in the open. It used to sit
+                   behind an "Advanced" toggle, which made this a disclosure
+                   inside a disclosure once the settings moved into a drawer. -->
+              <div class="field" id="advanced">
+                <label for="quality">Minimum visual match</label>
+                <input type="range" id="quality" min="60" max="99" step="1" value="90"
+                       aria-describedby="quality-note">
+                <output class="num" id="quality-out">90</output>
+              </div>
+              <p class="adv-note" id="quality-note">imperceptible side by side</p>
+              <div class="field">
+                <label for="maxdim">Max dimension</label>
+                <input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560">
+                <span id="maxdim-hint">px · 0 keeps the original size</span>
+              </div>
+              <div class="field">
+                <label class="check"><input type="checkbox" id="suffix-toggle"> Add <code>-min</code> to filenames</label>
+              </div>
+            </section>
+
+            <!-- A different scope, not a second copy: this one re-runs the
+                 comparison for one image, and can name a format the automatic
+                 set never tried. -->
+            <section class="panel-sec" id="sec-override">
+              <h4 class="micro">Try different settings
+                <span class="hint-inline">for this image only</span></h4>
+              <div class="ov-grid">
+                <label for="ov-format">Always use</label>
+                <select id="ov-format">
+                  <option value="">whichever comes out smallest</option>
+                  <option value="jpeg">jpeg</option>
+                  <option value="png8">png8 (palette)</option>
+                  <option value="png">png (lossless)</option>
+                  <option value="webp">webp</option>
+                  <option value="avif">avif</option>
+                </select>
+                <label for="ov-quality">Minimum visual match</label>
+                <input class="num-input" type="number" id="ov-quality" min="60" max="99" placeholder="—">
+              </div>
+              <div class="ov-actions">
+                <button class="btn sm" id="ov-apply">Compress again</button>
+                <button class="btn ghost sm" id="ov-reset" hidden>Reset</button>
+                <button class="btn ghost sm" id="retry-btn" hidden>Try again</button>
+              </div>
+            </section>
+
+            <section class="panel-sec" id="sec-more">
+              <h4 class="micro">This image</h4>
+              <div class="ov-actions">
+                <button class="btn ghost sm" id="copy-one"
+                        title="Copy the image to your clipboard for pasting">Copy to clipboard</button>
+                <button class="btn ghost sm" id="remove-btn" title="Remove from the queue (Delete)">Remove</button>
+              </div>
+              <h4 class="micro">The whole batch</h4>
+              <div class="ov-actions export">
+                <button class="btn ghost sm" id="export-btn" aria-haspopup="true" aria-expanded="false">Export report</button>
+                <div class="menu" id="export-menu" hidden>
+                  <button data-export="copy">Copy summary</button>
+                  <button data-export="csv">Download CSV</button>
+                  <button data-export="json">Download JSON</button>
+                </div>
+              </div>
+            </section>
           </div>
-        </section>
+        </div>
+      </aside>
+
+      <!-- The end of the task, said out loud. A job with no ending leaves
+           people unsure it worked, and "did it save?" is the one question the
+           app was never answering. -->
+      <div class="done-bar" id="done-bar" hidden role="status">
+        <span id="done-say"></span>
+        <button class="btn ghost sm" id="done-again">Start over</button>
       </div>
-
-      <!-- ====================== 4. RESULTS SUMMARY ======================= -->
-      <footer class="summary">
-        <div class="totals">
-          <span class="big num" id="t-sizes"></span>
-          <span class="save num" id="t-saved"></span>
-          <span class="badge-bw" id="t-bandwidth" hidden></span>
-        </div>
-        <div class="spacer"></div>
-        <div class="export">
-          <button class="btn ghost" id="export-btn" aria-haspopup="true" aria-expanded="false">Export report</button>
-          <div class="menu" id="export-menu" hidden>
-            <button data-export="copy">Copy summary</button>
-            <button data-export="csv">Download CSV</button>
-            <button data-export="json">Download JSON</button>
-          </div>
-        </div>
-        <button class="btn primary" id="save-btn" disabled>
-          <span id="save-label">Download all</span><kbd>Ctrl S</kbd>
-        </button>
-      </footer>
     </div>
   </section>
 
@@ -460,23 +508,23 @@
   <section class="learn" id="learn">
     <h2>Quality is measured, not guessed</h2>
     <p class="lede">Most compressors ask you to pick a quality number and hope.
-       This one encodes each image several different ways, decodes every
-       candidate back, scores it against the original, and keeps the smallest
-       file that still clears the floor you set. Then it shows you the evidence.</p>
+       This one saves each image several different ways, opens every version
+       back up, compares it to your original, and keeps the smallest one that
+       still looks close enough. Then it shows you the evidence.</p>
 
     <div class="steps">
       <div class="step">
         <span class="step-n num">1</span>
         <h3>Encode it several ways</h3>
         <p>mozjpeg, palette PNG, lossless PNG — plus WebP and AVIF if you allow
-           them. Each format is searched independently for the lowest setting
-           that still clears your floor, and every PNG gets a lossless oxipng
-           squeeze.</p>
+           them. Each format is searched separately for the smallest setting
+           that still looks close enough to your original, and every PNG gets a
+           lossless oxipng squeeze.</p>
       </div>
       <div class="step">
         <span class="step-n num">2</span>
-        <h3>Score every candidate</h3>
-        <p>Each encode is decoded back and scored against the original with
+        <h3>Compare every version</h3>
+        <p>Each one is opened back up and compared to your original with
            <b>SSIMULACRA&nbsp;2</b> — the metric the image-compression community
            converged on, running right here in your browser and validated
            against the reference implementation. Transparency is scored on dark
@@ -484,14 +532,15 @@
       </div>
       <div class="step">
         <span class="step-n num">3</span>
-        <h3>Keep the smallest that passes</h3>
-        <p>The winner is whichever candidate came out smallest while still
-           passing — and nothing bigger than your original is ever produced.
-           Already-tiny files pass through untouched.</p>
+        <h3>Keep the smallest one that still looks right</h3>
+        <p>The winner is whichever version came out smallest while still
+           looking close enough to your original — and nothing bigger than what
+           you started with is ever produced. Files that are already small
+           enough are left exactly as they are.</p>
       </div>
     </div>
 
-    <h3 class="sub">The format is a bake-off, not an assumption</h3>
+    <h3 class="sub">The format is a comparison, not an assumption</h3>
     <p>Which format wins is genuinely content-dependent — measured on the
        project's benchmark corpus, with up to a <b>40× spread</b> between the
        best and worst choice for the same image:</p>
@@ -514,25 +563,29 @@
        a lot on the table — so this tool doesn't pick. It tries them all.</p>
 
     <details class="deep">
-      <summary>Why the default target is Figma, not WebP</summary>
+      <summary>Why "Design tool or document" refuses WebP</summary>
       <p>"Just use WebP" is the standard advice, and it's wrong if your images
          are going into Figma. Figma's plugin API only knows PNG, JPEG and GIF,
          and the standing community answer is that a WebP dropped onto the
          canvas is decoded and <b>re-encoded as PNG</b> — turning your
          beautifully compressed 40&nbsp;KB WebP into a multi-megabyte PNG inside
-         the <code>.fig</code>. The Figma target therefore sticks to formats
-         Figma stores byte-for-byte, and caps dimensions at 4096px — beyond
-         that, Figma rescales destructively on import. Pick <b>the web</b> for
-         anything not bound for Figma.</p>
+         the <code>.fig</code>. Office suites and document editors behave much
+         the same way. That destination therefore sticks to formats those tools
+         store byte-for-byte, and clamps anything above 4096px — beyond that
+         they rescale destructively on import, so the choice is between our
+         resampling and theirs. Every other destination allows the modern
+         formats, which is why <b>Website or app</b> is the default: the
+         restriction is a fact about design tools, not about images.</p>
     </details>
   </section>
 
   <section class="learn" id="desktop">
     <h2>Prefer a desktop app? There's one of those too</h2>
-    <p class="lede">This page runs the full pipeline: SSIMULACRA&nbsp;2 as the
-       quality floor, mozjpeg, oxipng, real lossless WebP and AVIF — all
-       compiled to WebAssembly, all local. The Python version compresses to
-       the same measured floor; what it adds is workflow:</p>
+    <p class="lede">This page runs the full pipeline: a real perceptual measure
+       deciding when a version is close enough, plus mozjpeg, oxipng, real
+       lossless WebP and AVIF — all compiled to WebAssembly, all local. The
+       Python version holds the same measured standard; what it adds is
+       workflow:</p>
     <ul class="checks">
       <li><b>Folder watching</b> — point it at your Figma export folder and new
           arrivals are compressed as they land</li>
@@ -558,22 +611,27 @@ imgcompress photos/        # or the command line</code></pre>
          analytics.</p>
     </details>
     <details>
-      <summary>Why does it default to JPEG and PNG instead of WebP?</summary>
-      <p>The default target is Figma. Figma's plugin API only accepts PNG, JPEG
-         and GIF, and the standing community answer is that WebP uploads are
-         decoded and re-encoded as PNG on import — turning a small WebP into a
-         large PNG inside the <code>.fig</code> file. Switch the target to
-         <b>the web</b> to allow WebP and AVIF output.</p>
+      <summary>When does it avoid WebP and AVIF?</summary>
+      <p>Only when you tell it the image is going into a design tool or a
+         document. Figma's plugin API accepts PNG, JPEG and GIF, and the
+         standing community answer is that WebP uploads are decoded and
+         re-encoded as PNG on import — turning a small WebP into a large PNG
+         inside the <code>.fig</code> file. Choosing <b>Design tool or
+         document</b> sticks to the formats those tools store as they were
+         given them. The default, <b>Website or app</b>, uses everything.</p>
     </details>
     <details>
       <summary>How is quality measured?</summary>
-      <p>Every candidate encode is decoded back and scored against the original
-         with SSIMULACRA&nbsp;2 — the perceptual metric the image-compression
-         community converged on, which correlates with human judgement at
-         r≈0.88 and sees chroma damage that luma-only metrics miss. It runs
-         entirely in your browser, as a port validated against the reference
-         implementation. Transparent images are scored over a dark and a light
-         backdrop, and the worse score wins.</p>
+      <p>Every version is opened back up and compared to your original. The
+         comparison looks at local contrast and detail the way eyes do, rather
+         than counting pixel differences, and it can see colour damage that the
+         older measures everybody still uses cannot. <b>100 means
+         indistinguishable.</b> Images with transparency are compared over both
+         a dark and a light background, and the worse of the two is the one
+         that counts — a halo you cannot see on white is still a defect.</p>
+      <p class="muted">The measure is SSIMULACRA&nbsp;2, which agrees with human
+         judgement at r≈0.88 against about 0.76 for the older SSIM. It runs
+         entirely in your browser, checked against the reference version.</p>
     </details>
     <details>
       <summary>What is the difference between this and the desktop version?</summary>
@@ -604,7 +662,7 @@ imgcompress photos/        # or the command line</code></pre>
   <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub</a>
   <!-- The one place the version is written. Exported reports read it from
        here, so a report can never claim a version the page is not. -->
-  <span class="num" id="app-version">v2.6.0</span>
+  <span class="num" id="app-version">v2.7.0</span>
   <span>by HeyOz</span>
   <!-- Lifetime totals live here, labelled, so they cannot be mistaken for the
        current batch's numbers in the results bar. -->
@@ -664,6 +722,9 @@ imgcompress photos/        # or the command line</code></pre>
 browser, which needs JavaScript. Nothing is ever uploaded. The command-line
 version doesn't need a browser at all: <code>pip install imgcompress</code></div></noscript>
 
+<!-- The destination table, generated from imgcompress/destinations.py. Must
+     load before app.js, which reads its bindings at start-up. -->
+<script src="/destinations.js" defer></script>
 <script src="/app.js" defer></script>
 </body>
 </html>

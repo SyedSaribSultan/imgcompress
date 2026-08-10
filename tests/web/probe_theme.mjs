@@ -61,17 +61,35 @@ try {
   ok(distinct.length <= 5,
      `corners collapse to a small set (${distinct.length}: ${distinct.join(", ")})`);
 
-  // ---- controls line up on the toolbar row -------------------------------
-  const heights = await pg.evaluate(() => {
+  /* ---- controls share a height ------------------------------------------
+     The panel has to be open before this means anything. Most controls live
+     in it now, and the measurement skips anything with `offsetParent === null`
+     - so with the drawer shut this found exactly one control and reported that
+     it shared a height with itself. A check that quietly shrinks to nothing is
+     the failure mode this suite keeps turning up, so the count is asserted
+     too: it cannot pass over an almost-empty set again. */
+  await pg.evaluate(() => {
+    if (state.items.length) selectItem(state.items[0].id);
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  await pg.evaluate(() => document.getElementById("insp-toggle").click());
+  await new Promise((r) => setTimeout(r, 600));
+
+  const WANT = ["#target", "#quality-preset", "#maxdim", "#ov-format", "#dl-one",
+                "#copy-one", "#save-btn", "#insp-toggle", "#ov-apply"];
+  const heights = await pg.evaluate((sels) => {
     const out = {};
-    for (const sel of ["#target", "#quality-preset", "#adv-btn", "#dl-one",
-                       "#copy-one", "#save-btn"]) {
+    for (const sel of sels) {
       const el = document.querySelector(sel);
       if (el && el.offsetParent !== null) out[sel] = Math.round(el.getBoundingClientRect().height);
     }
     return out;
-  });
+  }, WANT);
   console.log("  control heights:", JSON.stringify(heights));
+  const found = Object.keys(heights).length;
+  ok(found >= 5,
+     `enough controls were visible to compare (${found} of ${WANT.length}: ${
+       Object.keys(heights).join(", ") || "none"})`);
   const hs = [...new Set(Object.values(heights))];
   ok(hs.length <= 2, `controls share a height (${hs.join(", ")})`);
 

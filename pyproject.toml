@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imgcompress"
-version = "2.6.0"
+version = "2.7.0"
 description = "Quality-targeted image compression. Measures perceptual quality instead of guessing it, and picks the best format per image."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -62,7 +62,11 @@ Changelog = "https://github.com/SyedSaribSultan/imgcompress/blob/main/CHANGELOG.
 packages = ["imgcompress"]
 
 [tool.setuptools.package-data]
-imgcompress = ["webui/*.html"]
+# The desktop app is one HTML file plus the design system it shares with the
+# web app: the token layer, the face declarations and the faces themselves.
+# They are copied in by tools/sync_webui_assets.py and must ship, because the
+# app has to render correctly from a pip install with no network at all.
+imgcompress = ["webui/*.html", "webui/*.css", "webui/fonts/*.woff2"]
 
 [tool.ruff]
 line-length = 100

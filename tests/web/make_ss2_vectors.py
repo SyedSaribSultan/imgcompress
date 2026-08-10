@@ -84,6 +84,27 @@ def rgb_bytes(img: Image.Image) -> bytes:
     return np.asarray(img.convert("RGB"), dtype=np.uint8).tobytes()
 
 
+def _avif_available() -> bool:
+    """Can this Pillow write an AVIF?
+
+    Pillow only carries AVIF where the wheel was built against libavif, which
+    most Windows wheels are not. The AVIF pairs are worth having - they are the
+    most aggressive distortion in the corpus - but they are not worth failing
+    the whole validation run over, so their absence is reported rather than
+    raised.
+    """
+    if "AVIF" in Image.SAVE:
+        return True
+    try:  # the plugin registers itself on import
+        import pillow_avif  # noqa: F401
+    except Exception:
+        return False
+    return "AVIF" in Image.SAVE
+
+
+HAVE_AVIF = _avif_available()
+
+
 def variants(img: Image.Image):
     """Distortions across the whole quality range, several codecs."""
     out = []
@@ -95,10 +116,11 @@ def variants(img: Image.Image):
         buf = io.BytesIO()
         img.save(buf, "WEBP", quality=q, method=4)
         out.append((f"webp{q}", Image.open(io.BytesIO(buf.getvalue())).convert("RGB")))
-    for q in (40, 70):
-        buf = io.BytesIO()
-        img.save(buf, "AVIF", quality=q, speed=8)
-        out.append((f"avif{q}", Image.open(io.BytesIO(buf.getvalue())).convert("RGB")))
+    if HAVE_AVIF:
+        for q in (40, 70):
+            buf = io.BytesIO()
+            img.save(buf, "AVIF", quality=q, speed=8)
+            out.append((f"avif{q}", Image.open(io.BytesIO(buf.getvalue())).convert("RGB")))
     out.append(("pal32", img.convert("RGB").quantize(colors=32).convert("RGB")))
     out.append(("identical", img.convert("RGB")))
     return out
@@ -133,6 +155,10 @@ def main():
 
     (OUT / "vectors.json").write_text(json.dumps(vectors, indent=1))
     print(f"\n{len(vectors)} vectors written")
+    if not HAVE_AVIF:
+        print("NOTE: this Pillow cannot write AVIF, so the 12 AVIF pairs are "
+              "missing from the corpus. Install pillow-avif-plugin for full "
+              "coverage.")
 
 
 if __name__ == "__main__":

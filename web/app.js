@@ -83,31 +83,60 @@ function rollNumber(el, toBytes, suffixHtml) {
 const state = {
   items: [],
   byId: new Map(),
-  // qualityTarget is on the SSIMULACRA 2 scale (0-100), the same floor the
-  // desktop app uses. 90 is its published "visually lossless" line.
-  /* `formats` null means the bake-off decides; a one-element array means the
+  /* Taken from the default destination rather than typed out. Repeating its
+     frame and quality here made this a fourth copy of two numbers - and one
+     that only shows up before anything is stored, so a stale value would be
+     wrong for exactly the people arriving for the first time.
+     qualityTarget is on the SSIMULACRA 2 scale (0-100); 90 is its published
+     "visually lossless" line.
+     `formats` null means the comparison decides; a one-element array means the
      person did. `alphaPolicy` only matters when that choice cannot hold the
      image's transparency, and is only ever set by answering the dialog. */
   settings: {
-    target: "figma", metric: "ss2", qualityTarget: 90, maxDimension: 2560,
-    formats: null, alphaPolicy: "png",
+    target: DEFAULT_DESTINATION,
+    metric: "ss2",
+    qualityTarget: DESTINATION_NUMBERS[DEFAULT_DESTINATION].qualityTarget,
+    maxDimension: DESTINATION_NUMBERS[DEFAULT_DESTINATION].maxDimension,
+    formats: null,
+    alphaPolicy: "png",
   },
   settingsRev: 0,
   caps: { webp: null, png8: null },
   suffix: false,
 };
 
+/* DESTINATION_NUMBERS, DESTINATION_ORDER, OLD_TARGET_NAMES and destinationOf()
+   come from destinations.js, which index.html loads before this file. It is
+   generated from imgcompress/destinations.py and committed; nothing here
+   restates a destination's name, frame size or minimum visual match. */
+
+/* The control's own options are built from that table too, rather than typed
+   into index.html - a hand-written list would be one more copy to keep in step,
+   and this one is the copy a person actually reads. */
+function renderDestinationOptions() {
+  const group = $("target-destinations");
+  if (!group || group.children.length) return;
+  for (const name of DESTINATION_ORDER) {
+    const d = DESTINATION_NUMBERS[name];
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = d.label;
+    opt.title = d.help;
+    group.appendChild(opt);
+  }
+}
+
 /* The Format control is one list spanning "you choose" to "I choose", so its
-   value carries both facts. Single-format picks leave the design-tool preset
-   behind, and with it that preset's dimension cap - the same rule the
-   per-image format override has always used. */
+   value carries both facts. Single-format picks leave the destination's format
+   list behind but keep its size cap - a person who picked "Email or chat" and
+   then said "JPEG only" still wants it to fit in an email. */
 const ONE = "one-";
-function parseFormatChoice(value) {
-  if (!value.startsWith(ONE)) return { target: value, formats: null };
-  return { target: "web", formats: [value.slice(ONE.length)] };
+function parseFormatChoice(value, current) {
+  if (!value.startsWith(ONE)) return { target: destinationOf(value), formats: null };
+  return { target: destinationOf(current), formats: [value.slice(ONE.length)] };
 }
 function formatChoiceValue(s) {
-  return s.formats && s.formats.length ? ONE + s.formats[0] : s.target;
+  return s.formats && s.formats.length ? ONE + s.formats[0] : destinationOf(s.target);
 }
 
 /* Words first, number behind Advanced. The floor is still the single source of
@@ -126,6 +155,11 @@ function beginBatch() {
   batchActive = true;
 }
 let ovSyncedFor = null;   // which item the override controls currently reflect
+/* `selected` is the whole of it: null means "looking at the list", an id means
+   "looking at that one". A second `opened` flag was tried first and was two
+   names for one idea - the distinction was invisible to the person, and the
+   only thing it bought was a way for the two to disagree. */
+let savedThisRun = 0;     // how many files this run actually wrote
 const BASE_TITLE = document.title;
 
 function uid() {
@@ -142,7 +176,9 @@ const isBusy = (i) => i.status === "queued" || i.status === "working";
 function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("imgc-settings") || "{}");
-    if (saved.target) state.settings.target = saved.target;
+    // A target saved before 2.7 is a pre-destination name; map it rather than
+    // letting `figma` reach the engine as somewhere that no longer exists.
+    if (saved.target) state.settings.target = destinationOf(saved.target);
     // Stored floors from before the metric change were SSIM fractions (<= 1);
     // they mean nothing on the SSIMULACRA 2 scale, so they reset to default.
     // v2: an init-scaling bug once pinned the slider to 99 and pushSettings
@@ -166,8 +202,8 @@ function loadSettings() {
   // recommended automatic set instead of pretending.
   if (!$("target").value) {
     state.settings.formats = null;
-    state.settings.target = "figma";
-    $("target").value = "figma";
+    state.settings.target = "web";
+    $("target").value = "web";
   }
   // qualityTarget is ALREADY on the slider's 0-100 scale. The old SSIM floor
   // was a fraction and was scaled here; doing that to 90 pinned the slider to
@@ -272,6 +308,12 @@ function effectiveSettings(item) {
   if (item.override) {
     if (item.override.formats) { s.formats = item.override.formats; s.target = "web"; }
     if (item.override.qualityTarget != null) s.qualityTarget = item.override.qualityTarget;
+    /* A per-image frame size. The override carried format and quality but not
+       this, so "redo at the original size" had nothing to ask for - and any
+       future per-image size control would have hit the same wall. All three of
+       a destination's numbers can now be overridden for one image, which is
+       the shape the override always implied. */
+    if (item.override.maxDimension != null) s.maxDimension = item.override.maxDimension;
   }
   return s;
 }
@@ -635,7 +677,12 @@ async function makeThumb(item) {
 
 function addFiles(files) {
   const usable = [...files].filter((f) => SUPPORTED.test(f.name) || /^image\//.test(f.type));
-  if (!usable.length) { toast("No supported images in that drop"); return; }
+  if (!usable.length) {
+    // What happened, then what to do about it. "Unsupported" on its own leaves
+    // someone guessing which of their files was the problem and what would work.
+    toast("Those file types aren't supported yet. Try PNG, JPEG, WebP, AVIF, GIF, BMP or TIFF.");
+    return;
+  }
   startEngine();
   const firstEver = state.items.length === 0;
   for (const file of usable) {
@@ -755,15 +802,93 @@ function render() {
   if (dirty.queue || wantAll) { renderQueue(); dirty.queue = false; }
   if (wantAll) {
     renderSummary(); dirty.summary = false;
-    const still = state.byId.get(selected);
-    if (!still && state.items.length) selected = state.items[0].id;
+    /* No auto-selection. It used to fall back to the first item whenever the
+       selection was empty, which made "nothing is open" unrepresentable - and
+       that state is exactly the list view. The one case worth keeping is a
+       single image: there is nothing to choose between, so it opens itself. */
+    if (selected && !state.byId.get(selected)) selected = null;
+    if (!selected && state.items.length === 1) selected = state.items[0].id;
     renderInspector(state.byId.get(selected));
     dirty.inspector = false;
   }
   $("app-empty").hidden = state.items.length > 0;
   $("app-full").hidden = state.items.length === 0;
+  renderView();
   renderBatchProgress();
   renderTitle();
+}
+
+/* --------------------------- which view is on ----------------------------
+ * What you are doing decides what is on screen, and only one thing is.
+ *
+ *   nothing here yet        -> the drop screen
+ *   the subject is working  -> the waiting screen, which is its own screen
+ *                              rather than a skeleton of the finished one
+ *   one image to look at    -> the comparison, full bleed
+ *   several, none opened    -> the list, full bleed
+ *
+ * "The subject" is the image being looked at: the only one, or the one opened
+ * from the list. A batch of eighty where one is still going does NOT take
+ * everybody to the waiting screen - the list is the right place to watch a
+ * batch, because it shows all of them at once.
+ */
+function subjectItem() {
+  if (state.items.length === 1) return state.items[0];
+  return selected ? state.byId.get(selected) : null;
+}
+
+function currentView() {
+  if (!state.items.length) return "empty";
+  const it = subjectItem();
+  if (!it) return "list";
+  return isBusy(it) ? "working" : "single";
+}
+
+function renderView() {
+  const view = currentView();
+  $("view-working").hidden = view !== "working";
+  $("view-single").hidden = view !== "single";
+  $("view-list").hidden = view !== "list";
+  // Only meaningful when the list exists to go back to.
+  $("back-btn").hidden = state.items.length < 2;
+  if (view === "working") renderWorking(subjectItem());
+  if (view !== "single" && view !== "working") setPanel(false);
+  renderDone();
+}
+
+/** The waiting screen: the untouched original, one sentence, one bar, one
+ *  estimate, and the format being measured right now. Never a bare spinner. */
+function renderWorking(it) {
+  if (!it) return;
+  const frame = $("working-frame");
+  if (frame.dataset.src !== it.beforeURL) {
+    frame.dataset.src = it.beforeURL || "";
+    frame.innerHTML = it.beforeURL
+      ? `<img alt="Your original, untouched" src="${escapeHtml(it.beforeURL)}">` : "";
+  }
+  $("working-bar").style.setProperty("--p", Math.max(0.02, it.frac || 0).toFixed(3));
+  $("working-now").textContent = it.progress || "";
+  const ms = it.startedAt ? performance.now() - it.startedAt : 0;
+  // An estimate, and said as one. A countdown that is wrong is worse than a
+  // range that is honest.
+  $("working-eta").textContent = it.frac > 0.05 && ms > 1200
+    ? `about ${duration(Math.max(0, (ms / it.frac) - ms))} left`
+    : "";
+}
+
+/** The end of the task, said out loud. A job with no ending leaves people
+ *  unsure it worked - "did it actually save?" was the one question the app
+ *  never answered. */
+function renderDone() {
+  const bar = $("done-bar");
+  const show = savedThisRun > 0 && state.items.length > 0
+            && state.items.every((i) => !isBusy(i));
+  bar.hidden = !show;
+  if (show) {
+    $("done-say").textContent = savedThisRun === 1
+      ? "Saved. Your original was not changed."
+      : `Saved ${savedThisRun} images. Your originals were not changed.`;
+  }
 }
 
 /* -------------------------------- queue ---------------------------------- */
@@ -795,6 +920,15 @@ function phaseLine(it) {
   return fmtLabel(it.fmt) + (it.level != null ? ` · quality ${it.level}` : "") + took;
 }
 
+/* A row in the list view. The list is the whole screen now rather than a
+   324px rail, so a row can say what it did instead of only that it finished:
+   the two sizes, how much came off drawn to scale, and which format won.
+
+   The saving bar is drawn against the WIDEST saving in the batch, not against
+   this row's own original. Against its own original every row would look
+   similar; against the batch, the rows that saved most are visibly the ones
+   that saved most, which is the comparison a person is actually making when
+   they scan a list of eighty. */
 function buildRow(it) {
   const el = document.createElement("button");
   el.className = "row enter";
@@ -808,6 +942,9 @@ function buildRow(it) {
       <span class="phase"></span>
       <span class="track"><i></i></span>
     </span>
+    <span class="saving"><span class="saving-bar"><i></i></span>
+      <span class="saving-pct num"></span></span>
+    <span class="won num"></span>
     <span class="tail">
       <span class="micro ov" title="This image has its own settings" hidden>OV</span>
       <span class="dot"></span>
@@ -833,6 +970,10 @@ function renderQueue() {
   }
   list.querySelector(".queue-empty")?.remove();
 
+  // The biggest saving in the batch, so every bar is drawn to one scale.
+  const widestSaving = state.items.reduce(
+    (m, i) => (isReady(i) ? Math.max(m, i.originalBytes - i.newBytes) : m), 0);
+
   let prev = null;
   for (const it of state.items) {
     let el = rowEls.get(it.id);
@@ -857,8 +998,22 @@ function renderQueue() {
     const dotClass = `dot ${it.status}`;
     if (dot.className !== dotClass) dot.className = dotClass;
     el.querySelector(".ov").hidden = !it.override;
+
+    // What this row achieved, drawn to the batch's scale.
+    const savedBytes = isReady(it) ? Math.max(0, it.originalBytes - it.newBytes) : 0;
+    const pct = isReady(it) && it.originalBytes
+      ? Math.round(100 * savedBytes / it.originalBytes) : 0;
+    const bar = el.querySelector(".saving-bar i");
+    bar.style.setProperty("--p", widestSaving ? (savedBytes / widestSaving).toFixed(3) : "0");
+    el.querySelector(".saving-pct").textContent = isReady(it) && pct > 0 ? `−${pct}%` : "";
+    const won = isReady(it) && !it.passthrough ? fmtLabel(currentPick(it) === ORIGINAL_PICK
+      ? "original" : (it.fmt || "")) : "";
+    el.querySelector(".won").textContent = won;
+
     if (it.status === "working") {
-      el.querySelector(".track i").style.width = `${Math.max(4, (it.frac || 0) * 100)}%`;
+      // Unitless fraction: the bar is scaleX'd, not resized. See .track i.
+      el.querySelector(".track i").style.setProperty(
+        "--p", Math.max(0.04, it.frac || 0).toFixed(3));
     }
     prev = el;
   }
@@ -899,7 +1054,7 @@ function capsLine() {
   if (state.caps.webp) parts.push("webp");
   if (state.caps.webpLossless) parts.push("webp-lossless");
   if (state.caps.avif) parts.push("avif");
-  return `Engines: ${parts.join(", ")} · scored with SSIMULACRA 2 · all in your browser`;
+  return `Engines: ${parts.join(", ")} · every version measured against your original · all in your browser`;
 }
 
 function renderBatchProgress() {
@@ -908,13 +1063,13 @@ function renderBatchProgress() {
   const busy = items.some(isBusy);
   $("batch").classList.toggle("on", busy);
   $("stop-btn").hidden = !busy;
-  if (!busy) { bar.style.width = "0%"; return; }
+  if (!busy) { bar.style.setProperty("--p", "0"); return; }
   let sum = 0;
   for (const i of items) {
     sum += (isReady(i) || i.status === "failed" || i.status === "cancelled") ? 1
       : i.status === "working" ? Math.min(0.95, i.frac || 0) : 0;
   }
-  bar.style.width = `${(sum / items.length) * 100}%`;
+  bar.style.setProperty("--p", (sum / items.length).toFixed(4));
 }
 
 function renderTitle() {
@@ -928,6 +1083,23 @@ function renderTitle() {
 function showInspector(on) {
   $("inspector-empty").hidden = on;
   $("inspector-body").hidden = !on;
+}
+
+/** Open or shut the one panel. Everything deeper is in here, so this is the
+ *  only disclosure the app has left. `hidden` is dropped before the class is
+ *  added so the slide actually runs; a `hidden` element cannot transition. */
+function setPanel(on) {
+  const panel = $("panel");
+  if (on) {
+    panel.hidden = false;
+    requestAnimationFrame(() => panel.classList.add("on"));
+  } else {
+    panel.classList.remove("on");
+  }
+  for (const id of ["insp-toggle", "list-details"]) {
+    const el = $(id);
+    if (el) el.setAttribute("aria-expanded", String(!!on));
+  }
 }
 
 function selectItem(id, quiet) {
@@ -964,7 +1136,7 @@ function narrationFor(it) {
     return `That file couldn't be read${it.error ? ` — ${escapeHtml(it.error)}` : ""}. ` +
            `Your original is untouched.`;
   }
-  if (it.status === "cancelled") return "Stopped. Your original is untouched.";
+  if (it.status === "cancelled") return "Stopped. Your original has not been changed.";
   if (!isReady(it)) return escapeHtml(WORKING_LINE);
 
   const ask = (action, words) =>
@@ -972,7 +1144,7 @@ function narrationFor(it) {
 
   if (it.pick === ORIGINAL_PICK) {
     return `Keeping your original, exactly as it arrived.` +
-           ask("auto", "Go back to the smallest one that passed?");
+           ask("auto", "Go back to the smallest one that still looked right?");
   }
   if (it.pick) {
     return `Showing <b>${escapeHtml(fmtLabel(it.fmt))}</b> because you picked it — ` +
@@ -982,8 +1154,9 @@ function narrationFor(it) {
     return `This was already smaller than anything we could make, so it was left ` +
            `exactly as it is.` + ask("chips", "See what we tried?");
   }
-  return `Went with <b>${escapeHtml(fmtLabel(it.fmt))}</b> — smallest option that ` +
-         `still passes.` + ask("chips", "Prefer something else?");
+  return `Went with <b>${escapeHtml(fmtLabel(it.fmt))}</b> — the smallest version ` +
+         `that still looks close enough to your original.` +
+         ask("chips", "Prefer something else?");
 }
 
 /** The invitation's other half: put the chips under the eye that just asked
@@ -999,14 +1172,14 @@ function surfaceChips() {
   cands.scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
 }
 
-/** The numbers behind the sentence: how the winner compares to the runner-up
- *  and where it landed against the floor. The narration says which one won, so
- *  this no longer repeats it. */
+/** The numbers behind the sentence: how close the result came, and how it
+ *  compares to the runner-up. The narration says which one won, so this no
+ *  longer repeats it. */
 function verdictFor(it) {
   if (it.pick === ORIGINAL_PICK) return "";
   if (it.passthrough) {
-    return `Every encode came out <b>larger than the file you gave us</b>, which is ` +
-           `what already-well-compressed looks like.`;
+    return `Every version came out <b>larger than the file you gave us</b>, which ` +
+           `is what an already well-compressed image looks like.`;
   }
   if (!it.candidates?.length) return "";
   const pct = it.originalBytes ? 100 * (it.originalBytes - it.newBytes) / it.originalBytes : 0;
@@ -1014,8 +1187,8 @@ function verdictFor(it) {
   const runner = sorted.find((c) => c.format !== it.fmt);
   const quality = it.lossless
     ? "and it is <b>pixel-identical</b> to the original"
-    : `at SSIMULACRA 2 <b>${it.score?.toFixed(1)}</b>, above your ${Number(
-        it.override?.qualityTarget ?? state.settings.qualityTarget).toFixed(0)} floor`;
+    : `Visual match <b>${Math.round(it.score ?? 0)} out of 100</b>, above your ` +
+      `target of ${Math.round(it.override?.qualityTarget ?? state.settings.qualityTarget)}`;
   let line = `<b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
   if (runner && runner.bytes > it.newBytes) {
     const gap = 100 * (runner.bytes - it.newBytes) / runner.bytes;
@@ -1041,10 +1214,10 @@ function renderInspector(it) {
     nameField.size = Math.max(4, base.length);
     $("insp-ext").textContent = ext;
   }
-  const dims = it.width ? `${it.width}×${it.height}` : "";
-  const out = it.outW && (it.outW !== it.width || it.outH !== it.height)
-    ? ` → ${it.outW}×${it.outH}` : "";
-  $("insp-dims").textContent = dims + out;
+  // Dimensions live once now, in the panel's own row (#s-dims). They were
+  // in the file-identity band as well, which is one of the places the same
+  // fact was being said twice.
+
 
   const before = $("img-before"), after = $("img-after");
   if (before.dataset.src !== it.beforeURL) {
@@ -1148,7 +1321,7 @@ function renderInspector(it) {
   // this is deliberately not summed into a batch total anywhere.
   $("s-time").innerHTML = it.elapsedMs != null
     ? `${duration(it.elapsedMs)}${it.candidates?.length
-        ? ` <small>${it.candidates.length} candidate${it.candidates.length === 1 ? "" : "s"}</small>` : ""}`
+        ? ` <small>${it.candidates.length} version${it.candidates.length === 1 ? "" : "s"} tried</small>` : ""}`
     : (it.status === "working" ? `<span class="skel w-sm"></span>` : "—");
 
   // The narration is rewritten only when it actually changes: it carries a
@@ -1166,6 +1339,53 @@ function renderInspector(it) {
   const vtext = ready ? verdictFor(it) : "";
   verdict.hidden = !vtext;
   verdict.innerHTML = vtext;
+
+  /* ---- 5.1: resizing and compressing, said apart ------------------------
+     When an image is resized, part of the saving came from throwing pixels
+     away rather than from compression - and the visual match sitting beside
+     the total only ever measured the compression, never the resize. Rolling
+     them into one percentage lets a big number stand on work the score did
+     not check.
+
+     The resize's share is stated in pixels, not in bytes. A byte figure for
+     "what this would have weighed at full size" cannot be had without
+     encoding it at full size too, and estimating one from the pixel ratio
+     would be exactly the guess this project refuses to make elsewhere. So the
+     honest split is: this many pixels went, and compression did the rest -
+     with the button beside it to go and find out for real. */
+  const shrank = ready && it.outW && it.outH && it.width && it.outW !== it.width;
+  const split = $("s-split");
+  const keep = $("keep-size");
+  if (shrank) {
+    const pixelsGone = 1 - (it.outW * it.outH) / (it.width * it.height);
+    split.innerHTML =
+      `Two things made this smaller. The frame went from `
+      + `<b>${it.width}×${it.height}</b> to <b>${it.outW}×${it.outH}</b>, which is `
+      + `<b>${Math.round(pixelsGone * 100)}% fewer pixels</b> — compression did the `
+      + `rest. The visual match above is about the compression only; it compares `
+      + `this result against your image <i>at the new size</i>.`;
+    split.hidden = false;
+    keep.hidden = false;
+    keep.textContent = `Redo at ${it.width}×${it.height}`;
+  } else {
+    split.hidden = true;
+    keep.hidden = true;
+    if (ready && !it.passthrough) {
+      split.innerHTML = "";
+    }
+  }
+
+  /* ---- 5.3: the check that no other compressor seems to do -------------- */
+  const alphaNote = $("s-alpha");
+  const dualBackdrop = ready && it.alpha === true && !it.passthrough
+    && (it.lossless || (it.score != null && it.score >= Number(floor)));
+  alphaNote.hidden = !dualBackdrop;
+  if (dualBackdrop) {
+    alphaNote.innerHTML =
+      `This image has transparent areas, so it was compared over a <b>dark and a `
+      + `light background</b> and the worse of the two had to pass. A halo you `
+      + `cannot see on white is still a defect.`;
+  }
 
   const note = $("s-note");
   note.hidden = !it.note; note.textContent = it.note || "";
@@ -1207,7 +1427,7 @@ function renderCandidates(it) {
     // Never a bare spinner: this sits directly under the sentence that explains
     // what the app is doing, and it names the format being measured right now.
     cands.innerHTML = waiting
-      ? `<span class="cand-wait">${escapeHtml(it.progress || "Testing formats…")}</span>`
+      ? `<span class="cand-wait">${escapeHtml(it.progress || "Trying formats…")}</span>`
       : "";
     return;
   }
@@ -1235,25 +1455,65 @@ function renderCandidates(it) {
     </button>`;
   };
 
+  /* Why each version that lost, lost. A list of rejects with no reasons is
+     clutter: it shows the machinery working without saying anything. One plain
+     sentence each turns the same list into the evidence it was always meant to
+     be. Rank order below matters - a version can be both too different AND
+     larger, and the first reason is the disqualifying one. */
+  const target = Math.round(it.override?.qualityTarget ?? state.settings.qualityTarget);
+  const winnerBytes = it.auto && !it.auto.passthrough ? it.auto.bytes : smallest;
+  const reasonFor = (c) => {
+    if (c.format === autoFmt) {
+      return "The smallest version that still looked close enough to your original.";
+    }
+    if (c.bytes >= it.originalBytes) {
+      return "Bigger than your original, so it was discarded.";
+    }
+    if (!c.lossless && c.score != null && Math.round(c.score) < target) {
+      return `Too different from the original — matched ${Math.round(c.score)} `
+           + `against your target of ${target}.`;
+    }
+    if (c.rejected) {
+      return "Close enough overall, but it lost too much colour detail.";
+    }
+    const larger = winnerBytes ? Math.round(100 * (c.bytes - winnerBytes) / winnerBytes) : 0;
+    return larger > 0
+      ? `Close enough to the original, but ${larger}% larger than the one chosen.`
+      : "Close enough to the original, but not the smallest.";
+  };
+
   cands.innerHTML = rows.map((c) => {
-    const quality = c.lossless ? "pixel-identical to the original"
-      : `SSIMULACRA 2 ${c.score?.toFixed(1)}`;
+    const quality = c.lossless ? "pixel-identical to your original"
+      : `visual match ${Math.round(c.score ?? 0)} out of 100`;
     const mark = c.format === autoFmt ? "winner"
       : now === c.format ? "showing"
       : c.bytes === smallest ? "smallest" : "";
     return chip(c.format, fmtLabel(c.format), c.bytes, mark,
-      `${fmtLabel(c.format)} · ${human(c.bytes)} · ${quality}${
-        c.rejected ? " · failed the colour check" : ""} — tap to show this one`);
+      `${fmtLabel(c.format)} · ${human(c.bytes)} · ${quality}\n${reasonFor(c)}\n`
+      + `Tap to show this one — it is already made, so it appears instantly.`);
   }).join("") + chip(
     ORIGINAL_PICK, "Original", it.originalBytes,
     now === ORIGINAL_PICK ? "showing" : "",
-    `Your file exactly as it arrived · ${human(it.originalBytes)} — tap to keep this instead`);
+    `Your file exactly as it arrived · ${human(it.originalBytes)}\n`
+    + `Tap to keep this instead — nothing is written until you save.`);
 
-  // Widths go through the CSSOM: a style="" attribute in markup would (rightly)
-  // be refused by the page's style-src CSP, leaving every meter at zero.
+  /* The reason for whichever version is on screen, said out loud rather than
+     hidden in a tooltip. One line, under the row it explains. */
+  const shown = rows.find((c) => c.format === now);
+  const why = $("cand-why");
+  if (why) {
+    why.textContent = now === ORIGINAL_PICK
+      ? "Keeping your file exactly as it arrived."
+      : shown ? reasonFor(shown) : "";
+    why.hidden = !why.textContent;
+  }
+
+  // A unitless 0-1 scale, not a width: the meter is scaleX'd so the browser
+  // never reflows on it. Set through the CSSOM because a style="" attribute in
+  // markup would (rightly) be refused by the page's style-src CSP.
   for (const el of cands.querySelectorAll(".cand")) {
     const w = Math.max(2, (Number(el.dataset.bytes) / max) * 100);
-    el.style.setProperty("--w", `${w.toFixed(1)}%`);
+    el.style.setProperty("--w", (w / 100).toFixed(4));
   }
 }
 
@@ -1597,6 +1857,7 @@ async function downloadAll() {
     downloadBlob(it.afterBlob, outputName(it));
     toast(`Downloaded ${outputName(it)}`);
     it.status = "saved";
+    savedThisRun += 1;
     scheduleRender();
     return;
   }
@@ -1690,7 +1951,7 @@ function toast(message) {
 /* ------------------------------- settings --------------------------------- */
 
 function currentSettings() {
-  const { target, formats } = parseFormatChoice($("target").value);
+  const { target, formats } = parseFormatChoice($("target").value, state.settings.target);
   return {
     target, formats,
     metric: "ss2",
@@ -1714,7 +1975,20 @@ function alphaItemCount() {
 let alphaAnswered = false;   // distinguishes a decision from a dismissal
 
 function onFormatChoice() {
-  const { formats } = parseFormatChoice($("target").value);
+  const value = $("target").value;
+  const { formats } = parseFormatChoice(value, state.settings.target);
+  // Choosing a destination is choosing all three of its numbers. Leaving size
+  // and quality behind would make "Thumbnail or avatar" mean nothing but a
+  // shorter format list, and the person would have to know to open Advanced
+  // and change two more things for it to do what it says. Still editable
+  // afterwards - this moves the starting point, it does not lock it.
+  const d = DESTINATION_NUMBERS[value];
+  if (d) {
+    $("maxdim").value = d.maxDimension;
+    $("quality").value = d.qualityTarget;
+    $("quality-out").textContent = d.qualityTarget;
+    reflectQualityHint();
+  }
   const one = formats && formats[0];
   const n = alphaItemCount();
   if (!one || CARRIES_ALPHA[one] !== false || !n) { pushSettings(); return; }
@@ -1955,10 +2229,23 @@ function bind() {
     scheduleRender("summary");
   });
 
-  $("adv-btn").addEventListener("click", () => {
-    const open = $("advanced").hidden;
-    $("advanced").hidden = !open;
-    $("adv-btn").setAttribute("aria-expanded", String(open));
+  /* No Advanced toggle. It used to hide the quality slider, the dimension cap
+     and the filename suffix behind a second click in the toolbar. With every
+     setting living in the panel, that would be a disclosure inside a
+     disclosure - the "deeper opens in four directions" problem in miniature -
+     so they are all in the open there instead. */
+
+  // ---- the one panel, and the one way back --------------------------------
+  $("panel-close").addEventListener("click", () => setPanel(false));
+  $("list-details").addEventListener("click", () => setPanel(true));
+  $("back-btn").addEventListener("click", () => {
+    selected = null;
+    setPanel(false);
+    scheduleRender();
+  });
+  $("done-again").addEventListener("click", () => {
+    savedThisRun = 0;
+    removeItems(state.items.map((i) => i.id));
   });
 
   $("theme-btn").addEventListener("click", () => {
@@ -1968,7 +2255,10 @@ function bind() {
 
   $("queue-list").addEventListener("click", (e) => {
     const row = e.target.closest(".row");
-    if (row) selectItem(row.dataset.id);
+    if (!row) return;
+    // Opening one from the list is a move to another screen: selecting it IS
+    // opening it, and the back button clears the selection to return.
+    selectItem(row.dataset.id);
   });
 
   // A candidate chip is the direct way to see and keep a different encode.
@@ -2012,10 +2302,7 @@ function bind() {
 
   // Collapse the detail panel to give the comparison the whole pane.
   $("insp-toggle").addEventListener("click", () => {
-    const open = $("details").hidden;
-    $("details").hidden = !open;
-    $("insp-toggle").setAttribute("aria-expanded", String(open));
-    $("insp-toggle").textContent = open ? "Details ▾" : "Details ▸";
+    setPanel($("panel").hidden || !$("panel").classList.contains("on"));
     requestAnimationFrame(applyZoom);
   });
 
@@ -2116,7 +2403,7 @@ function bind() {
     const n = e.dataTransfer?.items?.length || 0;
     $("veil-count").textContent = n > 1
       ? `${n} items — we'll race every format on each one`
-      : "We'll race every format and keep the smallest that passes";
+      : "We'll try every format and keep the smallest one that still looks right";
     $("veil").classList.add("on");
     $("drop-target")?.classList.add("armed");
   });
@@ -2163,6 +2450,7 @@ function bind() {
     downloadBlob(it.afterBlob, outputName(it));
     toast(`Downloaded ${outputName(it)}`);
     it.status = "saved";
+    savedThisRun += 1;
     scheduleRender();
   });
   $("copy-one").addEventListener("click", () => copyImage(state.byId.get(selected)));
@@ -2176,6 +2464,17 @@ function bind() {
     if (format) override.formats = [format];
     if (quality !== "") override.qualityTarget = Number(quality);
     it.override = Object.keys(override).length ? override : null;
+    requeue([it.id]);
+  });
+  /* 5.1's other half. Saying "82% of the saving was the resize" is only useful
+     if you can go and see the difference, so the sentence ends in the action.
+     `maxDimension: 0` means never resize - the destination's own cap included,
+     because this is an explicit per-image instruction. */
+  $("keep-size").addEventListener("click", () => {
+    const it = state.byId.get(selected);
+    if (!it) return;
+    it.override = { ...(it.override || {}), maxDimension: 0 };
+    toast(`Redoing ${it.name} at ${it.width}×${it.height}`);
     requeue([it.id]);
   });
   $("ov-reset").addEventListener("click", () => {
@@ -2266,6 +2565,10 @@ function bind() {
 
 /* --------------------------------- boot ----------------------------------- */
 
+// Options before values: loadSettings assigns to #target, and assigning a
+// value an empty <select> does not have is silently a no-op - the control
+// would sit blank and the stored destination would be lost on the next push.
+renderDestinationOptions();
 loadSettings();
 applyTheme(currentThemePref());
 renderLifetime();
