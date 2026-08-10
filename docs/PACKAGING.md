@@ -253,3 +253,36 @@ for more than it does.
   therefore from the bundle. Pre-existing, and only visible as a 404 and a
   default tab icon. Noted here because building from the installed distribution
   rather than the source tree is what made it visible at all.
+
+## What the first real release build found
+
+Recorded because it is the kind of thing only a runner can tell you.
+
+`v2.7.0` was tagged, the workflow ran, and **two of the three installers built on
+the first attempt**. Windows failed with `You may not specify more than one
+script filename.`
+
+`shell: bash` on a Windows runner is Git Bash, and Git Bash rewrites any argument
+that looks like a POSIX path before handing it to a native `.exe`.
+`/DOutDir=...` looks exactly like one, so Inno Setup received
+`C:/Program Files/Git/DOutDir=...` — no longer an option, and now containing
+spaces, so it counted several filenames. Fixed with `MSYS_NO_PATHCONV=1` and
+`MSYS2_ARG_CONV_EXCL='*'` on that one command. There is no way to hit this
+without a Windows runner, because `ISCC.exe` only exists there.
+
+The second run produced all three, and both gates did their job:
+
+| Build | Installer | Engines | A real folder |
+| --- | --- | --- | --- |
+| `windows-x64` | 49 MB `.exe` | all four active | 3.6 MB → 994.5 KB (73.2%) |
+| `macos-arm64` | 47 MB `.dmg` | all four active | 3.6 MB → 994.5 KB (73.2%) |
+| `macos-x86_64` | 51 MB `.dmg` | all four active | 3.6 MB → 994.5 KB (73.2%) |
+
+Two things worth taking from that table. Every engine reported active inside the
+frozen application, which is the requirement, and it was checked rather than
+assumed. And the folder test is the `freeze_support()` fix proven in the place it
+matters: a folder means the process pool actually ran, and the build compressed
+it instead of launching copies of itself. The three platforms agreed to the byte.
+
+The installers are **unsigned**, which is the one part of this that cannot be
+automated from here. See the signing section above.
