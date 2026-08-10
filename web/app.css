@@ -618,7 +618,96 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs);
   margin: 0; min-width: 22ch;
 }
-#maxdim-hint { color: var(--oz-color-content-tertiary); font-size: var(--oz-text-body-xs); }
+/* ---- the plan sentence ---------------------------------------------------
+   The one place this interface spends its boldness. Everything about it serves
+   a single idea: the app says what it is about to do, in a sentence, and every
+   word it could have chosen differently is the control that changes it.
+
+   That forces an unusual balance on the controls. They have to read as prose
+   first and as inputs second - present enough to invite a click, quiet enough
+   that the sentence still scans as a sentence rather than as a row of widgets
+   with words wedged between them. Hence: no select chrome, weight and colour
+   carrying the "this is editable" signal, and a brand underline that only
+   fully saturates on hover. */
+.plan {
+  margin: 0;
+  padding: var(--oz-space-5) var(--oz-space-6);
+  background: var(--oz-color-surface-primary-variant);
+  border: var(--oz-stroke-2) solid var(--oz-color-border-primary);
+  border-radius: var(--oz-radius-7);
+  font-family: var(--oz-font-body);
+  font-size: var(--oz-text-body-md);
+  /* Loose on purpose. The picks are their own inline boxes and a normal
+     leading makes them collide against the line above once this wraps, which
+     on a phone it always does. */
+  line-height: 2.15;
+  color: var(--oz-color-content-tertiary);
+}
+/* The connective words never break mid-phrase; the sentence wraps between
+   slots instead, which keeps each clause readable at any width. */
+.plan-txt { white-space: nowrap; }
+
+.plan-pick { position: relative; display: inline-block; max-width: 100%; }
+/* On the wrapper, so the select itself can stay a plain inline box with no
+   appearance of its own to fight. */
+.plan-pick::after {
+  content: ""; position: absolute; pointer-events: none;
+  right: var(--oz-space-3); top: 50%; margin-top: -1px;
+  width: 0; height: 0;
+  border-left: var(--oz-stroke-6) solid transparent;
+  border-right: var(--oz-stroke-6) solid transparent;
+  border-top: var(--oz-stroke-6) solid var(--oz-color-content-tertiary);
+}
+.plan-pick > select,
+.plan-num {
+  appearance: none; -webkit-appearance: none;
+  font: inherit;
+  font-weight: var(--oz-weight-semibold);
+  color: var(--oz-color-content-primary);
+  background: var(--oz-color-fill-secondary);
+  border: 0;
+  border-bottom: var(--oz-stroke-4) solid var(--oz-color-border-brand-secondary);
+  border-radius: var(--oz-radius-3) var(--oz-radius-3) 0 0;
+  padding: var(--oz-space-1) var(--oz-space-3);
+  max-width: 100%;
+  cursor: pointer;
+  transition: background var(--oz-duration-fast) var(--oz-ease-standard),
+              border-color var(--oz-duration-fast) var(--oz-ease-standard);
+}
+.plan-pick > select { padding-right: var(--oz-space-9); }
+.plan-num {
+  font-family: var(--oz-font-mono);
+  font-size: var(--oz-text-body-sm);
+  text-align: right;
+  cursor: text;
+  width: 7ch;
+}
+#plan-cap { width: 8ch; }
+.plan-pick > select:hover,
+.plan-num:hover {
+  background: var(--oz-color-fill-secondary-hover);
+  border-bottom-color: var(--oz-color-border-brand);
+}
+.plan-pick > select:focus-visible,
+.plan-num:focus-visible {
+  outline: var(--oz-focus-ring-width) solid var(--oz-color-border-focus);
+  outline-offset: var(--oz-focus-ring-offset);
+}
+/* No spinner. The step is 64px and nobody nudges a pixel count one rung at a
+   time; typing is the interaction, and the arrows only crowd the mono digits. */
+.plan-num { -moz-appearance: textfield; }
+.plan-num::-webkit-outer-spin-button,
+.plan-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* What the chosen floor means, in the metric's own published words. Sits
+   under the sentence rather than beside a slider, because it explains the
+   whole claim and not one control. */
+.plan-why {
+  margin: var(--oz-space-3) 0 0;
+  padding-left: var(--oz-space-6);
+  color: var(--oz-color-content-tertiary);
+  font-size: var(--oz-text-body-xs);
+}
 
 /* ======================== 2. PROCESSING DASHBOARD ======================== */
 .batch {

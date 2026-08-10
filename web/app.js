@@ -97,6 +97,14 @@ const state = {
     metric: "ss2",
     qualityTarget: DESTINATION_NUMBERS[DEFAULT_DESTINATION].qualityTarget,
     maxDimension: DESTINATION_NUMBERS[DEFAULT_DESTINATION].maxDimension,
+    /* Which edge maxDimension governs. Only ever shrinks: an image already
+       inside the limit is left alone rather than enlarged. */
+    dimensionMode: "longest",
+    /* Bytes. 0 runs the ordinary search - smallest file that clears the floor.
+       Non-zero inverts it: the best quality that fits under this. Exactly one
+       of sizeTarget and "smallest" is ever the goal, which is why the plan
+       sentence has one control for both and not two. */
+    sizeTarget: 0,
     formats: null,
     alphaPolicy: "png",
   },
@@ -114,29 +122,62 @@ const state = {
    into index.html - a hand-written list would be one more copy to keep in step,
    and this one is the copy a person actually reads. */
 function renderDestinationOptions() {
-  const group = $("target-destinations");
-  if (!group || group.children.length) return;
+  const sel = $("target");
+  if (!sel || sel.children.length) return;
   for (const name of DESTINATION_ORDER) {
     const d = DESTINATION_NUMBERS[name];
     const opt = document.createElement("option");
     opt.value = name;
-    opt.textContent = d.label;
+    // Lower-cased because it lands mid-sentence: "For a website or app, ...".
+    opt.textContent = d.label.toLowerCase();
     opt.title = d.help;
-    group.appendChild(opt);
+    sel.appendChild(opt);
   }
 }
 
-/* The Format control is one list spanning "you choose" to "I choose", so its
-   value carries both facts. Single-format picks leave the destination's format
-   list behind but keep its size cap - a person who picked "Email or chat" and
-   then said "JPEG only" still wants it to fit in an email. */
-const ONE = "one-";
-function parseFormatChoice(value, current) {
-  if (!value.startsWith(ONE)) return { target: destinationOf(value), formats: null };
-  return { target: destinationOf(current), formats: [value.slice(ONE.length)] };
-}
-function formatChoiceValue(s) {
-  return s.formats && s.formats.length ? ONE + s.formats[0] : destinationOf(s.target);
+/* Format is its own axis, and its options are the destination's own list.
+
+   These two used to be one control - a single <select> whose top group chose a
+   destination and whose bottom group chose a format. Picking a format there
+   kept the destination silently: parseFormatChoice returned the *current*
+   target alongside the new format list, so "Email or chat" went on setting the
+   frame and the floor while the control that named it now read "JPEG only".
+   The setting stayed live and stopped being visible, which is the same defect
+   in miniature that the whole plan sentence exists to remove. */
+const FORMAT_LABELS = {
+  jpeg: "JPEG", webp: "WebP", "webp-lossless": "WebP, lossless",
+  png: "PNG", png8: "PNG, palette", png8x: "PNG, exact palette", avif: "AVIF",
+};
+function renderFormatOptions() {
+  const sel = $("plan-format");
+  if (!sel) return;
+  /* Read the control, not state.settings. pushSettings is debounced, so during
+     a destination change state.settings still holds the *previous* target and
+     this list would be rebuilt from the destination the person just left -
+     which is how "design tool or document" went on offering WebP, the one
+     format it exists to refuse. */
+  const allowed = DESTINATION_FORMATS[destinationOf($("target").value)] || [];
+  const keep = sel.value;
+  sel.textContent = "";
+  const auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = "whichever format wins";
+  auto.title = "Writes the image every allowed way and keeps the best one";
+  sel.appendChild(auto);
+  for (const name of allowed) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = `always ${FORMAT_LABELS[name] || name}`;
+    sel.appendChild(opt);
+  }
+  // A pin the new destination cannot write falls back to the comparison rather
+  // than leaving the control blank on a format the engine will not run.
+  sel.value = allowed.includes(keep) ? keep : "";
+  if (!sel.value) state.settings.formats = null;
+  // Rebuilding threw away the "this browser can't write one" notes, so they go
+  // back on. Without this the warning showed on first paint and disappeared the
+  // moment anyone touched the destination, leaving a dead end looking live.
+  reflectFormatAvailability();
 }
 
 /* Words first, number behind Advanced. The floor is still the single source of
@@ -193,27 +234,73 @@ function loadSettings() {
       state.settings.formats = saved.formats;
     }
     if (saved.alphaPolicy === "flatten") state.settings.alphaPolicy = "flatten";
+    if (Number.isFinite(saved.sizeTarget) && saved.sizeTarget >= 0) {
+      state.settings.sizeTarget = saved.sizeTarget;
+    }
+    if (DIMENSION_MODES.includes(saved.dimensionMode)) {
+      state.settings.dimensionMode = saved.dimensionMode;
+    }
     state.suffix = !!saved.suffix;
   } catch {}
-  const choice = formatChoiceValue(state.settings);
-  $("target").value = choice;
-  // A stored single-format pick whose codec this browser lacks would leave the
-  // control blank and the engine on a format it cannot run. Fall back to the
-  // recommended automatic set instead of pretending.
+
+  renderDestinationOptions();
+  $("target").value = destinationOf(state.settings.target);
   if (!$("target").value) {
-    state.settings.formats = null;
-    state.settings.target = "web";
-    $("target").value = "web";
+    state.settings.target = DEFAULT_DESTINATION;
+    $("target").value = DEFAULT_DESTINATION;
   }
-  // qualityTarget is ALREADY on the slider's 0-100 scale. The old SSIM floor
-  // was a fraction and was scaled here; doing that to 90 pinned the slider to
-  // its max and silently ran every search at floor 99. See the e2e default
-  // assert - this line is why it exists.
+  // Built after the destination is settled: the list of formats offered is the
+  // destination's own, and a stored pin outside it is dropped rather than shown
+  // on a control the engine would refuse to honour.
+  renderFormatOptions();
+  $("plan-format").value = state.settings.formats?.[0] || "";
+  if (!$("plan-format").value) state.settings.formats = null;
+
+  // qualityTarget is ALREADY on the 0-100 scale. The old SSIM floor was a
+  // fraction and was scaled here; doing that to 90 pinned the floor to its max
+  // and silently ran every search at 99. See the e2e default assert - this line
+  // is why it exists.
   $("quality").value = Math.round(state.settings.qualityTarget);
-  $("quality-out").textContent = $("quality").value;
-  $("maxdim").value = state.settings.maxDimension;
+  $("maxdim").value = state.settings.maxDimension || DEFAULT_DIMENSION;
+  $("plan-fit").value = state.settings.maxDimension
+    ? state.settings.dimensionMode : "none";
+  $("plan-goal").value = state.settings.sizeTarget ? "cap" : "small";
+  if (state.settings.sizeTarget) $("plan-cap").value = human(state.settings.sizeTarget);
   $("suffix-toggle").checked = state.suffix;
   reflectQualityHint();
+  reflectPlan();
+}
+
+/* A frame to fall back on when the mode is "whatever size they already are"
+   and the person switches back to a real pin - the field cannot show 0, because
+   0 is no longer how "don't resize" is spelled. */
+const DEFAULT_DIMENSION = DESTINATION_NUMBERS[DEFAULT_DESTINATION].maxDimension;
+const DIMENSION_MODES = ["longest", "width", "height", "none"];
+
+/* "200 KB", "1.5 MB", "204800" -> bytes. Returns 0 for anything unreadable, so
+   a half-typed field falls back to the ordinary search rather than capping at
+   some number nobody asked for. Mirrors cli.parse_size. */
+const SIZE_UNITS = { b: 1, k: 1024, kb: 1024, m: 1024 ** 2, mb: 1024 ** 2 };
+function parseSize(text) {
+  const cleaned = String(text).trim().toLowerCase().replace(/[\s,]/g, "");
+  const m = cleaned.match(/^([0-9]*\.?[0-9]+)(b|kb|k|mb|m)?$/);
+  if (!m) return 0;
+  const value = parseFloat(m[1]) * (SIZE_UNITS[m[2] || "b"] || 1);
+  return value > 0 ? Math.round(value) : 0;
+}
+
+/* Show or hide the parts of the sentence the current goal does not use, and
+   keep the one hidden number the engine runs on in step with the words. */
+function reflectPlan() {
+  const capping = $("plan-goal").value === "cap";
+  $("plan-cap").hidden = !capping;
+  $("plan-join").textContent = capping
+    ? "at the best quality that fits, and never worse than"
+    : "while staying";
+  // "whatever size they already are" is a mode, not a number, so the number
+  // goes away with it. This is what replaces `0 keeps the original size`: a
+  // magic value in a field nobody could have guessed at.
+  $("maxdim").hidden = $("plan-fit").value === "none";
 }
 
 function saveSettings() {
@@ -221,6 +308,19 @@ function saveSettings() {
     localStorage.setItem("imgc-settings",
       JSON.stringify({ v: 3, ...state.settings, suffix: state.suffix }));
   } catch {}
+}
+
+/* The same ladder as the sentence's own options, for a floor that arrived from
+   somewhere other than a click - a saved setting, a destination, or a per-image
+   override. Adjectival, because it has to survive being read after "while
+   staying". */
+function wordsForQuality(q) {
+  if (q >= 95) return "good enough to re-edit";
+  if (q >= 90) return "indistinguishable";
+  if (q >= 85) return "indistinguishable unless you compare";
+  if (q >= 80) return "indistinguishable side by side";
+  if (q >= 70) return "clean at thumbnail size";
+  return "visibly compressed";
 }
 
 /* SSIMULACRA 2's published scale, the same one the desktop README prints. */
@@ -235,14 +335,18 @@ function hintForQuality(q) {
 function reflectQualityHint() {
   const q = Number($("quality").value);
   $("quality-note").textContent = hintForQuality(q);
-  // The words and the number are one setting seen two ways, so the preset
-  // follows the slider. A floor between the landmarks is a real choice, not an
-  // error - it gets the hidden "Custom" entry rather than being snapped away.
+  // The words are the control and the number is the machine's copy of them, so
+  // the words follow the number rather than the other way round. A floor
+  // between the landmarks is still a real choice - it arrives from a saved
+  // setting, a destination, or a per-image override - and it gets the hidden
+  // entry rather than being snapped to the nearest word it did not mean.
   const sel = $("quality-preset");
   sel.value = QUALITY_PRESETS.includes(q) ? String(q) : "custom";
   const custom = sel.querySelector('option[value="custom"]');
   custom.hidden = sel.value !== "custom";
-  custom.textContent = `Custom — floor ${q}`;
+  // No floor number here. What it means is the line under the plan; what it
+  // *is* is an implementation detail of the metric.
+  custom.textContent = wordsForQuality(q);
 }
 
 /* --------------------------- lifetime statistics -------------------------- */
@@ -1038,11 +1142,12 @@ function renderQueue() {
 function reflectFormatAvailability() {
   const have = { jpeg: true, png: true, webp: state.caps.webp, avif: state.caps.avif };
   for (const [fmt, ok] of Object.entries(have)) {
-    const opt = $("target").querySelector(`option[value="${ONE}${fmt}"]`);
+    const opt = $("plan-format").querySelector(`option[value="${fmt}"]`);
     if (!opt || ok === null) continue;          // not probed yet: leave it be
     opt.disabled = !ok;
-    opt.textContent = ok ? `${fmt.toUpperCase()} only`
-                         : `${fmt.toUpperCase()} only — not available in this browser`;
+    const label = FORMAT_LABELS[fmt] || fmt;
+    opt.textContent = ok ? `always ${label}`
+                         : `always ${label} — this browser can't write one`;
   }
 }
 
@@ -1951,12 +2056,19 @@ function toast(message) {
 /* ------------------------------- settings --------------------------------- */
 
 function currentSettings() {
-  const { target, formats } = parseFormatChoice($("target").value, state.settings.target);
+  const pinned = $("plan-format").value;
+  const fit = $("plan-fit").value;
   return {
-    target, formats,
+    target: destinationOf($("target").value),
+    formats: pinned ? [pinned] : null,
     metric: "ss2",
     qualityTarget: Number($("quality").value),
-    maxDimension: Number($("maxdim").value) || 0,
+    // "whatever size they already are" is carried as a zero limit, which is
+    // what the engine has always meant by "do not resize". The difference is
+    // that nobody has to type the zero, or know that it means that.
+    maxDimension: fit === "none" ? 0 : Number($("maxdim").value) || 0,
+    dimensionMode: fit,
+    sizeTarget: $("plan-goal").value === "cap" ? parseSize($("plan-cap").value) : 0,
     alphaPolicy: state.settings.alphaPolicy,
   };
 }
@@ -1974,22 +2086,30 @@ function alphaItemCount() {
 
 let alphaAnswered = false;   // distinguishes a decision from a dismissal
 
-function onFormatChoice() {
-  const value = $("target").value;
-  const { formats } = parseFormatChoice(value, state.settings.target);
-  // Choosing a destination is choosing all three of its numbers. Leaving size
-  // and quality behind would make "Thumbnail or avatar" mean nothing but a
-  // shorter format list, and the person would have to know to open Advanced
-  // and change two more things for it to do what it says. Still editable
-  // afterwards - this moves the starting point, it does not lock it.
-  const d = DESTINATION_NUMBERS[value];
+/* Choosing a destination chooses its whole starting point: the frame, the
+   floor, and the formats it is willing to write. Leaving the numbers behind
+   would make "Thumbnail or avatar" mean nothing but a shorter format list, and
+   the person would have to find and change two more things for it to do what it
+   says. It moves the starting point; it does not lock it - and unlike before,
+   every value it writes lands visibly in the sentence rather than in fields
+   two scrolls further down. */
+function onDestination() {
+  const d = DESTINATION_NUMBERS[$("target").value];
   if (d) {
-    $("maxdim").value = d.maxDimension;
+    $("maxdim").value = d.maxDimension || DEFAULT_DIMENSION;
+    $("plan-fit").value = d.maxDimension ? "longest" : "none";
     $("quality").value = d.qualityTarget;
-    $("quality-out").textContent = d.qualityTarget;
     reflectQualityHint();
   }
-  const one = formats && formats[0];
+  // The formats on offer are this destination's own, so the list is rebuilt and
+  // a pin the new destination cannot write is dropped rather than left showing.
+  renderFormatOptions();
+  reflectPlan();
+  onFormatPin();
+}
+
+function onFormatPin() {
+  const one = $("plan-format").value;
   const n = alphaItemCount();
   if (!one || CARRIES_ALPHA[one] !== false || !n) { pushSettings(); return; }
 
@@ -2208,21 +2328,35 @@ function setMode(m) {
 }
 
 function bind() {
-  $("target").addEventListener("change", onFormatChoice);
+  $("target").addEventListener("change", onDestination);
+  $("plan-format").addEventListener("change", onFormatPin);
   $("maxdim").addEventListener("change", pushSettings);
-  // The words drive the number, and the number drives the engine. One setting.
+  $("plan-fit").addEventListener("change", () => { reflectPlan(); pushSettings(); });
+  $("plan-goal").addEventListener("change", () => {
+    reflectPlan();
+    // Moving to a cap with an unreadable box would silently mean "no cap at
+    // all", so the field is seeded with something real and selected for typing.
+    if ($("plan-goal").value === "cap") {
+      if (!parseSize($("plan-cap").value)) $("plan-cap").value = "200 KB";
+      $("plan-cap").focus();
+      $("plan-cap").select();
+    }
+    pushSettings();
+  });
+  // Re-spelled on the way out so the field always reads back the way the app
+  // writes sizes anywhere else - "200kb" typed becomes "200.0 KB" shown.
+  $("plan-cap").addEventListener("change", () => {
+    const bytes = parseSize($("plan-cap").value);
+    if (bytes) $("plan-cap").value = human(bytes);
+    pushSettings();
+  });
+  // The words are the control; the number is the machine's copy of them.
   $("quality-preset").addEventListener("change", (e) => {
-    if (e.target.value === "custom") return;    // only the slider sets that
+    if (e.target.value === "custom") return;   // arrives from a saved floor, not a click
     $("quality").value = e.target.value;
-    $("quality-out").textContent = e.target.value;
     reflectQualityHint();
     pushSettings();
   });
-  $("quality").addEventListener("input", () => {
-    $("quality-out").textContent = $("quality").value;
-    reflectQualityHint();
-  });
-  $("quality").addEventListener("change", pushSettings);
   $("suffix-toggle").addEventListener("change", (e) => {
     state.suffix = e.target.checked;
     saveSettings();
@@ -2555,7 +2689,9 @@ function bind() {
      through pushSettings, which reads this control. */
   $("alpha-ask").addEventListener("close", () => {
     if (alphaAnswered) { alphaAnswered = false; return; }
-    $("target").value = formatChoiceValue(state.settings);
+    // Dismissing the question is not answering it, so the format pin goes back
+    // to whatever it was before the click that raised it.
+    $("plan-format").value = state.settings.formats?.[0] || "";
   });
 
   window.addEventListener("beforeunload", (e) => {

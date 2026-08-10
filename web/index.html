@@ -391,57 +391,81 @@
                  your browser and checked against the reference version.)</span></p>
             </section>
 
-            <!-- Every setting, once. Quality used to be editable in four
-                 places and format in three; the ones that survive are these,
-                 plus the per-image overrides below, which are a different
-                 scope rather than a second copy. -->
+            <!-- The plan: every axis states its answer, and every stated
+                 answer is the control that changes it. Written as a sentence
+                 rather than a stack of fields because a form is a set of
+                 blanks and a sentence is a claim - and the thing this panel
+                 has to do is claim, in advance, exactly what is about to
+                 happen to someone's picture.
+
+                 What it replaces: five labelled fields, one of which chose a
+                 destination and a format from a single list. Picking a format
+                 there kept the destination and stopped naming it, so the frame
+                 size and the floor went on being decided by something the
+                 control no longer showed. Format is its own axis here.
+
+                 The raw 60-99 floor is still the number the engine runs on and
+                 is still on the page, but as a hidden input: it is a fact about
+                 the machine, not a question for a person. The words above it
+                 were always the real control. -->
             <section class="panel-sec" id="bar-controls">
-              <h4 class="micro">Settings <span class="hint-inline">for every image</span></h4>
-              <div class="field">
-                <label for="target">Going to</label>
-                <select id="target" title="Where these images are going">
-                  <!-- Filled by app.js from destinations.js, which is generated
-                       from imgcompress/destinations.py. -->
-                  <optgroup id="target-destinations"
-                            label="Let the app choose the format — it tries several and keeps the smallest that still looks right"></optgroup>
-                  <!-- Not labelled "faster". Measured on the benchmark corpus,
-                       restricting to JPEG saves only 1.1-1.4x against the
-                       design-tool set, because JPEG's own quality search is
-                       nearly the whole cost. -->
-                  <optgroup label="Always use one format — skips the comparison">
-                    <option value="one-jpeg">JPEG only</option>
-                    <option value="one-webp">WebP only</option>
-                    <option value="one-png">PNG only</option>
-                    <option value="one-avif">AVIF only</option>
-                  </optgroup>
-                </select>
-              </div>
-              <div class="field">
-                <label for="quality-preset">Quality</label>
-                <select id="quality-preset" title="How good the result has to look">
-                  <option value="95">Maximum — for masters you'll re-edit</option>
-                  <option value="90">High — you won't see the difference</option>
-                  <option value="85">Balanced — imperceptible unless you compare</option>
-                  <option value="80">Smaller — imperceptible side by side</option>
-                  <option value="70">Smallest — fine for thumbnails</option>
-                  <option value="custom" hidden>Custom</option>
-                </select>
-              </div>
-              <!-- The number behind the words, in the open. It used to sit
-                   behind an "Advanced" toggle, which made this a disclosure
-                   inside a disclosure once the settings moved into a drawer. -->
-              <div class="field" id="advanced">
-                <label for="quality">Minimum visual match</label>
-                <input type="range" id="quality" min="60" max="99" step="1" value="90"
-                       aria-describedby="quality-note">
-                <output class="num" id="quality-out">90</output>
-              </div>
-              <p class="adv-note" id="quality-note">imperceptible side by side</p>
-              <div class="field">
-                <label for="maxdim">Max dimension</label>
-                <input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560">
-                <span id="maxdim-hint">px · 0 keeps the original size</span>
-              </div>
+              <h4 class="micro">The plan <span class="hint-inline">for every image</span></h4>
+
+              <p class="plan" id="plan">
+                <span class="plan-txt">For a</span>
+                <span class="plan-pick">
+                  <!-- Options filled by app.js from destinations.js, generated
+                       from imgcompress/destinations.py. Destinations only now. -->
+                  <select id="target" aria-label="Where these images are going"></select>
+                </span>
+                <span class="plan-txt">, make them</span>
+                <span class="plan-pick">
+                  <select id="plan-goal" aria-label="What to aim for">
+                    <option value="small">as small as they go</option>
+                    <option value="cap">fit under</option>
+                  </select>
+                </span>
+                <input class="plan-num" id="plan-cap" type="text" inputmode="decimal"
+                       value="200 KB" size="7" aria-label="Size limit" hidden>
+                <span class="plan-txt" id="plan-join">while staying</span>
+                <!-- Adjectival, because these words land mid-sentence after
+                     "while staying" or "never worse than". Written as standalone
+                     labels they produced "never below no difference you can
+                     see" - a double negative that says the opposite of what the
+                     control does. -->
+                <span class="plan-pick">
+                  <select id="quality-preset" aria-label="The quality they may not fall below">
+                    <option value="95">good enough to re-edit</option>
+                    <option value="90">indistinguishable</option>
+                    <option value="85">indistinguishable unless you compare</option>
+                    <option value="80">indistinguishable side by side</option>
+                    <option value="70">clean at thumbnail size</option>
+                    <option value="custom" hidden>as close as you asked for</option>
+                  </select>
+                </span>
+                <span class="plan-txt">, as</span>
+                <span class="plan-pick">
+                  <select id="plan-format" aria-label="Which format to write"></select>
+                </span>
+                <span class="plan-txt">, at</span>
+                <input class="plan-num" id="maxdim" type="number" min="16" step="64"
+                       value="2560" size="5" aria-label="Pixels">
+                <span class="plan-pick">
+                  <select id="plan-fit" aria-label="Which edge that limit applies to">
+                    <option value="longest">px on the longest edge</option>
+                    <option value="width">px wide</option>
+                    <option value="height">px tall</option>
+                    <option value="none">whatever size they already are</option>
+                  </select>
+                </span>
+                <span class="plan-txt">.</span>
+              </p>
+
+              <!-- The floor the engine actually runs on. Driven entirely by the
+                   words above; never typed by a person. -->
+              <input type="hidden" id="quality" value="90">
+              <p class="plan-why" id="quality-note">imperceptible side by side</p>
+
               <div class="field">
                 <label class="check"><input type="checkbox" id="suffix-toggle"> Add <code>-min</code> to filenames</label>
               </div>

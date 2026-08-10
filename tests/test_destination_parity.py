@@ -124,18 +124,36 @@ class NoConsumerRestatesTheTable(unittest.TestCase):
                         self.assertNotRegex(line, rf"\b{size}\b")
 
     def test_the_markup_offers_no_typed_destination_list(self):
+        """#target is now generated end to end, so it must be empty in the markup.
+
+        It used to hold a second group of hand-typed `one-<format>` options, and
+        this check read those to prove no destination name had been typed
+        alongside them. Format is its own control now, so there is nothing left
+        to type here and the stronger assertion is available: the element is
+        empty and every option comes from the table.
+        """
         text = _read(INDEX_HTML)
         select = re.search(r'<select id="target".*?</select>', text, re.S)
         self.assertIsNotNone(select, "could not find the #target select in index.html")
-        values = re.findall(r'<option value="([^"]+)"', select.group(0))
-        self.assertTrue(values, "the #target select had no options at all - if the "
-                                "single-format group was removed too, this check is "
-                                "no longer measuring anything")
+        self.assertEqual(
+            re.findall(r"<option", select.group(0)), [],
+            "#target has typed options again; every one of them belongs to the "
+            "generated table, not to the markup")
+
+    def test_the_format_control_types_no_destination_names(self):
+        """The control that *is* hand-typed must not name a destination.
+
+        Splitting format out of #target moved the risk rather than removing it:
+        this list is written by hand, so it is the one that could now grow a
+        `documents` or an `email` entry and quietly restate the table.
+        """
+        text = _read(INDEX_HTML)
+        select = re.search(r'<select id="plan-format".*?</select>', text, re.S)
+        self.assertIsNotNone(select, "could not find the #plan-format select")
+        values = re.findall(r'<option value="([^"]*)"', select.group(0))
         for name in dest.names():
             with self.subTest(destination=name):
                 self.assertNotIn(name, values)
-        self.assertIn('id="target-destinations"', text,
-                      "the optgroup app.js fills is gone")
 
     def test_the_ui_renders_the_options(self):
         self.assertIn("function renderDestinationOptions", _read(APP_JS))
