@@ -471,8 +471,8 @@ class SizeCapTests(unittest.TestCase):
         self.src.mkdir()
         self.path = self.src / "photo.png"
         photo_sample().save(self.path)
-        self.floor = dict(metric="ssim", zopfli=False, fast=True,
-                          dimension_mode="none", max_dimension=0)
+        self.floor = {"metric": "ssim", "zopfli": False, "fast": True,
+                      "dimension_mode": "none", "max_dimension": 0}
 
     def tearDown(self):
         self._tmp.cleanup()
