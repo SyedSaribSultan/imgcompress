@@ -716,6 +716,18 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .plan-num::-webkit-outer-spin-button,
 .plan-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
+/* The one failure state either search has: a size cap that could not be met
+   without dropping below the floor. Warning, not critical - nothing broke, the
+   engine did the honest thing and handed back the smallest file still worth
+   looking at. But the result is over a limit someone set on purpose, so it has
+   to be visible before the download rather than after the upload. */
+.warn.missed {
+  background: var(--oz-color-surface-warning);
+  border-left: var(--oz-stroke-6) solid var(--oz-color-border-warning);
+  border-radius: var(--oz-radius-3);
+  padding: var(--oz-space-4) var(--oz-space-5);
+}
+
 /* Standing on its own under the hero rather than inside the drawer's column,
    so it has to supply the width and the air the drawer was giving it. Set a
    step larger here: on the landing screen this is the only thing on the page

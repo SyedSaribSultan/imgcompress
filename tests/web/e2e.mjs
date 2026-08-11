@@ -355,34 +355,52 @@ try {
   {
     const roundTrip = await page.evaluate(() => {
       const sel = document.getElementById("quality-preset");
-      const slider = document.getElementById("quality");
+      const floor = document.getElementById("quality");
       const out = {};
       sel.value = "80";
       sel.dispatchEvent(new Event("change"));
-      out.wordsSetTheNumber = slider.value;
-      slider.value = "87";
-      slider.dispatchEvent(new Event("input"));
+      out.wordsSetTheNumber = floor.value;
+      out.floorIsNotAControl = floor.type === "hidden";
+      /* An off-preset floor no longer arrives from a slider - there isn't one.
+         It comes from a saved setting, a destination, or a per-image override,
+         all of which land on the hidden floor and then call reflectQualityHint
+         to bring the words back in step. That reconciliation is what this
+         checks, because a floor the words disagree with is the floor-99 bug. */
+      floor.value = "87";
+      reflectQualityHint();
       out.offPreset = sel.value;
+      out.offPresetWords = sel.querySelector('option[value="custom"]').textContent;
       sel.value = "90";
       sel.dispatchEvent(new Event("change"));
-      out.backTo90 = slider.value;
+      out.backTo90 = floor.value;
       return out;
     });
     ok(roundTrip.wordsSetTheNumber === "80",
        `a named quality sets the floor (${roundTrip.wordsSetTheNumber})`);
+    ok(roundTrip.floorIsNotAControl,
+       "the raw floor is not something a person can see or set");
     ok(roundTrip.offPreset === "custom",
-       `a floor between the names reads as Custom (${roundTrip.offPreset})`);
+       `a floor between the names still reads as its own entry (${roundTrip.offPreset})`);
+    ok(!/\d/.test(roundTrip.offPresetWords),
+       `and describes itself in words, not a number (${JSON.stringify(roundTrip.offPresetWords)})`);
     ok(roundTrip.backTo90 === "90", "and it goes back");
 
+    /* Format is its own control. It used to be the second half of #target, and
+     * pinning one there kept the destination while the control stopped naming
+     * it - so the destination went on deciding the frame and the floor with
+     * nothing on screen saying which one it was. */
     const one = await page.evaluate(() => {
-      const t = document.getElementById("target");
-      t.value = "one-webp";
-      t.dispatchEvent(new Event("change"));
-      return { has: !!t.querySelector('option[value="one-jpeg"]') };
+      const f = document.getElementById("plan-format");
+      f.value = "webp";
+      f.dispatchEvent(new Event("change"));
+      return { has: !!f.querySelector('option[value="jpeg"]'),
+               destination: document.getElementById("target").value };
     });
     await new Promise((r) => setTimeout(r, 600));
     const restricted = await page.evaluate(() => state.settings.formats);
-    ok(one.has, "the Format control offers single formats");
+    ok(one.has, "the format control offers single formats");
+    ok(one.destination === "web",
+       `and the destination is still named while one is pinned (${one.destination})`);
     ok(JSON.stringify(restricted) === '["webp"]',
        `choosing one format restricts the engine to it (${JSON.stringify(restricted)})`);
 
@@ -390,25 +408,25 @@ try {
      * has it. Choosing JPEG must therefore ask rather than silently produce
      * black boxes or silently ignore the request. */
     await page.evaluate(() => {
-      const t = document.getElementById("target");
-      t.value = "one-jpeg";
-      t.dispatchEvent(new Event("change"));
+      const f = document.getElementById("plan-format");
+      f.value = "jpeg";
+      f.dispatchEvent(new Event("change"));
     });
     await new Promise((r) => setTimeout(r, 400));
     ok(await page.evaluate(() => document.getElementById("alpha-ask").open),
        "choosing JPEG with transparent artwork queued asks first");
     await page.click("#alpha-cancel");
     await new Promise((r) => setTimeout(r, 400));
-    const afterCancel = await page.evaluate(() => document.getElementById("target").value);
-    ok(afterCancel === "one-webp",
+    const afterCancel = await page.evaluate(() => document.getElementById("plan-format").value);
+    ok(afterCancel === "webp",
        `cancelling restores the setting actually in force (${afterCancel})`);
 
     // Answer it this time, and check the logo is kept rather than mangled.
     const rev = await page.evaluate(() => state.settingsRev);
     await page.evaluate(() => {
-      const t = document.getElementById("target");
-      t.value = "one-jpeg";
-      t.dispatchEvent(new Event("change"));
+      const f = document.getElementById("plan-format");
+      f.value = "jpeg";
+      f.dispatchEvent(new Event("change"));
     });
     await new Promise((r) => setTimeout(r, 400));
     await page.click("#alpha-keep");

@@ -126,8 +126,13 @@
       <nav class="menu" id="more-menu" aria-label="Site" hidden>
         <a href="#learn">How it works</a>
         <a href="/compare">How it compares</a>
+        <!-- These are different places and were named as if they were the same
+             one: /download is where you get it, #desktop is the section on this
+             page arguing why you might want it. Two entries reading "Download
+             the app" and "Desktop app" gave nobody a way to tell which was
+             which, so each is now named after what is at the other end. -->
         <a href="/download">Download the app</a>
-        <a href="#desktop">Desktop app</a>
+        <a href="#desktop">What the desktop app adds</a>
         <a href="#faq">FAQ</a>
         <a href="https://github.com/SyedSaribSultan/imgcompress" rel="noopener">GitHub ↗</a>
         <button data-keys>Keyboard shortcuts <kbd>?</kbd></button>
@@ -396,11 +401,18 @@
                  pixel differences. <b>100 means indistinguishable.</b> At 90
                  the difference does not show even when the two are flicked
                  back and forth on top of each other.</p>
+              <!-- This used to cite three encoder settings - 58 in the block
+                   above, then 97 and 76 here - to make its case. Three numbers
+                   for one idea, none of them comparable, and 76 appearing from
+                   nowhere. On the panel whose whole job is "we measure rather
+                   than guess", it was the least trustworthy thing in view. The
+                   claim survives intact in the only unit that was ever doing
+                   the work. -->
               <p class="metric-note">Colour is never thrown away, which most
-                 JPEG encoders do to save space. Matching this quality with
-                 colour detail discarded needed setting 97 instead of 76 — a
-                 file <b>3.8&times; larger</b>. The measure used here can see
-                 colour damage; the older ones everybody still uses cannot.
+                 JPEG encoders do to save space. Matching this quality with the
+                 colour detail discarded takes a file <b>3.8&times; larger</b>.
+                 The measure used here can see colour damage; the older ones
+                 everybody still uses cannot.
                  <span class="muted">(The measure is SSIMULACRA&nbsp;2, run in
                  your browser and checked against the reference version.)</span></p>
             </section>
@@ -487,22 +499,31 @@
 
             <!-- A different scope, not a second copy: this one re-runs the
                  comparison for one image, and can name a format the automatic
-                 set never tried. -->
+                 set never tried.
+
+                 That was already true and already commented, and from the
+                 screen you still could not tell. Both controls were named the
+                 same as the ones in the plan, so the pair read as one setting
+                 duplicated rather than as a general rule and an exception to
+                 it. Each now says what it does to the plan above, and the
+                 empty state says "follow the plan" instead of a dash that
+                 could equally have meant off, unset, or inherited. -->
             <section class="panel-sec" id="sec-override">
-              <h4 class="micro">Try different settings
-                <span class="hint-inline">for this image only</span></h4>
+              <h4 class="micro">Just this image
+                <span class="hint-inline">overrides the plan above</span></h4>
               <div class="ov-grid">
-                <label for="ov-format">Always use</label>
+                <label for="ov-format">Format</label>
                 <select id="ov-format">
-                  <option value="">whichever comes out smallest</option>
-                  <option value="jpeg">jpeg</option>
-                  <option value="png8">png8 (palette)</option>
-                  <option value="png">png (lossless)</option>
-                  <option value="webp">webp</option>
-                  <option value="avif">avif</option>
+                  <option value="">follow the plan</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="png8">PNG, palette</option>
+                  <option value="png">PNG, lossless</option>
+                  <option value="webp">WebP</option>
+                  <option value="avif">AVIF</option>
                 </select>
-                <label for="ov-quality">Minimum visual match</label>
-                <input class="num-input" type="number" id="ov-quality" min="60" max="99" placeholder="—">
+                <label for="ov-quality">Quality floor</label>
+                <input class="num-input" type="number" id="ov-quality" min="60" max="99"
+                       placeholder="follow the plan">
               </div>
               <div class="ov-actions">
                 <button class="btn sm" id="ov-apply">Compress again</button>

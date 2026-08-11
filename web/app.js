@@ -580,6 +580,12 @@ function onWorkerMessage(slot, msg) {
     item.result = r;
     item.metric = r.metric;
     item.warnings = r.warnings || [];
+    // A size cap that could not be met without wrecking the image. The engine
+    // ships the smallest file still worth looking at and says so; this is what
+    // lets the panel say it in the colour of a warning rather than as one more
+    // clause in a run-on line of notes.
+    item.missedSize = !!r.missedSize;
+    item.sizeTarget = r.sizeTarget || 0;
     item.candidates = r.candidates || [];
     adoptCandidateBytes(item);
     // The engine's answer, kept whole, and made the one on screen. A choice
@@ -1258,7 +1264,23 @@ function selectItem(id, quiet) {
 function fmtScore(score, lossless, metric) {
   if (lossless) return "lossless";
   if (score == null) return "—";
-  return metric === "ssim" ? score.toFixed(4) : score.toFixed(1);
+  return metric === "ssim" ? score.toFixed(4) : scoreText(score);
+}
+
+/* One spelling of a visual match, everywhere it appears.
+ *
+ * The panel used to show both: the headline stat ran through fmtScore and read
+ * 82.7, while the sentence three lines above it ran through Math.round and read
+ * 83. Two numbers for one measurement, on one screen, in a product whose entire
+ * claim is that it measures rather than guesses.
+ *
+ * One decimal rather than a whole number, because rounding can cross the floor.
+ * A candidate at 79.6 rounds to 80 and then reads as having met a target of 80
+ * that it missed - which is not a display problem, it is the display saying the
+ * opposite of what happened.
+ */
+function scoreText(score) {
+  return (score ?? 0).toFixed(1);
 }
 
 /* ------------------------------ narration -------------------------------- *
@@ -1274,6 +1296,24 @@ function fmtScore(score, lossless, metric) {
 const WORKING_LINE =
   "Trying a few ways to shrink this, keeping only the one that still looks right.";
 
+/* The same promise when there is only one way to try it.
+ *
+ * "A few ways" was said whatever the settings were, including with a format
+ * pinned, where exactly one version gets made. The panel afterwards then read
+ * "1 version tried" under a heading saying "every version that was tried", and
+ * the three statements could not all be true. This is the one that was wrong.
+ *
+ * A count is deliberately not given here. The candidate list is filtered again
+ * inside the worker by what this browser can actually encode, so a promise of
+ * "5 ways" is the same over-claim in a more precise voice. One is the only
+ * number the UI knows for certain, because it is the one the person set. */
+function workingLineFor(settings) {
+  const pinned = settings.formats && settings.formats.length === 1;
+  if (!pinned) return WORKING_LINE;
+  return `Shrinking this as ${fmtLabel(settings.formats[0])} as far as it goes `
+       + `while it still looks right.`;
+}
+
 /** Returns HTML: the invitation at the end is a button, not decoration. */
 function narrationFor(it) {
   if (!it) return "";
@@ -1282,7 +1322,9 @@ function narrationFor(it) {
            `Your original is untouched.`;
   }
   if (it.status === "cancelled") return "Stopped. Your original has not been changed.";
-  if (!isReady(it)) return escapeHtml(WORKING_LINE);
+  if (!isReady(it)) {
+    return escapeHtml(workingLineFor(it.override || state.settings));
+  }
 
   const ask = (action, words) =>
     ` <button class="narr-link" type="button" data-narr="${action}">${words}</button>`;
@@ -1332,7 +1374,7 @@ function verdictFor(it) {
   const runner = sorted.find((c) => c.format !== it.fmt);
   const quality = it.lossless
     ? "and it is <b>pixel-identical</b> to the original"
-    : `Visual match <b>${Math.round(it.score ?? 0)} out of 100</b>, above your ` +
+    : `Visual match <b>${scoreText(it.score)} out of 100</b>, above your ` +
       `target of ${Math.round(it.override?.qualityTarget ?? state.settings.qualityTarget)}`;
   let line = `<b>${pct.toFixed(0)}% smaller</b> than the original, ${quality}.`;
   if (runner && runner.bytes > it.newBytes) {
@@ -1357,7 +1399,11 @@ function renderInspector(it) {
     // The field is sized to its content so the extension stays beside the name
     // it belongs to rather than at the far end of the heading.
     nameField.size = Math.max(4, base.length);
-    $("insp-ext").textContent = ext;
+    // The extension of the file you are about to get, not the one you brought.
+    // These were the same string until the bake-off started choosing a
+    // different container, after which this heading read ".png" over a JPEG
+    // result and the only place the real answer appeared was the drawer.
+    $("insp-ext").textContent = outExt(it) || ext;
   }
   // Dimensions live once now, in the panel's own row (#s-dims). They were
   // in the file-identity band as well, which is one of the places the same
@@ -1452,8 +1498,12 @@ function renderInspector(it) {
       ? (pct > 0 ? `${human(saved)} <small>−${pct.toFixed(0)}%</small>` : "none")
       : pending;
   }
+  // No encoder level. "quality 58" means nothing without knowing which ladder
+  // it came from, is not comparable between formats, and is not something
+  // anyone can act on - and printing it directly under a paragraph arguing
+  // about 76 and 97 was the single least trustworthy thing on the panel.
   $("s-format").innerHTML = ready
-    ? `${fmtLabel(it.fmt)}${it.level != null ? ` <small>quality ${it.level}</small>` : ""}`
+    ? fmtLabel(it.fmt)
     : (it.status === "failed" || it.status === "cancelled" ? "—" : `<span class="skel w-sm"></span>`);
   $("s-score").textContent = ready ? fmtScore(it.score, it.lossless || it.passthrough, it.metric) : "—";
   $("s-dims").innerHTML = !it.width ? "—"
@@ -1539,6 +1589,10 @@ function renderInspector(it) {
   if (it.error && it.status !== "cancelled") messages.unshift(it.error);
   warn.hidden = !messages.length;
   warn.textContent = messages.join(" · ");
+  // A missed cap is the one thing here someone has to act on - the file is over
+  // a limit they set, on purpose, and they need to see that before they
+  // download it rather than after they upload it somewhere.
+  warn.classList.toggle("missed", !!it.missedSize);
 
   renderCandidates(it);
 
@@ -1614,8 +1668,11 @@ function renderCandidates(it) {
     if (c.bytes >= it.originalBytes) {
       return "Bigger than your original, so it was discarded.";
     }
-    if (!c.lossless && c.score != null && Math.round(c.score) < target) {
-      return `Too different from the original — matched ${Math.round(c.score)} `
+    // Compared raw, shown rounded. Comparing the rounded value let a candidate
+    // at 79.6 pass a target of 80, so the one message explaining why it lost
+    // never fired for the candidates that lost most narrowly.
+    if (!c.lossless && c.score != null && c.score < target) {
+      return `Too different from the original — matched ${scoreText(c.score)} `
            + `against your target of ${target}.`;
     }
     if (c.rejected) {
@@ -1629,7 +1686,7 @@ function renderCandidates(it) {
 
   cands.innerHTML = rows.map((c) => {
     const quality = c.lossless ? "pixel-identical to your original"
-      : `visual match ${Math.round(c.score ?? 0)} out of 100`;
+      : `visual match ${scoreText(c.score)} out of 100`;
     const mark = c.format === autoFmt ? "winner"
       : now === c.format ? "showing"
       : c.bytes === smallest ? "smallest" : "";
@@ -1857,12 +1914,25 @@ const stepZoom = (dir) => zoomAt(dir, null, null);
 
 /* ------------------------------- downloads -------------------------------- */
 
+/* The extension the download will actually carry.
+ *
+ * it.ext follows whichever encode is currently on screen, and is null when the
+ * bytes are the original's - then the source name's own extension is the honest
+ * one, read now rather than at result time so a rename is respected.
+ *
+ * One function, because the heading and the download used to work this out
+ * separately and disagreed. The download was right; the heading read the source
+ * name and announced ".png" over a JPEG. Whatever names the output has to name
+ * it in one place, or the two places drift the moment the bake-off picks a
+ * container the source did not have.
+ */
+function outExt(it) {
+  return it.ext || (it.name.match(/\.[a-z0-9]+$/i) || [""])[0];
+}
+
 function outputName(it, used) {
   let base = it.name.replace(/\.[a-z0-9]+$/i, "");
-  // it.ext follows whichever encode is currently on screen, and is null when
-  // the bytes are the original's - then the source name's own extension is the
-  // honest one, read now rather than at result time so a rename is respected.
-  const ext = it.ext || (it.name.match(/\.[a-z0-9]+$/i) || [""])[0];
+  const ext = outExt(it);
   if (state.suffix) base += "-min";
   let name = base + ext;
   if (used) {
@@ -2134,6 +2204,7 @@ let alphaAnswered = false;   // distinguishes a decision from a dismissal
    every value it writes lands visibly in the sentence rather than in fields
    two scrolls further down. */
 function onDestination() {
+  const pinnedBefore = $("plan-format").value;
   const d = DESTINATION_NUMBERS[$("target").value];
   if (d) {
     $("maxdim").value = d.maxDimension || DEFAULT_DIMENSION;
@@ -2145,7 +2216,16 @@ function onDestination() {
   // a pin the new destination cannot write is dropped rather than left showing.
   renderFormatOptions();
   reflectPlan();
-  onFormatPin();
+
+  /* Only go through the format path if this actually moved the pin. Changing
+     where the images are going is not changing what they will be written as,
+     and running it unconditionally re-asked the transparency question every
+     time the destination changed while a JPEG pin happened to survive - a
+     modal nobody invoked, in front of a settings push that then never
+     happened, because that path waits for an answer before saving. */
+  if ($("plan-format").value !== pinnedBefore) { onFormatPin(); return; }
+  fitPicks();
+  pushSettings();
 }
 
 function onFormatPin() {

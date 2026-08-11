@@ -760,12 +760,36 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
                table the engine reads. A hardcoded list here would be a second
                copy of five numbers that must agree. -->
           <select id="target" title="Where these images are going"></select>
-          <label for="quality">Min visual match</label>
-          <span class="q-row"><input type="range" id="quality" min="60" max="99" step="1" value="90"
-                 aria-describedby="quality-out"><output class="num" id="quality-out">90</output></span>
-          <label for="maxdim">Max size</label>
-          <span class="q-row"><input class="num-input" type="number" id="maxdim" min="0" step="64" value="2560"
-                 aria-describedby="maxdim-hint"><span id="maxdim-hint" class="muted">px, 0 keeps the original size</span></span>
+          <!-- Words, not a number. The raw floor is still exactly what the
+               engine runs on and is still here, as a hidden input: it is a
+               fact about the metric rather than a question for a person, and
+               having both a slider and a named list meant one setting with two
+               faces that could disagree. -->
+          <label for="quality-preset">Keep them</label>
+          <select id="quality-preset" title="The quality these may not fall below"></select>
+          <input type="hidden" id="quality" value="90">
+
+          <label for="plan-goal">Aim for</label>
+          <span class="q-row">
+            <select id="plan-goal" title="What to optimise for">
+              <option value="small">the smallest file that holds</option>
+              <option value="cap">the best quality under a size</option>
+            </select>
+            <input class="num-input" id="plan-cap" type="text" inputmode="decimal"
+                   value="200 KB" size="7" aria-label="Size limit" hidden>
+          </span>
+
+          <label for="maxdim">Frame</label>
+          <span class="q-row">
+            <input class="num-input" type="number" id="maxdim" min="16" step="64" value="2560"
+                   aria-label="Pixels">
+            <select id="plan-fit" title="Which edge that limit applies to">
+              <option value="longest">px on the longest edge</option>
+              <option value="width">px wide</option>
+              <option value="height">px tall</option>
+              <option value="none">leave the size alone</option>
+            </select>
+          </span>
         </div>
         <div class="ov-actions">
           <span class="muted">Save to</span>
@@ -1199,23 +1223,91 @@ function renderDestinations(list) {
   destinationsRendered = true;
 }
 
+/* The named rungs, on both scales.
+ *
+ * Two scales rather than one converted number, because SSIM and SSIMULACRA 2
+ * are not proportional to each other: 90 on the perceptual scale is the
+ * "visually lossless" line, while 0.90 on SSIM is well below its own 0.97
+ * default. Dividing by 100 would have quietly loosened every floor on the
+ * machines that fall back to SSIM - which are exactly the machines with the
+ * weaker metric already. */
+const QUALITY_LADDER = [
+  { ss2: 95, ssim: 0.990, words: "good enough to re-edit" },
+  { ss2: 90, ssim: 0.970, words: "indistinguishable" },
+  { ss2: 85, ssim: 0.965, words: "indistinguishable unless you compare" },
+  { ss2: 80, ssim: 0.950, words: "indistinguishable side by side" },
+  { ss2: 70, ssim: 0.920, words: "clean at thumbnail size" },
+];
+
+function renderQualityOptions() {
+  const sel = $("quality-preset");
+  if (sel.children.length) return;
+  for (const rung of QUALITY_LADDER) {
+    const o = document.createElement("option");
+    o.value = String(rung.ss2);
+    o.textContent = rung.words;
+    sel.appendChild(o);
+  }
+  const custom = document.createElement("option");
+  custom.value = "custom"; custom.hidden = true;
+  custom.textContent = "as close as you asked for";
+  sel.appendChild(custom);
+}
+
+/* Bring the words in step with whatever floor is actually in force. A floor
+   between the rungs is a real choice - it arrives from a destination or a
+   saved session - and gets the hidden entry rather than being snapped to a
+   rung it did not mean. */
+function reflectQuality() {
+  const isSsim = state.settings.metric === "ssim";
+  const floor = Number($("quality").value);
+  const rung = QUALITY_LADDER.find((r) => (isSsim ? r.ssim : r.ss2) === floor);
+  const sel = $("quality-preset");
+  sel.value = rung ? String(rung.ss2) : "custom";
+  sel.querySelector('option[value="custom"]').hidden = !!rung;
+}
+
+function reflectPlan() {
+  $("plan-cap").hidden = $("plan-goal").value !== "cap";
+  // "leave the size alone" is a mode, not a number, so the number goes with it.
+  $("maxdim").hidden = $("plan-fit").value === "none";
+}
+
+/* "200 KB", "1.5 MB", "204800" -> bytes. 0 for anything unreadable, so a
+   half-typed box falls back to the ordinary search rather than capping at a
+   number nobody asked for. Mirrors cli.parse_size and app.js parseSize. */
+function parseSize(text) {
+  const m = String(text).trim().toLowerCase().replace(/[\s,]/g, "")
+    .match(/^([0-9]*\.?[0-9]+)(b|kb|k|mb|m)?$/);
+  if (!m) return 0;
+  const scale = { b: 1, k: 1024, kb: 1024, m: 1048576, mb: 1048576 }[m[2] || "b"] || 1;
+  const v = parseFloat(m[1]) * scale;
+  return v > 0 ? Math.round(v) : 0;
+}
+
 function applySettingsToControls(s) {
   const name = OLD_DESTINATION_NAMES[s.target] || s.target || "web";
   if ($("target").querySelector(`option[value="${name}"]`)) $("target").value = name;
+  renderQualityOptions();
   const isSsim = s.metric === "ssim";
-  const q = $("quality");
-  q.min = isSsim ? 80 : 60; q.max = isSsim ? 100 : 99;
-  q.value = isSsim ? Math.round((s.quality_target || 0.97) * 100) : (s.quality_target || 90);
-  $("quality-out").textContent = q.value;
-  $("maxdim").value = s.max_dimension ?? 2560;
+  $("quality").value = s.quality_target ?? (isSsim ? 0.97 : 90);
+  $("maxdim").value = s.max_dimension || 2560;
+  $("plan-fit").value = s.max_dimension ? (s.dimension_mode || "longest") : "none";
+  $("plan-goal").value = s.size_target ? "cap" : "small";
+  if (s.size_target) $("plan-cap").value = human(s.size_target);
+  reflectQuality();
+  reflectPlan();
 }
 function currentSettings() {
-  const isSsim = state.settings.metric === "ssim";
-  const raw = Number($("quality").value);
+  const fit = $("plan-fit").value;
   return {
     target: $("target").value,
-    quality_target: isSsim ? raw / 100 : raw,
-    max_dimension: Number($("maxdim").value) || 0,
+    quality_target: Number($("quality").value),
+    // The engine has always spelled "do not resize" as a zero limit. The
+    // difference is that nobody has to type it, or know that it means that.
+    max_dimension: fit === "none" ? 0 : Number($("maxdim").value) || 0,
+    dimension_mode: fit,
+    size_target: $("plan-goal").value === "cap" ? parseSize($("plan-cap").value) : 0,
   };
 }
 let pushTimer;
@@ -1237,17 +1329,36 @@ function pushSettings() {
 $("target").addEventListener("change", () => {
   const d = (state.destinations || []).find((x) => x.name === $("target").value);
   if (d) {
-    $("maxdim").value = d.max_dimension;
-    const q = $("quality");
-    q.value = state.settings.metric === "ssim"
-      ? Math.round(d.quality_target * 100) : d.quality_target;
-    $("quality-out").textContent = q.value;
+    $("maxdim").value = d.max_dimension || 2560;
+    $("plan-fit").value = d.max_dimension ? "longest" : "none";
+    $("quality").value = d.quality_target;
+    reflectQuality();
+    reflectPlan();
   }
   pushSettings();
 });
 $("maxdim").addEventListener("change", pushSettings);
-$("quality").addEventListener("input", () => { $("quality-out").textContent = $("quality").value; });
-$("quality").addEventListener("change", pushSettings);
+$("plan-fit").addEventListener("change", () => { reflectPlan(); pushSettings(); });
+$("plan-goal").addEventListener("change", () => {
+  reflectPlan();
+  if ($("plan-goal").value === "cap") {
+    if (!parseSize($("plan-cap").value)) $("plan-cap").value = "200 KB";
+    $("plan-cap").focus(); $("plan-cap").select();
+  }
+  pushSettings();
+});
+$("plan-cap").addEventListener("change", () => {
+  const bytes = parseSize($("plan-cap").value);
+  if (bytes) $("plan-cap").value = human(bytes);
+  pushSettings();
+});
+/* The words are the control; the hidden floor is the engine's copy of them. */
+$("quality-preset").addEventListener("change", (e) => {
+  if (e.target.value === "custom") return;   // arrives from a floor, not a click
+  const rung = QUALITY_LADDER.find((r) => String(r.ss2) === e.target.value);
+  $("quality").value = state.settings.metric === "ssim" ? rung.ssim : rung.ss2;
+  pushSettings();
+});
 
 $("theme-btn").addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";

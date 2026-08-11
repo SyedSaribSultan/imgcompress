@@ -31,6 +31,7 @@ from . import __version__
 from . import destinations as dest
 from . import encoders as enc
 from .core import (
+    DIMENSION_MODES,
     SUPPORTED_SUFFIXES,
     CompressionResult,
     Settings,
@@ -116,6 +117,11 @@ class Session:
             "target": dest.DEFAULT,
             "quality_target": 90.0 if HAVE_SSIMULACRA2 else 0.97,
             "max_dimension": dest.get(dest.DEFAULT).max_dimension,
+            # Which edge max_dimension governs, and a byte ceiling that inverts
+            # the search when set. Both default to the behaviour that was the
+            # only behaviour before they existed.
+            "dimension_mode": "longest",
+            "size_target": 0,
             "metric": "ssimulacra2" if HAVE_SSIMULACRA2 else "ssim",
             "fast": False,
             "keep_metadata": False,
@@ -255,11 +261,18 @@ class Session:
         going_to = dest.resolve(merged.get("target") or dest.DEFAULT)
         if not dest.exists(going_to):
             going_to = dest.DEFAULT
+        # An unknown mode falls back to the historical one rather than reaching
+        # the engine, where it would silently mean "do not resize at all".
+        mode = merged.get("dimension_mode") or "longest"
+        if mode not in DIMENSION_MODES:
+            mode = "longest"
         return Settings(
             target=going_to,
             max_dimension=int(merged.get("max_dimension", 2560)),
+            dimension_mode=mode,
             metric=merged.get("metric", ""),
             quality_target=float(merged["quality_target"]) if merged.get("quality_target") is not None else None,
+            size_target=max(0, int(merged.get("size_target") or 0)),
             keep_metadata=bool(merged.get("keep_metadata", False)),
             fast=bool(merged.get("fast", False)),
             formats=formats,

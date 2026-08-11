@@ -48,37 +48,56 @@ try {
      "defaults: going to the web, High quality, floor 90");
   ok(d.settings.formats === null, "defaults: no format restriction");
 
-  // ---- the words drive the number, and back -----------------------------
+  // ---- the words are the control; the number is the engine's copy ---------
+  // #quality-out is gone with the slider it annotated: the floor is a hidden
+  // input now, because a raw 60-99 number is a fact about the metric rather
+  // than a question for a person.
   await pg.select("#quality-preset", "80");
   await settle();
   const q80 = await pg.evaluate(() => ({
     floor: document.getElementById("quality").value,
-    out: document.getElementById("quality-out").textContent,
+    visible: document.getElementById("quality").type !== "hidden",
     note: document.getElementById("quality-note").textContent,
+    words: document.querySelector("#quality-preset ~ .plan-shadow, .plan-pick .plan-shadow")
+      ? [...document.querySelectorAll(".plan-pick")]
+          .find((p) => p.querySelector("#quality-preset"))
+          .querySelector(".plan-shadow").textContent
+      : null,
     target: state.settings.qualityTarget,
   }));
-  ok(q80.floor === "80" && q80.out === "80" && q80.target === 80,
-     `picking "Smaller" sets the floor to 80 (${JSON.stringify(q80)})`);
+  ok(q80.floor === "80" && q80.target === 80,
+     `picking a lower bar sets the floor to 80 (${JSON.stringify(q80)})`);
+  ok(!q80.visible, "the raw floor is not a control anyone can see");
+  ok(/side by side/.test(q80.words || ""),
+     `and the sentence says so in words (${JSON.stringify(q80.words)})`);
 
+  // A floor between the landmarks arrives from a saved setting or a
+  // destination, never from a click, and gets the hidden entry rather than
+  // being snapped to a word it did not mean.
   const custom = await pg.evaluate(() => {
-    const el = document.getElementById("quality");
-    el.value = "87";
-    el.dispatchEvent(new Event("input"));
+    document.getElementById("quality").value = "87";
+    reflectQualityHint();
     const opt = document.getElementById("quality-preset");
     return { preset: opt.value, label: opt.querySelector('option[value="custom"]').textContent,
              hidden: opt.querySelector('option[value="custom"]').hidden };
   });
-  ok(custom.preset === "custom" && /87/.test(custom.label) && !custom.hidden,
-     `an off-preset floor shows as Custom (${JSON.stringify(custom)})`);
+  ok(custom.preset === "custom" && !custom.hidden && !/87/.test(custom.label),
+     `an off-preset floor shows in words, not as a number (${JSON.stringify(custom)})`);
   await pg.select("#quality-preset", "90");
   await settle();
 
-  // ---- choosing one format ----------------------------------------------
-  await pg.select("#target", "one-webp");
+  // ---- pinning one format ------------------------------------------------
+  // Its own axis now. It used to share #target with the destination, and
+  // picking a format there kept the destination while the control stopped
+  // naming it.
+  await pg.select("#plan-format", "webp");
   await settle();
   const w = await pg.evaluate(() => JSON.parse(JSON.stringify(state.settings)));
   ok(JSON.stringify(w.formats) === '["webp"]' && w.target === "web",
-     `"WebP only" restricts the engine to webp (${JSON.stringify(w.formats)})`);
+     `pinning WebP restricts the engine to webp and leaves the destination alone (${JSON.stringify(w.formats)})`);
+  const stillNamed = await pg.evaluate(() => document.getElementById("target").value);
+  ok(stillNamed === "web",
+     `and the destination is still named on screen (${stillNamed})`);
 
   // ---- transparency: the question, both answers, and cancel -------------
   await uploadAndFinish(pg, [path.join(FIX, "logo.png"), path.join(FIX, "ui.png")], 600_000);
@@ -89,7 +108,7 @@ try {
      "transparency is measured per image, not guessed from the extension");
 
   // Cancel must leave the control on what is actually in force.
-  await pg.select("#target", "one-jpeg");
+  await pg.select("#plan-format", "jpeg");
   await settle(400);
   ok(await pg.evaluate(() => document.getElementById("alpha-ask").open),
      "choosing JPEG with transparent art asks first");
@@ -99,16 +118,16 @@ try {
   await settle(400);
   const afterCancel = await pg.evaluate(() => ({
     open: document.getElementById("alpha-ask").open,
-    control: document.getElementById("target").value,
+    control: document.getElementById("plan-format").value,
     formats: state.settings.formats,
   }));
-  ok(!afterCancel.open && afterCancel.control === "one-webp" &&
+  ok(!afterCancel.open && afterCancel.control === "webp" &&
      JSON.stringify(afterCancel.formats) === '["webp"]',
      `cancel puts the control back to what is in force (${JSON.stringify(afterCancel)})`);
 
   // Keep-as-PNG: the logo must not come out as JPEG, and must say why.
   await rerun(pg, async () => {
-    await pg.select("#target", "one-jpeg");
+    await pg.select("#plan-format", "jpeg");
     await settle(400);
     await pg.click("#alpha-keep");
   });
@@ -125,7 +144,7 @@ try {
   // Flatten: same choice, other answer.
   await rerun(pg, () => pg.select("#target", "documents"));
   await rerun(pg, async () => {
-    await pg.select("#target", "one-jpeg");
+    await pg.select("#plan-format", "jpeg");
     await settle(400);
     await pg.click("#alpha-flatten");
   });

@@ -20,12 +20,15 @@ const IMAGES = [
   ["photo, 1.0 MP", path.join(REF, "photo.png")],
   ["camera, 4.9 MP", path.join(REF, "camera_12mp.png")],
 ];
+/* Destination and format are separate controls now, so a choice has to say
+   which one it is setting. Pinning a format no longer implies a destination
+   and vice versa - which is the point of having split them. */
 const CHOICES = [
-  ["Automatic — design tools", "documents"],
-  ["Automatic — web", "web"],
-  ["JPEG only", "one-jpeg"],
-  ["WebP only", "one-webp"],
-  ["AVIF only", "one-avif"],
+  ["Automatic — design tools", "target", "documents"],
+  ["Automatic — web", "target", "web"],
+  ["JPEG only", "plan-format", "jpeg"],
+  ["WebP only", "plan-format", "webp"],
+  ["AVIF only", "plan-format", "avif"],
 ];
 
 for (const [, f] of IMAGES) {
@@ -46,17 +49,19 @@ try {
     // No second resize: the corpus is already normalised, and a resize would
     // mean each choice was compressing different pixels.
     await pg.evaluate(() => {
-      const md = document.getElementById("maxdim");
-      md.value = "0"; md.dispatchEvent(new Event("change"));
+      // "whatever size they already are" is how not-resizing is spelled now;
+      // the magic 0 in the pixel box is gone.
+      const fit = document.getElementById("plan-fit");
+      fit.value = "none"; fit.dispatchEvent(new Event("change"));
     });
     await new Promise((r) => setTimeout(r, 500));
 
     // First run also pays for codec load; the measured rows come after it.
     await uploadAndFinish(pg, [file], 900_000);
 
-    for (const [label, value] of CHOICES) {
+    for (const [label, control, value] of CHOICES) {
       const before = await pg.evaluate(() => state.settingsRev);
-      await pg.select("#target", value);
+      await pg.select(`#${control}`, value);
       await pg.waitForFunction((rev) => state.settingsRev > rev &&
         ["done", "failed", "saved"].includes(state.items[0].status),
         { timeout: 900000, polling: 250 }, before);
