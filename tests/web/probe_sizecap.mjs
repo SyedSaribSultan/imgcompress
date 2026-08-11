@@ -45,12 +45,15 @@ async function setCap(pg, text) {
       cap.dispatchEvent(new Event("change"));
     }
   }, text);
+  // Wait for the debounced push to land. Asserting the exact byte count here
+  // would mean reimplementing parseSize in the probe; whether a cap is in force
+  // is the fact this needs, and it is the one the engine branches on.
   await pg.waitForFunction(
-    (want) => state.settings.sizeTarget === want,
+    (capped) => (state.settings.sizeTarget > 0) === capped,
     { timeout: 20_000, polling: 100 },
-    text === null ? 0 : undefined,
-  ).catch(() => {});
-  await new Promise((r) => setTimeout(r, 500));
+    text !== null,
+  );
+  await new Promise((r) => setTimeout(r, 200));
 }
 
 async function rerunWith(pg, fn) {
@@ -78,12 +81,21 @@ try {
     fit.dispatchEvent(new Event("change"));
   });
 
-  await uploadAndFinish(pg, [path.join(FIX, "photo.png")], 900_000);
+  /* chromanoise, not photo. photo.png compresses losslessly to well under half
+     its size, so webp-lossless wins outright - and under a cap a lossless
+     encode that fits genuinely *is* the best quality that fits, because nothing
+     beats pixel-identical. Correct behaviour, but it scores null and leaves no
+     quality headroom for a cap to trade against, so the thing this probe exists
+     to measure cannot be observed on it. Grain is what makes lossless
+     expensive and forces a lossy candidate to win. */
+  await uploadAndFinish(pg, [path.join(FIX, "chromanoise.png")], 900_000);
   const free = await pg.evaluate(() => {
     const it = state.items[0];
-    return { bytes: it.newBytes, score: it.score, fmt: it.fmt };
+    return { bytes: it.newBytes, score: it.score, fmt: it.fmt, lossless: !!it.lossless };
   });
   console.log("  uncapped:", JSON.stringify(free));
+  ok(free.score != null,
+     `the fixture leaves quality headroom to trade (score ${free.score}, ${free.fmt})`);
 
   // ---- a reachable cap ----------------------------------------------------
   const cap = Math.round(free.bytes * 1.8);
@@ -96,8 +108,17 @@ try {
   console.log("  under a loose cap:", JSON.stringify(under), "cap was", cap);
   ok(under.bytes <= cap, `the result fits the cap (${under.bytes} <= ${cap})`);
   ok(!under.missed, "and is not reported as a miss");
-  ok(under.score > free.score,
-     `room under the cap is spent on quality (${under.score} > ${free.score})`);
+  /* Going lossless is the honest answer to "the best quality that fits", and
+     it is the answer this fixture gives: with room to spare, nothing beats
+     pixel-identical. It has no score to compare against, so it is a pass on
+     its own terms - and the message has to say which of the two happened,
+     because "null > 92.3" reads like a broken comparison rather than a win. */
+  ok(under.score == null || under.score > free.score,
+     under.score == null
+       ? `room under the cap bought pixel-identical (${under.fmt}, was ${free.fmt} at ${free.score.toFixed(1)})`
+       : `room under the cap is spent on quality (${under.score.toFixed(1)} > ${free.score.toFixed(1)})`);
+  ok(under.bytes > free.bytes,
+     `and that costs bytes it was allowed to spend (${under.bytes} > ${free.bytes})`);
 
   // ---- a tighter cap costs quality ---------------------------------------
   const tight = Math.round(free.bytes * 0.5);
@@ -111,7 +132,7 @@ try {
     ok(true, "the tight cap was unreachable and said so (not a failure of the mode)");
   } else {
     ok(squeezed.bytes <= tight, `the tight result fits too (${squeezed.bytes} <= ${tight})`);
-    ok(squeezed.score < under.score,
+    ok(under.score == null || squeezed.score < under.score,
        `and costs quality against the looser cap (${squeezed.score} < ${under.score})`);
   }
 
