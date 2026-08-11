@@ -289,23 +289,42 @@ function parseSize(text) {
   return value > 0 ? Math.round(value) : 0;
 }
 
-/* Paint each pick's chosen words into the span that gives it its width.
+/* Give each pick the width of the words it is currently showing.
+ *
+ * A <select> is otherwise as wide as its longest option, which turned this
+ * sentence into a column of boxes - "indistinguishable" was sized for
+ * "indistinguishable unless you compare".
+ *
+ * The measuring is done by a hidden span and applied as a width, rather than by
+ * hiding the select behind visible text. That earlier version broke the control
+ * completely: `color: transparent` on a <select> is inherited by its <option>
+ * elements, so the whole open list rendered invisible, and the popup is a native
+ * widget no stylesheet here gets a second chance at. The select is a real
+ * painted control now and only borrows a number from the span.
+ */
+const CARET_ROOM = 26;   // matches the select's right padding, space-6 plus the caret
 
-   Without this every slot is as wide as its own longest option and the
-   sentence collapses into a column of boxes. The select stays where it is and
-   stays native - it is simply transparent, sitting over the words. */
 function fitPicks() {
   for (const sel of document.querySelectorAll(".plan-pick > select")) {
     let shadow = sel.parentNode.querySelector(".plan-shadow");
     if (!shadow) {
       shadow = document.createElement("span");
       shadow.className = "plan-shadow";
-      // The select is the accessible control; this is paint, and announcing it
-      // would read every choice twice.
+      // Hidden and never announced: the select is the control, this is a ruler.
       shadow.setAttribute("aria-hidden", "true");
-      sel.parentNode.insertBefore(shadow, sel);
+      sel.parentNode.appendChild(shadow);
     }
     shadow.textContent = sel.options[sel.selectedIndex]?.textContent ?? "";
+    const words = shadow.getBoundingClientRect().width;
+    /* An element inside a hidden ancestor measures zero, and writing that
+       collapses the control to nothing but its caret. That is exactly what
+       happened on first paint: loadSettings fits the picks while #bar-controls
+       is still inside the hidden #panel, before mountPlan has moved it out to
+       the landing screen. So a zero is not a measurement - leave the natural
+       width in place and let a later call do the real fitting. */
+    if (words <= 0) continue;
+    // Ceil, because a fractional text width rounded down clips the last glyph.
+    sel.style.width = `${Math.ceil(words) + CARET_ROOM}px`;
   }
 }
 
@@ -965,7 +984,13 @@ function render() {
 function mountPlan() {
   const plan = $("bar-controls");
   const home = $(state.items.length ? "plan-home-panel" : "plan-home-empty");
-  if (plan && home && plan.parentNode !== home) home.appendChild(plan);
+  if (plan && home && plan.parentNode !== home) {
+    home.appendChild(plan);
+    // The picks can only be measured where they are visible, and this is the
+    // moment they become so. Both homes are laid out differently, so a move is
+    // always a reason to measure again.
+    fitPicks();
+  }
 }
 
 /* --------------------------- which view is on ----------------------------
@@ -2831,5 +2856,12 @@ applyTheme(currentThemePref());
 renderLifetime();
 bind();
 render();
+/* render() has mounted the plan somewhere visible, so the picks can finally be
+   measured - but text width depends on the face actually drawing it, and the
+   webfonts are still in flight. Fit once more when they land, or every pick
+   stays sized for a fallback nobody is looking at. */
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(fitPicks).catch(() => {});
+}
 animateSizeDemo();
 startEngine();

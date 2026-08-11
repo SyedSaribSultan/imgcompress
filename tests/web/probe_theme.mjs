@@ -105,7 +105,10 @@ try {
      its own longest option. */
   const planned = await pg.evaluate(() => {
     const out = { heights: [], tops: [] };
-    for (const el of document.querySelectorAll("#plan .plan-shadow, #plan .plan-num")) {
+    /* The selects and the number boxes - the things actually on screen.
+       .plan-shadow is a hidden ruler now, not a label, so measuring it here
+       compared a control against a measuring stick. */
+    for (const el of document.querySelectorAll("#plan .plan-pick > select, #plan .plan-num")) {
       if (el.offsetParent === null) continue;
       const r = el.getBoundingClientRect();
       out.heights.push(Math.round(r.height));
@@ -123,6 +126,97 @@ try {
      wobbled. Words on one line either share a height or they do not. */
   ok(new Set(planned.heights).size === 1,
      `the plan's picks share a height (${[...new Set(planned.heights)].join(", ")})`);
+
+  /* Each pick has to be wide enough for the words it is showing. Sizing a
+     select to its selected option needs a measurement, and a measurement taken
+     while the element sits inside a hidden ancestor comes back zero - which got
+     written straight into the widths and collapsed every pick to nothing but
+     its caret. Too narrow and too wide are both failures here: too narrow
+     clips, too wide is the column-of-boxes this component exists to avoid. */
+  const widths = await pg.evaluate(() => {
+    const out = [];
+    for (const sel of document.querySelectorAll(".plan-pick > select")) {
+      const sh = sel.parentNode.querySelector(".plan-shadow");
+      const measure = (t) => { sh.textContent = t; return sh.getBoundingClientRect().width; };
+      const chosen = (sel.options[sel.selectedIndex] || {}).textContent || "";
+      const selected = measure(chosen);
+      let longest = 0, longestText = "";
+      for (const o of sel.options) {
+        const w = measure(o.textContent);
+        if (w > longest) { longest = w; longestText = o.textContent; }
+      }
+      measure(chosen);                       // leave the ruler as it was found
+      out.push({
+        id: sel.id, text: chosen, longestText,
+        selected: Math.round(selected), longest: Math.round(longest),
+        box: Math.round(sel.getBoundingClientRect().width),
+      });
+    }
+    return out;
+  });
+  console.log("  pick widths:", JSON.stringify(widths));
+  for (const w of widths) {
+    ok(w.selected > 0 && w.box >= w.selected,
+       `#${w.id} fits "${w.text}" (${w.box}px box, ${w.selected}px of text)`);
+    /* 60px is the control's own chrome - its padding plus the caret - measured
+       rather than guessed. The first version of this check used an invented 44
+       and failed three picks that were sized perfectly well. */
+    ok(w.box - w.selected <= 60,
+       `#${w.id} adds only its own chrome (${w.box} - ${w.selected} = ${w.box - w.selected})`);
+    /* The real regression guard: a <select> left to itself is as wide as its
+       longest option, which is what turned this sentence into a column of
+       boxes. Skipped where every option is about the same length, because then
+       the two are indistinguishable and the check would prove nothing. */
+    if (w.longest > w.selected + 40) {
+      ok(w.box < w.longest,
+         `#${w.id} is sized to its selection, not to "${w.longestText}" `
+         + `(${w.box} < ${w.longest})`);
+    }
+  }
+
+  /* ---- the OPEN list, which is where this component actually broke --------
+   * A `color: transparent` on the select shipped to main. <option> inherits it,
+   * so every entry in every dropdown rendered invisible, and a `background:
+   * transparent` alongside it got Chrome to draw the popup as an unstyled white
+   * sheet over a dark page. Nothing caught it: every test drove these controls
+   * with page.select(), which sets a value and never opens the popup, and the
+   * screenshots were all of the closed state.
+   *
+   * The popup is a native widget and cannot be screenshotted. Its colours can
+   * be read, and unreadable text is exactly "the glyphs are the same colour as
+   * the sheet behind them" - so that is what this asserts, for every option of
+   * every pick, in both themes. */
+  const invisible = (c) => !c || c === "transparent" || /rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)/.test(c);
+  for (const theme of ["dark", "light"]) {
+    await pg.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
+    await new Promise((r) => setTimeout(r, 250));
+    const lists = await pg.evaluate(() => {
+      const out = [];
+      for (const sel of document.querySelectorAll(".plan-pick > select")) {
+        const cs = getComputedStyle(sel);
+        out.push({
+          id: sel.id,
+          selColor: cs.color,
+          count: sel.options.length,
+          rows: [...sel.options].map((o) => {
+            const os = getComputedStyle(o);
+            return { text: o.textContent.slice(0, 24), color: os.color, bg: os.backgroundColor };
+          }),
+        });
+      }
+      return out;
+    });
+    ok(lists.length >= 4, `${theme}: the picks were found (${lists.length})`);
+    for (const list of lists) {
+      ok(!invisible(list.selColor),
+         `${theme}: #${list.id} paints its own text (${list.selColor})`);
+      const dead = list.rows.filter((r) => invisible(r.color) || r.color === r.bg);
+      ok(dead.length === 0,
+         `${theme}: every option in #${list.id} is legible (${list.count} options`
+         + `${dead.length ? `, unreadable: ${JSON.stringify(dead)}` : ""})`);
+    }
+  }
+  await pg.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
 
   /* ---- the toast must never cover something clickable ------------------- */
   await pg.evaluate(() => toast("A message long enough to be worth reading"));

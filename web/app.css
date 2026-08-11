@@ -665,7 +665,24 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
    keyboard, the screen reader and the phone's own picker all behave exactly as
    they would have. Only the width comes from somewhere else. */
 .plan-pick { position: relative; display: inline-block; max-width: 100%; }
-.plan-shadow,
+
+/* A measuring stick, not a label.
+ *
+ * This span used to BE the visible text, with the real select laid over it
+ * transparent. That broke the control outright: `color: transparent` is
+ * inherited by <option>, so every entry in the open dropdown rendered
+ * invisible, and `background: transparent` made Chrome paint the popup as an
+ * unstyled white sheet on a dark page. A native popup is drawn by the browser
+ * from the control's own colours - override them to fake an inline look and you
+ * are overriding the list nobody can then read.
+ *
+ * So the select stays a real, visible, painted control and only borrows its
+ * WIDTH from here. Hidden, unmeasured by the a11y tree, never read. */
+.plan-shadow {
+  position: absolute; visibility: hidden; pointer-events: none;
+  left: 0; top: 0; white-space: nowrap;
+  font-weight: var(--oz-weight-semibold);
+}
 .plan-num {
   display: inline-block;
   font-weight: var(--oz-weight-semibold);
@@ -676,11 +693,9 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   transition: border-color var(--oz-duration-fast) var(--oz-ease-standard),
               background var(--oz-duration-fast) var(--oz-ease-standard);
 }
-/* Room for the caret, which hangs off the end of the words rather than sitting
-   in a box with them. Sized to actually read as a caret: at 2.5px of border it
-   rendered as a stray middot, which looked like punctuation the sentence had
-   picked up rather than a control. */
-.plan-shadow { padding-right: var(--oz-space-6); }
+/* The caret hangs off the end of the words rather than sitting in a box with
+   them. Sized to actually read as a caret: at 2.5px of border it rendered as a
+   stray middot, which looked like punctuation the sentence had picked up. */
 .plan-pick::after {
   content: ""; position: absolute; pointer-events: none;
   right: var(--oz-space-2); top: 50%; margin-top: -2px;
@@ -691,10 +706,30 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 }
 .plan-pick:hover::after { border-top-color: var(--oz-color-border-brand); }
 .plan-pick > select {
-  position: absolute; inset: 0; width: 100%; height: 100%;
   appearance: none; -webkit-appearance: none;
-  font: inherit; color: transparent; background: transparent; border: 0;
+  font: inherit;
+  font-weight: var(--oz-weight-semibold);
+  color: var(--oz-color-content-primary);
+  /* A real colour, not `transparent`. Chrome reads an author background on a
+     <select> as permission to stop theming its popup, and `transparent` got it
+     drawn as a white sheet over a dark page. */
+  background-color: var(--oz-color-surface-primary-variant);
+  border: 0;
+  border-bottom: var(--oz-stroke-3) solid var(--oz-color-border-brand-secondary);
+  padding: 0 var(--oz-space-6) var(--oz-space-1) var(--oz-space-1);
+  max-width: 100%;
   cursor: pointer;
+  transition: border-color var(--oz-duration-fast) var(--oz-ease-standard),
+              background-color var(--oz-duration-fast) var(--oz-ease-standard);
+}
+/* The open list is a native widget drawn from the control's colours and from
+   color-scheme, not from anything scoped to this component. Stating both
+   explicitly here is what keeps it readable in either theme whatever the
+   closed-state styling above does. */
+.plan-pick > select option {
+  color: var(--oz-color-content-primary);
+  background-color: var(--oz-color-surface-elevated);
+  font-weight: var(--oz-weight-regular);
 }
 .plan-num {
   appearance: none; -webkit-appearance: none;
@@ -711,14 +746,12 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   width: 6ch;
 }
 #plan-cap { width: 7ch; }
-.plan-pick:hover .plan-shadow,
+.plan-pick > select:hover,
 .plan-num:hover {
-  background: var(--oz-color-fill-brand-secondary);
+  background-color: var(--oz-color-fill-brand-secondary);
   border-bottom-color: var(--oz-color-border-brand);
 }
-/* The ring goes on the painted words, because the select itself is invisible
-   and an outline on a transparent box lands in the wrong place. */
-.plan-pick:focus-within .plan-shadow,
+.plan-pick > select:focus-visible,
 .plan-num:focus-visible {
   outline: var(--oz-focus-ring-width) solid var(--oz-color-border-focus);
   outline-offset: var(--oz-focus-ring-offset);
