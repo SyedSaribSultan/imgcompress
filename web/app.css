@@ -253,9 +253,18 @@ a:hover { text-decoration-color: var(--oz-color-border-brand); }
 .btn.sm { min-height: var(--app-control-h-sm); padding: 0 var(--oz-space-3); font-size: var(--oz-text-body-xs); }
 /* Shortcut hints ride on the button that performs the action, which is where
    people actually learn them. */
+/* Recessive, but still legible as a key. With no separation and no outline the
+   hint merged into the word beside it and "Split Space" read as the name of a
+   mode called Split Space rather than Split, shortcut Space. A hairline at low
+   opacity is enough to say "this is a key" without turning the toolbar into a
+   row of keycaps. */
 .btn kbd, .segmented kbd {
-  background: transparent; padding: 0 0 0 var(--oz-space-2);
-  color: currentColor; opacity: .6; font-size: var(--oz-text-label-xs);
+  background: transparent;
+  margin-left: var(--oz-space-2);
+  padding: 0 var(--oz-space-1);
+  border: var(--oz-stroke-1) solid currentColor;
+  border-radius: var(--oz-radius-2);
+  color: currentColor; opacity: .45; font-size: var(--oz-text-label-xs);
 }
 .btn.primary kbd { opacity: .72; }
 

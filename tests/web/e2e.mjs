@@ -441,9 +441,18 @@ try {
     ok(logo.warnings.some((w) => /transparen/i.test(w)),
        `and the reason is stated (${JSON.stringify(logo.warnings)})`);
 
-    // Back to automatic for the rest of the suite.
+    /* Back to automatic for the rest of the suite - and releasing the pin is
+       now its own step. Format and destination used to be one control, so
+       choosing a destination cleared the format as a side effect. They are
+       separate axes now: a format someone pinned survives a change of
+       destination, because changing where an image is going is not a reason to
+       silently stop writing the format they asked for. The next block needs the
+       full bake-off, so it has to say so. */
     const rev2 = await page.evaluate(() => state.settingsRev);
     await page.evaluate(() => {
+      const f = document.getElementById("plan-format");
+      f.value = "";
+      f.dispatchEvent(new Event("change"));
       const t = document.getElementById("target");
       t.value = "documents";
       t.dispatchEvent(new Event("change"));
