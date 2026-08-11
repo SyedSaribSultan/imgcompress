@@ -700,7 +700,12 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   appearance: none; -webkit-appearance: none;
   background: transparent; border-top: 0; border-left: 0; border-right: 0;
   font-family: var(--oz-font-mono);
-  font-size: var(--oz-text-body-sm);
+  /* Same size as the words it sits between, deliberately. A step down for the
+     mono face left this box 4px shorter than its neighbours and 2px off their
+     baseline, which on one line of prose reads as a wobble rather than as a
+     smaller number. Mono runs large at a given size; here that is welcome,
+     because the figure is the part of the clause carrying the value. */
+  font-size: inherit;
   text-align: center;
   cursor: text;
   width: 6ch;

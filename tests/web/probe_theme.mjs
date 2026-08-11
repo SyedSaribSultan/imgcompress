@@ -75,7 +75,12 @@ try {
   await pg.evaluate(() => document.getElementById("insp-toggle").click());
   await new Promise((r) => setTimeout(r, 600));
 
-  const WANT = ["#target", "#quality-preset", "#maxdim", "#ov-format", "#dl-one",
+  /* Boxed controls in a row. The plan's own picks are deliberately not in this
+     list any more: they are words inside a sentence, sized to the words, and
+     forcing them all to one height would put them back in boxes and undo the
+     thing the sentence exists to be. They get their own check below, against
+     each other, which is where consistency actually matters for them. */
+  const WANT = ["#ov-format", "#ov-quality", "#dl-one",
                 "#copy-one", "#save-btn", "#insp-toggle", "#ov-apply"];
   const heights = await pg.evaluate((sels) => {
     const out = {};
@@ -92,6 +97,32 @@ try {
        Object.keys(heights).join(", ") || "none"})`);
   const hs = [...new Set(Object.values(heights))];
   ok(hs.length <= 2, `controls share a height (${hs.join(", ")})`);
+
+  /* The plan's picks answer to a different rule: they sit on one line of prose,
+     so what has to match is each other and the text around them. A pick taller
+     than its neighbours pushes the line apart and the sentence stops reading as
+     a sentence - which is exactly what happened when every slot was sized to
+     its own longest option. */
+  const planned = await pg.evaluate(() => {
+    const out = { heights: [], tops: [] };
+    for (const el of document.querySelectorAll("#plan .plan-shadow, #plan .plan-num")) {
+      if (el.offsetParent === null) continue;
+      const r = el.getBoundingClientRect();
+      out.heights.push(Math.round(r.height));
+      out.tops.push(Math.round(r.top));
+    }
+    return out;
+  });
+  console.log("  plan pick heights:", JSON.stringify(planned));
+  ok(planned.heights.length >= 4,
+     `the plan's picks were visible to compare (${planned.heights.length})`);
+  /* Exactly one height, not "at most two". Two was what this allowed when it
+     was first written, and two was what it found: the pixel box carried a
+     smaller font size and came out 4px shorter, sitting 2px off the pick beside
+     it on the same line. The assertion went green and the sentence still
+     wobbled. Words on one line either share a height or they do not. */
+  ok(new Set(planned.heights).size === 1,
+     `the plan's picks share a height (${[...new Set(planned.heights)].join(", ")})`);
 
   /* ---- the toast must never cover something clickable ------------------- */
   await pg.evaluate(() => toast("A message long enough to be worth reading"));
