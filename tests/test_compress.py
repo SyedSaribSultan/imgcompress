@@ -134,7 +134,7 @@ class EncoderTests(unittest.TestCase):
 class DestinationTests(unittest.TestCase):
     """The table is a promise about where an image is going. Pin all of it.
 
-    These same five entries are duplicated in `web/worker.js`, `web/app.js` and
+    These same five entries are duplicated in `web/worker.js`, `web/destinations.js` and
     the desktop UI, which cannot be checked from here - but the Python side is
     the reference, so at least it cannot drift on its own.
     """

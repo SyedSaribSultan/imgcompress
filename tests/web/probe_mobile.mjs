@@ -41,12 +41,11 @@ try {
   await pg.waitForFunction(() => state.items.every((i) =>
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   await new Promise((r) => setTimeout(r, 600));
-  /* Two files, so this lands on the list. Open one, then open its panel: the
-     chips are the primary control and they live in the drawer now, and a
-     control measured while it is shut measures 0px and passes nothing. */
-  await pg.evaluate(() => selectItem(state.items[0].id));
-  await new Promise((r) => setTimeout(r, 400));
-  await pg.evaluate(() => document.getElementById("insp-toggle").click());
+  /* Select one image. There is no drawer to open first any more - the chips are in
+     a region of the page that is always present, which is the whole reason a
+     measurement here is worth taking: a control measured while it was shut
+     measured 0px and passed nothing. */
+  await pg.evaluate(() => imgc.select(state.items[0].id));
   await new Promise((r) => setTimeout(r, 600));
   await pg.screenshot({ path: path.join(here, "shot-studio-mobile.png"), fullPage: true });
 
@@ -56,7 +55,8 @@ try {
     /* The chip strip scrolls sideways inside itself on purpose, so it is
        exempt from the overhang check - what matters is that it does not push
        the page wide, which the first line below measures. */
-    for (const el of document.querySelectorAll("#app-full *")) {
+    // The whole dashboard, since there is no separate app shell to scope to.
+    for (const el of document.querySelectorAll("#dash *")) {
       if (el.closest("#cands")) continue;
       const r = el.getBoundingClientRect();
       if (r.width > 0 && (r.right > doc.clientWidth + 1 || r.left < -1)) {
@@ -64,7 +64,7 @@ try {
                   `${Math.round(r.left)}..${Math.round(r.right)}`);
       }
     }
-    const chips = [...document.querySelectorAll("#cands .cand")];
+    const chips = [...document.querySelectorAll("#cands .chip")];
     return {
       pageScrollsSideways: doc.scrollWidth > doc.clientWidth,
       viewport: doc.clientWidth,
@@ -73,7 +73,9 @@ try {
       // The system's coarse-pointer floor is 44px; anything under it is a miss
       // waiting to happen on the control the whole redesign rests on.
       chipHeights: chips.map((c) => Math.round(c.getBoundingClientRect().height)),
-      narrationVisible: !!document.getElementById("narration").textContent.trim(),
+      // The result is stated in words as well as drawn - the sentence moved from
+      // the stage to the block the chips live in.
+      narrationVisible: !!document.getElementById("chip-why").textContent.trim(),
     };
   });
   console.log(JSON.stringify(fit, null, 1));

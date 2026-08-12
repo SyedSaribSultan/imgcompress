@@ -43,9 +43,15 @@ try {
   const report = await pg.evaluate(() => {
     const out = [];
     const stage = document.getElementById("stage");
-    const vp = document.getElementById("viewport");
+    /* The transformed layer used to be #viewport and is #frame since the UI was
+       rebuilt. Same thing: the box that holds both images at natural size and
+       carries the zoom. `zoom` and `pan` were script globals when the app was one
+       classic script; they are module state now and come through the harness seam
+       the app declares for exactly this. */
+    const vp = document.getElementById("frame");
     const snap = (label) => {
       const s = stage.getBoundingClientRect(), v = vp.getBoundingClientRect();
+      const zoom = imgc.zoom(), pan = imgc.pan();
       out.push({
         label, zoom, pan: { x: Math.round(pan.x), y: Math.round(pan.y) },
         stage: `${Math.round(s.width)}x${Math.round(s.height)} @${Math.round(s.top)}`,

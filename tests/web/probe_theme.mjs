@@ -1,7 +1,21 @@
-/* Visual verification of the design pass: both themes, and proof that the
- * app-level scale actually resolves. A custom property that references itself
- * is invalid at computed-value time and silently falls back - which is exactly
- * what a careless find-and-replace across a token file produces. */
+/* Both colour schemes, and proof that every surface actually changes with them.
+ *
+ * REWRITTEN for the reset UI. This used to verify the `--app-*` scale resolved to
+ * real lengths, that controls shared a height across the design system, that the
+ * inline plan sentence's selects were sized to their own words, and that the theme
+ * button cycled dark/light/auto. All four of those subjects are gone: the browser
+ * app no longer reads the --oz- and --app- token layer (that now serves only the
+ * desktop app, and tests/web/verify_tokens.mjs checks it there), the plan is
+ * labelled fields rather than a measured sentence, and there is no theme button -
+ * the page follows the reader's own setting.
+ *
+ * What survives is the part that was never about the token layer: in each scheme,
+ * is anything unreadable, and does the page actually respond to the setting at all.
+ * The second question is the one worth asking mechanically. A palette defined only
+ * inside a `prefers-color-scheme: dark` block leaves light mode falling back to
+ * whatever the browser does, and a page that ignores the media query entirely looks
+ * fine in whichever scheme the developer happens to use.
+ */
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,238 +32,135 @@ const b = await puppeteer.launch({
 let bad = 0;
 const ok = (c, n) => { if (c) console.log(`  ok ${n}`); else { console.error(`FAIL ${n}`); bad++; } };
 
+/** sRGB relative luminance, for a contrast ratio that means something. */
+function luminance(rgb) {
+  const [r, g, b_] = rgb.map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b_;
+}
+function contrast(a, b_) {
+  const la = luminance(a), lb = luminance(b_);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+const parse = (css) => {
+  const m = String(css).match(/rgba?\(([^)]+)\)/);
+  if (!m) return null;
+  const parts = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+  return parts.slice(0, 3);
+};
+
+/* Text that has to be legible, and the surface each sits on. Body text is held to
+   4.5:1 and the quiet metadata to 3:1 - it is small-but-secondary, and holding it
+   to the body ratio would mean it could not be quiet at all. */
+const TEXT_TARGETS = [
+  { sel: "#plan-h", min: 3, what: "a region heading" },
+  { sel: '#plan-fields label[for="target"]', min: 4.5, what: "a field label" },
+  { sel: "#quality-note", min: 3, what: "the plan's summary" },
+  { sel: "#queue-list .row .name", min: 4.5, what: "a filename in the list" },
+  { sel: "#queue-list .row .sub", min: 3, what: "a row's result line" },
+  { sel: "#cands .chip .cf", min: 4.5, what: "a chip's format" },
+  { sel: "#cands .chip .cb", min: 3, what: "a chip's size" },
+  { sel: "#measured .stats .v", min: 4.5, what: "a measured value" },
+  { sel: "#measured .stats .k", min: 3, what: "a measured value's label" },
+  { sel: "#chip-why", min: 3, what: "the sentence explaining the pick" },
+];
+
 try {
-  const pg = await b.newPage();
-  await pg.setViewport({ width: 1440, height: 940 });
-  const errs = [];
-  pg.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); });
-  pg.on("pageerror", (e) => errs.push(String(e)));
-  await pg.goto("http://127.0.0.1:8196/", { waitUntil: "networkidle0" });
+  const seen = {};
+  for (const scheme of ["light", "dark"]) {
+    console.log(`\n=== ${scheme} ===`);
+    const pg = await b.newPage();
+    await pg.setViewport({ width: 1440, height: 940 });
+    const errs = [];
+    pg.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); });
+    pg.on("pageerror", (e) => errs.push(String(e)));
+    // The setting comes from the reader, so it is emulated rather than clicked.
+    await pg.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
+    await pg.goto("http://127.0.0.1:8196/", { waitUntil: "networkidle0" });
 
-  // ---- the scale resolves to real lengths -------------------------------
-  const scale = await pg.evaluate(() => {
-    const cs = getComputedStyle(document.documentElement);
-    const names = ["--app-radius-sm", "--app-radius-md", "--app-radius-lg",
-                   "--app-radius-pill", "--app-control-h", "--app-control-h-sm",
-                   "--app-gap-tight"];
-    return Object.fromEntries(names.map((n) => [n, cs.getPropertyValue(n).trim()]));
-  });
-  console.log("  scale:", JSON.stringify(scale));
-  for (const [n, v] of Object.entries(scale)) {
-    ok(/^\d+(\.\d+)?px$/.test(v), `${n} resolves to a length (${v || "EMPTY"})`);
-  }
+    await uploadAndFinish(pg, [path.join(FIX, "photo.png"), path.join(FIX, "ui.png")], 900_000);
+    await pg.evaluate(() => imgc.select(state.items[0].id));
+    await new Promise((r) => setTimeout(r, 700));
 
-  await uploadAndFinish(pg, [path.join(FIX, "photo.png"), path.join(FIX, "ui.png")], 900_000);
-  await pg.evaluate(() => selectItem(state.items[0].id));
-  await new Promise((r) => setTimeout(r, 600));
-
-  // ---- corners actually painted ------------------------------------------
-  const corners = await pg.evaluate(() => {
-    const seen = {};
-    for (const el of document.querySelectorAll("*")) {
-      const cs = getComputedStyle(el);
-      if (cs.display === "none") continue;
-      const r = cs.borderTopLeftRadius;
-      if (r && r !== "0px" && el.getBoundingClientRect().width > 0) {
-        seen[r] = (seen[r] || 0) + 1;
-      }
-    }
-    return seen;
-  });
-  console.log("  painted corner radii:", JSON.stringify(corners));
-  const distinct = Object.keys(corners).filter((k) => !k.includes("%"));
-  ok(distinct.length <= 5,
-     `corners collapse to a small set (${distinct.length}: ${distinct.join(", ")})`);
-
-  /* ---- controls share a height ------------------------------------------
-     The panel has to be open before this means anything. Most controls live
-     in it now, and the measurement skips anything with `offsetParent === null`
-     - so with the drawer shut this found exactly one control and reported that
-     it shared a height with itself. A check that quietly shrinks to nothing is
-     the failure mode this suite keeps turning up, so the count is asserted
-     too: it cannot pass over an almost-empty set again. */
-  await pg.evaluate(() => {
-    if (state.items.length) selectItem(state.items[0].id);
-  });
-  await new Promise((r) => setTimeout(r, 400));
-  await pg.evaluate(() => document.getElementById("insp-toggle").click());
-  await new Promise((r) => setTimeout(r, 600));
-
-  /* Boxed controls in a row. The plan's own picks are deliberately not in this
-     list any more: they are words inside a sentence, sized to the words, and
-     forcing them all to one height would put them back in boxes and undo the
-     thing the sentence exists to be. They get their own check below, against
-     each other, which is where consistency actually matters for them. */
-  const WANT = ["#ov-format", "#ov-quality", "#dl-one",
-                "#copy-one", "#save-btn", "#insp-toggle", "#ov-apply"];
-  const heights = await pg.evaluate((sels) => {
-    const out = {};
-    for (const sel of sels) {
-      const el = document.querySelector(sel);
-      if (el && el.offsetParent !== null) out[sel] = Math.round(el.getBoundingClientRect().height);
-    }
-    return out;
-  }, WANT);
-  console.log("  control heights:", JSON.stringify(heights));
-  const found = Object.keys(heights).length;
-  ok(found >= 5,
-     `enough controls were visible to compare (${found} of ${WANT.length}: ${
-       Object.keys(heights).join(", ") || "none"})`);
-  const hs = [...new Set(Object.values(heights))];
-  ok(hs.length <= 2, `controls share a height (${hs.join(", ")})`);
-
-  /* The plan's picks answer to a different rule: they sit on one line of prose,
-     so what has to match is each other and the text around them. A pick taller
-     than its neighbours pushes the line apart and the sentence stops reading as
-     a sentence - which is exactly what happened when every slot was sized to
-     its own longest option. */
-  const planned = await pg.evaluate(() => {
-    const out = { heights: [], tops: [] };
-    /* The selects and the number boxes - the things actually on screen.
-       .plan-shadow is a hidden ruler now, not a label, so measuring it here
-       compared a control against a measuring stick. */
-    for (const el of document.querySelectorAll("#plan .plan-pick > select, #plan .plan-num")) {
-      if (el.offsetParent === null) continue;
-      const r = el.getBoundingClientRect();
-      out.heights.push(Math.round(r.height));
-      out.tops.push(Math.round(r.top));
-    }
-    return out;
-  });
-  console.log("  plan pick heights:", JSON.stringify(planned));
-  ok(planned.heights.length >= 4,
-     `the plan's picks were visible to compare (${planned.heights.length})`);
-  /* Exactly one height, not "at most two". Two was what this allowed when it
-     was first written, and two was what it found: the pixel box carried a
-     smaller font size and came out 4px shorter, sitting 2px off the pick beside
-     it on the same line. The assertion went green and the sentence still
-     wobbled. Words on one line either share a height or they do not. */
-  ok(new Set(planned.heights).size === 1,
-     `the plan's picks share a height (${[...new Set(planned.heights)].join(", ")})`);
-
-  /* Each pick has to be wide enough for the words it is showing. Sizing a
-     select to its selected option needs a measurement, and a measurement taken
-     while the element sits inside a hidden ancestor comes back zero - which got
-     written straight into the widths and collapsed every pick to nothing but
-     its caret. Too narrow and too wide are both failures here: too narrow
-     clips, too wide is the column-of-boxes this component exists to avoid. */
-  const widths = await pg.evaluate(() => {
-    const out = [];
-    for (const sel of document.querySelectorAll(".plan-pick > select")) {
-      const sh = sel.parentNode.querySelector(".plan-shadow");
-      const measure = (t) => { sh.textContent = t; return sh.getBoundingClientRect().width; };
-      const chosen = (sel.options[sel.selectedIndex] || {}).textContent || "";
-      const selected = measure(chosen);
-      let longest = 0, longestText = "";
-      for (const o of sel.options) {
-        const w = measure(o.textContent);
-        if (w > longest) { longest = w; longestText = o.textContent; }
-      }
-      measure(chosen);                       // leave the ruler as it was found
-      out.push({
-        id: sel.id, text: chosen, longestText,
-        selected: Math.round(selected), longest: Math.round(longest),
-        box: Math.round(sel.getBoundingClientRect().width),
-      });
-    }
-    return out;
-  });
-  console.log("  pick widths:", JSON.stringify(widths));
-  for (const w of widths) {
-    ok(w.selected > 0 && w.box >= w.selected,
-       `#${w.id} fits "${w.text}" (${w.box}px box, ${w.selected}px of text)`);
-    /* 60px is the control's own chrome - its padding plus the caret - measured
-       rather than guessed. The first version of this check used an invented 44
-       and failed three picks that were sized perfectly well. */
-    ok(w.box - w.selected <= 60,
-       `#${w.id} adds only its own chrome (${w.box} - ${w.selected} = ${w.box - w.selected})`);
-    /* The real regression guard: a <select> left to itself is as wide as its
-       longest option, which is what turned this sentence into a column of
-       boxes. Skipped where every option is about the same length, because then
-       the two are indistinguishable and the check would prove nothing. */
-    if (w.longest > w.selected + 40) {
-      ok(w.box < w.longest,
-         `#${w.id} is sized to its selection, not to "${w.longestText}" `
-         + `(${w.box} < ${w.longest})`);
-    }
-  }
-
-  /* ---- the OPEN list, which is where this component actually broke --------
-   * A `color: transparent` on the select shipped to main. <option> inherits it,
-   * so every entry in every dropdown rendered invisible, and a `background:
-   * transparent` alongside it got Chrome to draw the popup as an unstyled white
-   * sheet over a dark page. Nothing caught it: every test drove these controls
-   * with page.select(), which sets a value and never opens the popup, and the
-   * screenshots were all of the closed state.
-   *
-   * The popup is a native widget and cannot be screenshotted. Its colours can
-   * be read, and unreadable text is exactly "the glyphs are the same colour as
-   * the sheet behind them" - so that is what this asserts, for every option of
-   * every pick, in both themes. */
-  const invisible = (c) => !c || c === "transparent" || /rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)/.test(c);
-  for (const theme of ["dark", "light"]) {
-    await pg.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
-    await new Promise((r) => setTimeout(r, 250));
-    const lists = await pg.evaluate(() => {
-      const out = [];
-      for (const sel of document.querySelectorAll(".plan-pick > select")) {
-        const cs = getComputedStyle(sel);
-        out.push({
-          id: sel.id,
-          selColor: cs.color,
-          count: sel.options.length,
-          rows: [...sel.options].map((o) => {
-            const os = getComputedStyle(o);
-            return { text: o.textContent.slice(0, 24), color: os.color, bg: os.backgroundColor };
-          }),
+    const read = await pg.evaluate((targets) => {
+      const surfaceOf = (el) => {
+        // Walk up to the first ancestor that actually paints a background.
+        for (let n = el; n; n = n.parentElement) {
+          const bg = getComputedStyle(n).backgroundColor;
+          const m = bg.match(/rgba?\(([^)]+)\)/);
+          if (!m) continue;
+          const parts = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+          if (parts.length < 4 || parts[3] > 0.9) return bg;
+        }
+        return getComputedStyle(document.body).backgroundColor;
+      };
+      const out = { body: {}, items: [] };
+      const bodyCs = getComputedStyle(document.body);
+      out.body = { bg: bodyCs.backgroundColor, fg: bodyCs.color };
+      for (const t of targets) {
+        const el = document.querySelector(t.sel);
+        if (!el) { out.items.push({ ...t, missing: true }); continue; }
+        out.items.push({
+          ...t, missing: false,
+          fg: getComputedStyle(el).color,
+          bg: surfaceOf(el),
         });
       }
+      /* Every distinct background actually painted in the dashboard, so "the page
+         responds to the setting" is measured across surfaces rather than on body
+         alone - a palette half-defined in a media block moves one and not the
+         others. */
+      out.surfaces = [...new Set(
+        [...document.querySelectorAll("#bar, #side, #stage, #facts, .chip, .btn")]
+          .map((e) => getComputedStyle(e).backgroundColor)
+          // A transparent background has no colour to move, so comparing it across
+          // schemes proves nothing. `.btn.quiet` is deliberately transparent.
+          .filter((c) => !/rgba\([^)]*,\s*0\s*\)$/.test(c)))];
       return out;
-    });
-    ok(lists.length >= 4, `${theme}: the picks were found (${lists.length})`);
-    for (const list of lists) {
-      ok(!invisible(list.selColor),
-         `${theme}: #${list.id} paints its own text (${list.selColor})`);
-      const dead = list.rows.filter((r) => invisible(r.color) || r.color === r.bg);
-      ok(dead.length === 0,
-         `${theme}: every option in #${list.id} is legible (${list.count} options`
-         + `${dead.length ? `, unreadable: ${JSON.stringify(dead)}` : ""})`);
-    }
-  }
-  await pg.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+    }, TEXT_TARGETS);
 
-  /* ---- the toast must never cover something clickable ------------------- */
-  await pg.evaluate(() => toast("A message long enough to be worth reading"));
-  await new Promise((r) => setTimeout(r, 500));
-  const hidden = await pg.evaluate(() => {
-    const t = document.getElementById("toast").getBoundingClientRect();
-    const hit = [];
-    // Real controls only. Scroll containers carry a tabindex for keyboard
-    // scrolling and are not something a toast can "cover".
-    for (const el of document.querySelectorAll("button, select, input, a[href]")) {
-      if (el.offsetParent === null) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width === 0) continue;
-      if (r.left < t.right && r.right > t.left && r.top < t.bottom && r.bottom > t.top) {
-        hit.push(`${el.tagName.toLowerCase()}#${el.id || el.className}`);
-      }
-    }
-    return hit;
-  });
-  ok(hidden.length === 0, `the toast covers no control (${hidden.join(", ") || "clear"})`);
+    seen[scheme] = read;
+    console.log(`  body ${read.body.bg} on ${read.body.fg}`);
+    console.log(`  surfaces: ${read.surfaces.join(" | ")}`);
 
-  // ---- both themes -------------------------------------------------------
-  for (const theme of ["dark", "light"]) {
-    await pg.evaluate((t) => { document.documentElement.dataset.theme = t; }, theme);
-    await new Promise((r) => setTimeout(r, 500));
-    await pg.screenshot({ path: path.join(here, `shot-theme-${theme}.png`) });
-    const bg = await pg.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    const fg = await pg.evaluate(() => getComputedStyle(document.body).color);
-    console.log(`  ${theme}: bg ${bg} fg ${fg}`);
-    ok(bg !== fg, `${theme} mode has contrast between page and text`);
+    const missing = read.items.filter((i) => i.missing);
+    ok(missing.length === 0,
+       `${scheme}: every measured surface was found (${missing.map((m) => m.sel).join(", ") || "all"})`);
+
+    for (const i of read.items.filter((x) => !x.missing)) {
+      const fg = parse(i.fg), bg = parse(i.bg);
+      if (!fg || !bg) { ok(false, `${scheme}: could not read colours for ${i.what}`); continue; }
+      const ratio = contrast(fg, bg);
+      ok(ratio >= i.min,
+         `${scheme}: ${i.what} is legible (${ratio.toFixed(2)}:1, want ${i.min}:1)`);
+    }
+
+    ok(errs.length === 0,
+       `${scheme}: no console errors${errs.length ? ": " + errs.join(" | ") : ""}`);
+    await pg.screenshot({ path: path.join(here, `shot-theme-${scheme}.png`) });
+    await pg.close();
   }
 
-  ok(errs.length === 0, `no console errors${errs.length ? ": " + errs.join(" | ") : ""}`);
-} finally { await b.close(); server.kill(); }
-console.log(bad ? `\n${bad} failed` : "\nall good");
+  /* The page actually responds to the setting. Compared across every painted
+     surface, not just body: a palette defined only inside the dark media block
+     moves the body and leaves the panels behind, which is the specific bug this
+     catches. */
+  console.log("\n=== the two schemes differ ===");
+  ok(seen.light.body.bg !== seen.dark.body.bg,
+     `the page ground changes (${seen.light.body.bg} -> ${seen.dark.body.bg})`);
+  ok(seen.light.body.fg !== seen.dark.body.fg,
+     `and so does the ink (${seen.light.body.fg} -> ${seen.dark.body.fg})`);
+  const same = seen.light.surfaces.filter((c) => seen.dark.surfaces.includes(c));
+  ok(same.length === 0,
+     `every painted surface moved with the scheme (${same.join(", ") || "all moved"})`);
+} finally {
+  await b.close();
+  server.kill();
+}
+
+console.log(bad === 0
+  ? "\nOK — legible in both schemes, and both are really different"
+  : `\n${bad} problem(s)`);
 process.exit(bad ? 1 : 0);

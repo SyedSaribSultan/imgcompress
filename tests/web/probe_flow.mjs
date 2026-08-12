@@ -39,100 +39,112 @@ try {
   await pg.goto("http://127.0.0.1:8191/", { waitUntil: "networkidle0" });
 
   /* ---- frame 1: the untouched original, before anything runs -------------
-   * Dispatch is stubbed out so the anchor frame can be looked at. The app
-   * holds it for one frame by design; this holds it long enough to assert. */
+   * The run is held so the anchor frame can be looked at. The app holds it for one
+   * frame by design; this holds it long enough to assert. It used to be done by
+   * reassigning window.dispatch, which worked while the app was one classic script
+   * and everything was a global by accident - there is nothing to reassign now, so
+   * the pause is a seam the app declares. */
   await pg.waitForFunction(() => typeof state !== "undefined");
-  await pg.evaluate(() => {
-    window.__realDispatch = dispatch;
-    window.dispatch = async () => { window.__dispatched = true; };
-  });
+  await pg.evaluate(() => imgc.holdWork(true));
   const input = await pg.$("#file-input");
   await input.uploadFile(path.join(FIX, "ui.png"), path.join(FIX, "logo.png"));
   await settle(400);
 
   const anchor = await pg.evaluate(() => ({
-    dispatched: !!window.__dispatched,
-    empty: document.getElementById("app-empty").hidden,
-    studio: !document.getElementById("app-full").hidden,
+    /* The empty prompt gives way to the list, and the stage lights up. There is no
+       "studio" to arrive at any more - the regions are always on screen - so what
+       is asserted is the swap from prompt to content. */
+    emptyGone: document.getElementById("queue-empty").hidden,
+    listed: !document.getElementById("queue-list").hidden,
+    stageLive: document.getElementById("stage-empty").hidden,
     statuses: state.items.map((i) => i.status),
     beforeShown: document.getElementById("img-before").getAttribute("src") === state.items[0].beforeURL,
     afterSrc: document.getElementById("img-after").getAttribute("src"),
-    badge: document.getElementById("stage-badge").textContent,
-    narration: document.getElementById("narration").textContent,
+    // The two sides are named on the caliper, which replaced the corner badge.
+    tags: [document.getElementById("tag-l").textContent,
+           document.getElementById("tag-r").textContent],
     // Split is the default and is not a tab anyone has to find.
     splitPressed: document.getElementById("mode-split").getAttribute("aria-pressed"),
   }));
   console.log("  anchor:", JSON.stringify(anchor));
-  ok(anchor.empty && anchor.studio, "a drop goes straight to the studio — no step in between");
+  ok(anchor.emptyGone && anchor.listed && anchor.stageLive,
+     "a drop goes straight to the work — no step in between");
   ok(anchor.beforeShown && !anchor.afterSrc,
      "the original is on the stage and nothing compressed is");
-  ok(/untouched/i.test(anchor.badge), `and it is labelled untouched (${anchor.badge})`);
-  ok(anchor.narration ===
-     "Trying a few ways to shrink this, keeping only the one that still looks right.",
-     `the narration is the landing page's promise, verbatim (${JSON.stringify(anchor.narration)})`);
+  ok(anchor.tags[0] === "Original" && anchor.tags[1] === "Compressed",
+     `and the two sides are named (${anchor.tags.join(" / ")})`);
   ok(anchor.splitPressed === "true", "the comparison view is the default, not a tab to find");
   ok(anchor.statuses.every((s) => s === "queued"),
      `everything is queued, nothing gated (${anchor.statuses})`);
 
   // ---- and then it runs, with no button pressed ---------------------------
-  await pg.evaluate(() => { window.dispatch = window.__realDispatch; dispatch(); });
+  await pg.evaluate(() => imgc.holdWork(false));
   await pg.waitForFunction(() => state.items.every((i) =>
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   ok(true, "the work completes without anything being pressed");
 
-  /* Settings live in the panel now, and the claim moved with them. It used to
-     be "the settings bar lives in the toolbar", asserted as `#app-full >
-     #bar-controls` - pure DOM ancestry of an arrangement that no longer
-     exists, and a direct-child selector at that. What was worth keeping is
-     underneath it: there is exactly one of each control, in one place, and
-     that place is the one panel everything deeper opens into. */
+  /* Where the settings live has changed twice; what has never changed is the claim
+     underneath it. There is exactly one of each control, in one place, and nothing
+     is behind a second disclosure once you are there. That is asserted rather than
+     DOM ancestry - the earlier version tested `#app-full > #bar-controls`, pure
+     structure of an arrangement that no longer exists. */
   const controls = await pg.evaluate(() => ({
-    inPanel: !!document.querySelector("#panel #bar-controls"),
+    inPlan: !!document.querySelector("#plan-sec #plan-fields #target"),
     targets: document.querySelectorAll("#target").length,
     qualities: document.querySelectorAll("#quality").length,
-    advancedToggles: document.querySelectorAll("#adv-btn").length,
+    disclosures: document.querySelectorAll("#plan-sec details, #plan-sec #adv-btn").length,
+    // The plan is on screen without anything being opened first.
+    planVisible: document.getElementById("plan-fields").getBoundingClientRect().height > 0,
   }));
-  ok(controls.inPanel, "the settings live in the one panel");
+  ok(controls.inPlan, "the settings live in the one plan region");
+  ok(controls.planVisible, "and are on screen without anything being opened first");
   ok(controls.targets === 1 && controls.qualities === 1,
      `exactly one of each control exists (${JSON.stringify(controls)})`);
-  ok(controls.advancedToggles === 0,
+  ok(controls.disclosures === 0,
      "and none of them is behind a second disclosure inside it");
 
   // ---- frame 3: original and result legible at the same time --------------
-  await pg.evaluate(() => selectItem(state.items[0].id));
+  await pg.evaluate(() => imgc.select(state.items[0].id));
   await settle(400);
   const compare = await pg.evaluate(() => {
-    const vp = document.getElementById("viewport");
+    // #viewport became #frame when the UI was rebuilt: same box, same job.
+    const vp = document.getElementById("frame");
     return {
-      solo: vp.classList.contains("solo"),
-      dividerShown: document.getElementById("divider").style.display !== "none",
+      /* Both layers are in the frame and the top one is clipped, which is what
+         "beside each other" means here - one #frame holds both at natural size and
+         a clip on the upper layer is where the caliper cuts. The old check was for
+         a `solo` class the stage no longer has. */
+      bothLayers: !!vp.querySelector("#img-before") && !!vp.querySelector(".after #img-after"),
+      clipped: (getComputedStyle(vp.querySelector(".after")).clipPath || "").includes("inset"),
+      dividerShown: getComputedStyle(document.getElementById("divider")).display !== "none",
       left: document.getElementById("tag-l").textContent,
       right: document.getElementById("tag-r").textContent,
       beforeVisible: !!document.getElementById("img-before").getAttribute("src"),
     };
   });
   console.log("  compare:", JSON.stringify(compare));
-  ok(!compare.solo && compare.dividerShown && compare.beforeVisible,
+  ok(compare.bothLayers && compare.clipped && compare.dividerShown && compare.beforeVisible,
      "the result appears beside the original, which is still there");
   ok(/Original/.test(compare.left) && /Compressed/.test(compare.right),
      `both sides are named (${compare.left} | ${compare.right})`);
 
   // ---- frame 4: the chips are the control, and they answer instantly ------
-  /* They are in the panel now - the evidence drawer - so it has to be open
-     before they can be measured. Opening it is what a person does to see them;
-     the probe was reaching for them where they used to sit. */
-  await pg.click("#insp-toggle");
+  /* Nothing to open first. They were in a drawer for a while and this probe had to
+     press it open; they are in a region of the page that is always present now, so
+     the measurement below is taken where a person actually finds them. */
   await settle(500);
   const chips = await pg.evaluate(() => {
-    const els = [...document.querySelectorAll("#cands .cand")];
+    const els = [...document.querySelectorAll("#cands .chip")];
     return {
       n: els.length,
       allButtons: els.every((e) => e.tagName === "BUTTON"),
       // Ranked smallest first, and the original is the last chip.
       order: els.map((e) => e.dataset.format),
       bytes: els.map((e) => Number(e.dataset.bytes)),
-      current: els.filter((e) => e.classList.contains("current")).length,
-      winner: els.filter((e) => e.classList.contains("win")).length,
+      // Carried by aria-pressed and a data attribute rather than by classes, so
+      // the styling and the accessibility name cannot drift apart.
+      current: els.filter((e) => e.getAttribute("aria-pressed") === "true").length,
+      winner: els.filter((e) => e.dataset.win === "1").length,
       /* Reachable and real, rather than "above the numbers". The old check
          was an absolute vertical relation between two containers, and the
          numbers are not below the image any more - they are beside it, in the
@@ -162,8 +174,8 @@ try {
   // Tapping one has to change the picture inside the click.
   const swap = await pg.evaluate(() => {
     const it = () => state.items[0];
-    const cur = document.querySelector("#cands .cand.current")?.dataset.format;
-    const target = [...document.querySelectorAll("#cands .cand")]
+    const cur = document.querySelector('#cands .chip[aria-pressed="true"]')?.dataset.format;
+    const target = [...document.querySelectorAll("#cands .chip")]
       .find((e) => e.dataset.format !== cur && e.dataset.format !== "__original");
     if (!target) return { found: false };
     const before = { fmt: it().fmt, url: it().afterURL };
@@ -183,39 +195,39 @@ try {
 
   // The original chip is a real answer: keep the file exactly as it arrived.
   const keepOriginal = await pg.evaluate(() => {
-    document.querySelector('#cands .cand[data-format="__original"]').click();
+    document.querySelector('#cands .chip[data-format="__original"]').click();
     const it = state.items[0];
     return { pick: it.pick, bytes: it.newBytes, orig: it.originalBytes, ext: it.ext };
   });
   ok(keepOriginal.pick === "__original" && keepOriginal.bytes === keepOriginal.orig,
      `the original is one tap from being the only thing kept (${JSON.stringify(keepOriginal)})`);
 
-  // The narration's tail is a real action, not decoration. Read after a frame:
-  // the render is scheduled, so the sentence is a tick behind the click.
-  await pg.evaluate(() => document.querySelector("#cands .cand.win").click());
+  /* The winner chip is the way back to the automatic answer, and pressing it clears
+     the manual pick rather than recording the winner as one.
+
+     What used to be here as well: the narration ended in a "Prefer something else?"
+     button that scrolled the chips into view and focused one. That existed because
+     the chips were in a drawer nobody knew to open. They are in a region of the page
+     that is always on screen now, so an invitation to go and find them is an
+     invitation to somewhere the reader is already looking. */
+  await pg.evaluate(() => document.querySelector('#cands .chip[data-win="1"]').click());
   await settle(300);
-  const invite = await pg.evaluate(() => {
-    const link = document.querySelector("#narration [data-narr]");
-    return { tag: link?.tagName, text: link?.textContent, act: link?.dataset.narr };
-  });
-  console.log("  invitation:", JSON.stringify(invite));
-  ok(invite.tag === "BUTTON" && invite.act === "chips",
-     `the narration ends in a real action (${JSON.stringify(invite)})`);
-  ok(/Prefer something else\?/.test(invite.text || ""),
-     `and it is the invitation the spec names (${invite.text})`);
-  const called = await pg.evaluate(() => {
-    document.querySelector("#narration [data-narr]").click();
-    return {
-      calling: document.getElementById("cands").classList.contains("calling"),
-      focused: document.activeElement?.classList.contains("cand"),
-    };
-  });
-  ok(called.calling && called.focused,
-     `pressing it surfaces and focuses the chips (${JSON.stringify(called)})`);
+  const backToAuto = await pg.evaluate(() => ({
+    pick: state.items[0].pick,
+    why: document.getElementById("chip-why").textContent,
+    chipsOnScreen: document.getElementById("cands").getBoundingClientRect().height > 0,
+  }));
+  console.log("  back to auto:", JSON.stringify(backToAuto));
+  ok(backToAuto.pick === null,
+     `the winner chip restores the automatic choice (pick=${backToAuto.pick})`);
+  ok(backToAuto.chipsOnScreen,
+     "and the chips need no invitation - they are on screen already");
+  ok(/smallest|kept exactly|Only /.test(backToAuto.why),
+     `the panel explains the automatic answer (${JSON.stringify(backToAuto.why.slice(0, 70))})`);
 
   // ---- renaming, which used to live in the set-up step --------------------
   await pg.evaluate(() => {
-    const inp = document.getElementById("insp-name");
+    const inp = document.getElementById("out-name");
     inp.value = "hero banner";
     inp.dispatchEvent(new Event("change"));
   });
@@ -238,11 +250,12 @@ try {
   /* ---- zoom: the point under the cursor stays under the cursor ----------
    * Needs a frame bigger than the stage, or the clamp correctly pins it to
    * centre and there is nothing to anchor. */
-  await pg.evaluate(() => selectItem(state.items.find((i) => i.name === "logo.png").id));
+  await pg.evaluate(() => imgc.select(state.items.find((i) => i.name === "logo.png").id));
   await settle(600);
   const zoomRes = await pg.evaluate(() => {
     const stage = document.getElementById("stage");
-    const vp = document.getElementById("viewport");
+    // #viewport became #frame when the UI was rebuilt: same box, same job.
+    const vp = document.getElementById("frame");
     const box = stage.getBoundingClientRect();
     const x = box.left + box.width * 0.3, y = box.top + box.height * 0.3;
     const imgAt = () => {
@@ -252,7 +265,7 @@ try {
     /* Start already overflowing on both axes. While an axis still fits, the
      * clamp pins it to centre and the anchor cannot hold on that axis - which
      * is correct, not a bug: there is nothing to pan. */
-    zoom = 2; pan = { x: 0, y: 0 }; applyZoom();
+    imgc.setView({ zoom: 2, pan: { x: 0, y: 0 } });
     const before = imgAt();
     stage.dispatchEvent(new WheelEvent("wheel", {
       deltaY: -100, clientX: x, clientY: y, bubbles: true, cancelable: true }));
@@ -260,11 +273,10 @@ try {
     const r = vp.getBoundingClientRect();
     const overflows = r.width > box.width && r.height > box.height;
     // And the clamp: shoving the pan to infinity must not lose the image.
-    pan = { x: 99999, y: 99999 };
-    applyZoom();
+    imgc.setView({ pan: { x: 99999, y: 99999 } });
     const shoved = vp.getBoundingClientRect();
     const stillCovers = shoved.left <= box.left + 1 && shoved.right >= box.right - 1;
-    return { zoom, before, after, overflows, stillCovers, pan: { ...pan } };
+    return { zoom: imgc.zoom(), before, after, overflows, stillCovers, pan: imgc.pan() };
   });
   console.log("  zoom:", JSON.stringify(zoomRes));
   ok(zoomRes.overflows, `zoomed past the stage (${zoomRes.zoom}x)`);

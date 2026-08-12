@@ -33,7 +33,13 @@ from imgcompress import destinations as dest  # noqa: E402
 from tools import gen_destinations  # noqa: E402
 
 WORKER_JS = ROOT / "web" / "worker.js"
-APP_JS = ROOT / "web" / "app.js"
+# The browser UI is a module graph now, not one script. Every one of its modules
+# is a consumer of the generated table and is held to the same rule, so the checks
+# below scan the whole directory rather than a single file - a restated table in
+# any of them is the thing being guarded against.
+APP_JS_DIR = ROOT / "web" / "js"
+APP_JS_FILES = sorted(APP_JS_DIR.glob("*.js"))
+SETTINGS_JS = APP_JS_DIR / "settings.js"
 INDEX_HTML = ROOT / "web" / "index.html"
 GENERATED_JS = ROOT / "web" / "destinations.js"
 DESKTOP_HTML = ROOT / "imgcompress" / "webui" / "app.html"
@@ -103,16 +109,18 @@ class NoConsumerRestatesTheTable(unittest.TestCase):
         self.assertIn('importScripts("destinations.js")', _read(WORKER_JS))
 
     def test_the_ui_declares_no_table_of_its_own(self):
-        source = self._source(APP_JS)
-        for banned in ("const DESTINATIONS", "const OLD_TARGET_NAMES"):
-            with self.subTest(declaration=banned):
-                self.assertNotIn(banned, source)
+        for path in APP_JS_FILES:
+            source = self._source(path)
+            for banned in ("const DESTINATIONS", "const OLD_TARGET_NAMES",
+                           "const DESTINATION_NUMBERS", "const DESTINATION_FORMATS"):
+                with self.subTest(file=path.name, declaration=banned):
+                    self.assertNotIn(banned, source)
 
     def test_no_consumer_hardcodes_a_frame_size(self):
         """2560, 1920, 512 and 4096 are the reference's to state."""
         sizes = {str(d.max_dimension) for d in dest.visible() if d.max_dimension}
         sizes.add(str(dest.get("documents").hard_cap))
-        for path in (WORKER_JS, APP_JS):
+        for path in [WORKER_JS, *APP_JS_FILES]:
             source = self._source(path)
             # A destination name and one of its numbers on the same line is the
             # signature of a restated table; either alone is innocent.
@@ -156,18 +164,33 @@ class NoConsumerRestatesTheTable(unittest.TestCase):
                 self.assertNotIn(name, values)
 
     def test_the_ui_renders_the_options(self):
-        self.assertIn("function renderDestinationOptions", _read(APP_JS))
-        self.assertIn("DESTINATION_ORDER", _read(APP_JS))
+        """settings.js owns the plan's controls, so it is where the destination
+        list is built from the generated table."""
+        source = _read(SETTINGS_JS)
+        self.assertIn("function renderDestinationOptions", source)
+        self.assertIn("DESTINATION_ORDER", source)
 
     def test_the_page_loads_the_generated_file_before_the_app(self):
+        """Three scripts, in one order that matters.
+
+        destinations.js is a classic script - it has to be, because worker.js pulls
+        in the same file with importScripts and that cannot take a module. The bridge
+        hands its top-level bindings to the module graph explicitly, and main.js
+        reads them through window.DESTINATIONS at start-up. Any other order leaves
+        the app reading an undefined table.
+        """
         text = _read(INDEX_HTML)
         gen = text.find('src="/destinations.js"')
-        app = text.find('src="/app.js"')
+        bridge = text.find('src="/js/destinations-bridge.js"')
+        app = text.find('src="/js/main.js"')
         self.assertNotEqual(gen, -1, "index.html does not load destinations.js")
-        self.assertNotEqual(app, -1, "index.html does not load app.js")
-        self.assertLess(gen, app,
-                        "destinations.js must load before app.js, which reads its "
-                        "bindings at start-up")
+        self.assertNotEqual(bridge, -1, "index.html does not load the bridge")
+        self.assertNotEqual(app, -1, "index.html does not load js/main.js")
+        self.assertLess(gen, bridge,
+                        "destinations.js must load before the bridge that reads it")
+        self.assertLess(bridge, app,
+                        "the bridge must run before main.js, which reads "
+                        "window.DESTINATIONS at start-up")
 
     def test_the_desktop_control_is_generated_not_typed(self):
         """The desktop page renders the server's table instead. Different

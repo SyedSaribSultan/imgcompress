@@ -1,0 +1,125 @@
+/* #facts - what happened to this image, and how to change it.
+ *
+ * Three blocks, each a separate concern, each with its own heading:
+ *
+ *   versions   every encode the run produced, as a row of chips
+ *   measured   the numbers behind the one it kept
+ *   redo       overriding the plan for this image alone
+ *
+ * The chips are the interesting part. Every one of them already exists as bytes
+ * by the time it is drawn, so tapping one swaps the stage instantly and nothing
+ * is re-encoded. That immediacy is the point: it is how someone finds out they
+ * had a choice without being told they did.
+ */
+
+/* -------------------------------- versions ------------------------------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  padding-top: var(--s-3);
+}
+
+.chip {
+  font: inherit;
+  display: grid;
+  grid-template-columns: auto;
+  gap: 1px;
+  padding: var(--s-2);
+  min-width: 76px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  cursor: pointer;
+  text-align: left;
+}
+.chip:hover { border-color: var(--c-ink-3); }
+
+/* The one on the stage. */
+.chip[aria-pressed="true"] {
+  border-color: var(--c-accent);
+  box-shadow: inset 0 0 0 1px var(--c-accent);
+}
+
+.chip > .cf { font-size: 12px; font-weight: 600; }
+.chip > .cb { font-size: 12px; color: var(--c-ink-2); }
+/* How this one compares to the kept file. Signed, because the sign is the
+   whole message: a chip that is bigger than the winner has to look bigger. */
+.chip > .cd { font-size: 11px; color: var(--c-ink-3); }
+
+/* The encode the engine kept. Marked in words as well as with a border, so the
+   reason it won is readable and not just its outline. */
+.chip[data-win="1"] > .cf::after {
+  content: " · kept";
+  font-weight: 400;
+  color: var(--c-accent);
+}
+
+/* Tried, and came in under the quality floor. Still choosable - wanting the
+   smaller file is legitimate - but it must not read as a free win. */
+.chip[data-under="1"] > .cd { color: var(--c-warn); }
+.chip[data-under="1"] > .cf::after {
+  content: " · under floor";
+  font-weight: 400;
+  color: var(--c-warn);
+}
+/* Both at once is a real result: a size cap can force the engine to keep the best
+   thing that fits even when nothing cleared the floor. One ::after per element, so
+   the combination needs its own rule or the two silently overwrite each other. */
+.chip[data-win="1"][data-under="1"] > .cf::after {
+  content: " · kept, under floor";
+  color: var(--c-warn);
+}
+
+/* Why this one won, in a sentence, under the chips. */
+#chip-why {
+  padding-top: var(--s-3);
+  font-size: 13px;
+  color: var(--c-ink-3);
+}
+
+/* -------------------------------- measured ------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: var(--s-3);
+  padding-top: var(--s-3);
+}
+.stats > div > .k {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-ink-3);
+}
+.stats > div > .v { font-size: 15px; }
+
+/* Notes that only appear when they are true. Each carries its meaning in its
+   words; the colour is a second signal, never the only one. */
+.note {
+  margin-top: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-left: 2px solid var(--c-line);
+  font-size: 13px;
+  color: var(--c-ink-2);
+}
+.note.good { border-color: var(--c-good); }
+.note.warn { border-color: var(--c-warn); }
+.note.bad { border-color: var(--c-bad); }
+
+/* ---------------------------------- redo --------------------------------- */
+
+/* A different scope from the plan, and it says so: these two controls override
+   the plan for this one image and can name a format the automatic comparison
+   never tried. Their empty state reads "follow the plan" rather than a dash
+   that could equally mean off, unset, or inherited. */
+#redo .field > label { flex-basis: 100px; }
+
+.redo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  padding-top: var(--s-3);
+}

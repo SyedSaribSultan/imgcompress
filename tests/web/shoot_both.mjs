@@ -1,6 +1,11 @@
-/* Screenshot both interfaces at the same size, in both themes, so "the two are
- * recognisably the same product" is something you can look at rather than a
- * claim. Writes into tests/web/ (gitignored) - a review aid, not a gate.
+/* Screenshot both interfaces at the same size, in both colour schemes. Writes into
+ * tests/web/ (gitignored) - a review aid, not a gate.
+ *
+ * The original claim behind these shots was "the two are recognisably the same
+ * product", checked by eye. That is no longer the intent: the browser app was reset
+ * to a baseline of its own - system faces, a six-name palette in web/css/base.css -
+ * while the desktop app keeps the --oz- token layer. They are deliberately two
+ * looks now, and these shots are for seeing each one rather than for matching them.
  *
  *   node tests/web/shoot_both.mjs
  */
@@ -41,11 +46,11 @@ try {
     {
       const pg = await b.newPage();
       await pg.setViewport({ width: 1280, height: 860 });
+      /* Emulated, not set. The browser app follows the reader's own setting and has
+         no theme switch and no stored preference to write - a data-theme attribute
+         would be ignored, and both shots would come out identical. */
+      await pg.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
       await pg.goto("http://127.0.0.1:8181/", { waitUntil: "networkidle0" });
-      await pg.evaluate((t) => {
-        try { localStorage.setItem("imgc-theme", t); } catch {}
-        document.documentElement.dataset.theme = t;
-      }, theme);
       const input = await pg.$("#file-input");
       await input.uploadFile(path.join(FIX, "photo.png"), path.join(FIX, "ui.png"));
       await pg.waitForFunction(() => state.items.length > 0 && state.items.every(

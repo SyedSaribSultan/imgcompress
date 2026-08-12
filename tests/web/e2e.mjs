@@ -78,12 +78,14 @@ try {
      screen before any of it runs. That ordering is the promise now, so it is
      asserted at the only moment it is observable: the frame the drop lands. */
   await page.waitForFunction(() => typeof state !== "undefined");
-  // Freeze dispatch for one beat so the anchor frame can be inspected. The app
-  // holds it for a frame by design; this holds it long enough to look.
-  await page.evaluate(() => {
-    window.__realDispatch = dispatch;
-    window.dispatch = async () => { window.__dispatched = true; };
-  });
+  /* Freeze the run for one beat so the anchor frame can be inspected. The app
+     holds it for a frame by design; this holds it long enough to look.
+
+     It used to be done by reassigning window.dispatch. That worked when the app
+     was one classic script and everything was a global by accident; the app is a
+     module graph now, so there is no global to reassign - the pause is a seam the
+     app declares, for exactly this assertion. */
+  await page.evaluate(() => imgc.holdWork(true));
   const inputEl = await page.$("#file-input");
   await inputEl.uploadFile(...files);
   await new Promise((r) => setTimeout(r, 400));
@@ -91,29 +93,38 @@ try {
   const anchor = await page.evaluate(() => {
     const before = document.getElementById("img-before");
     return {
-      dispatched: !!window.__dispatched,
-      studio: !document.getElementById("app-full").hidden,
+      // Nothing has been handed to a worker: the pause is on, so every item is
+      // still sitting at "queued" while its original is already painted.
+      noWorkStarted: state.items.every((i) => i.status === "queued"),
+      // The dashboard has no separate "landing" and "working" screens to switch
+      // between any more - the regions are always present. What still has to be
+      // true on the anchor frame is that the picture is up and the queue knows
+      // about it before any encoder has been asked for anything.
+      stageLive: !document.getElementById("view").hidden &&
+                 document.getElementById("stage-empty").hidden,
       showingOriginal: before.getAttribute("src") === state.items[0].beforeURL,
       afterSrc: document.getElementById("img-after").getAttribute("src"),
-      badge: document.getElementById("stage-badge").textContent,
-      narration: document.getElementById("narration").textContent,
+      rows: document.querySelectorAll("#queue-list .row").length,
+      // The two sides are named on the caliper itself, so "which half am I
+      // looking at" is answered without a legend.
+      tags: [document.getElementById("tag-l").textContent,
+             document.getElementById("tag-r").textContent],
       listed: state.items.length,
     };
   });
   console.log("  anchor frame:", JSON.stringify(anchor));
-  ok(anchor.studio && anchor.showingOriginal,
+  ok(anchor.stageLive && anchor.showingOriginal,
      "the drop paints the untouched original first");
+  ok(anchor.noWorkStarted, "and it is on screen before any encoder is asked for anything");
   ok(!anchor.afterSrc, "nothing compressed is on the stage yet");
-  ok(/untouched/i.test(anchor.badge), `the original is labelled as such (${anchor.badge})`);
-  // Frame 2's sentence is the landing page's promise, in the present tense.
-  // It is copy that ships, not copy that gets approximated.
-  ok(anchor.narration ===
-     "Trying a few ways to shrink this, keeping only the one that still looks right.",
-     `the narration mirrors the promise (${JSON.stringify(anchor.narration)})`);
+  ok(anchor.tags[0] === "Original" && anchor.tags[1] === "Compressed",
+     `the two sides are labelled (${anchor.tags.join(" / ")})`);
+  ok(anchor.rows === files.length,
+     `every dropped image has a row already (${anchor.rows}/${files.length})`);
   ok(anchor.listed === files.length,
      `every dropped image is queued (${anchor.listed}/${files.length})`);
 
-  await page.evaluate(() => { window.dispatch = window.__realDispatch; dispatch(); });
+  await page.evaluate(() => imgc.holdWork(false));
 
   await page.waitForFunction(
     (n) => typeof state !== "undefined" && state.items.length === n &&
@@ -237,15 +248,21 @@ try {
     const t = await page.evaluate(() => ({
       elapsed: state.items.filter((i) => i.status === "done" || i.status === "saved")
         .map((i) => i.elapsedMs),
-      phases: [...document.querySelectorAll("#queue-list .phase")].map((e) => e.textContent),
-      rows: reportRows(),
+      rowText: [...document.querySelectorAll("#queue-list .sub")].map((e) => e.textContent),
+      shownTime: document.getElementById("s-time").textContent,
     }));
     ok(t.elapsed.length > 0 && t.elapsed.every((ms) => ms > 0),
        `every finished image recorded a duration (${t.elapsed.length} images)`);
-    ok(t.phases.some((p) => /\d+(\.\d+)?\s?(ms|s)\b/.test(p)),
-       "the queue shows each image's time");
-    ok(t.rows.every((r) => typeof r.time_ms === "number" && r.time_ms > 0),
-       "the exported report carries time_ms per image");
+    /* The per-image time moved out of the row and into #facts. The row now spends
+       its second line on the result - what it weighed, what it became, what that
+       saved - which is what someone scanning a list of twenty is actually reading
+       for. The duration is still reported, on the image being looked at.
+       The exported-report assertion that used to sit here is gone with the
+       feature: CSV/JSON/summary export was not part of compressing an image. */
+    ok(/\d+(\.\d+)?\s?(ms|s)\b/.test(t.shownTime),
+       `the selected image reports how long it took (${t.shownTime})`);
+    ok(t.rowText.every((s) => s.trim().length > 0),
+       `every row says what happened to it (${t.rowText.length} rows)`);
   }
 
   /* ---- nothing ever paints the browser's broken-image glyph ---------------
@@ -267,45 +284,50 @@ try {
     return out;
   };
   {
-    await page.evaluate(() => selectItem(state.items.find((i) => i.name === "corrupt.png").id));
+    await page.evaluate(() => imgc.select(state.items.find((i) => i.name === "corrupt.png").id));
     await new Promise((r) => setTimeout(r, 400));
     const g = await page.evaluate(ghosts);
     ok(g.length === 0, `undecodable file paints no broken-image box (${g.join(", ") || "clean"})`);
     const msg = await page.evaluate(() => {
-      const el = document.getElementById("stage-none");
+      const el = document.getElementById("stage-empty");
       return { hidden: el.hidden, text: el.textContent.trim() };
     });
     ok(!msg.hidden && msg.text.length > 0, `the stage says why there is no preview ("${msg.text}")`);
 
-    await page.evaluate(() => selectItem(state.items.find((i) => i.name === "photo.png").id));
+    await page.evaluate(() => imgc.select(state.items.find((i) => i.name === "photo.png").id));
     await new Promise((r) => setTimeout(r, 400));
     const g2 = await page.evaluate(ghosts);
     ok(g2.length === 0, `a normal image paints no broken-image box (${g2.join(", ") || "clean"})`);
-    ok(await page.evaluate(() => document.getElementById("stage-none").hidden),
+    ok(await page.evaluate(() => document.getElementById("stage-empty").hidden),
        "the placeholder is gone once there is a preview");
   }
 
   // ---- inspector renders ---------------------------------------------------
-  await page.evaluate(() => selectItem(state.items[0].id));
+  await page.evaluate(() => imgc.select(state.items[0].id));
   await page.waitForFunction(() => document.getElementById("img-before").naturalWidth > 0);
   await page.screenshot({ path: path.join(here, "shot-loaded.png") });
   const statText = await page.evaluate(() => ({
     size: document.getElementById("s-size").textContent,
     fmtL: document.getElementById("s-format").textContent,
     score: document.getElementById("s-score").textContent,
+    // The before-and-after pair for the whole run lives in the queue's footer;
+    // #s-size is the one image's result, so it is a single figure by design.
+    totals: document.getElementById("t-sizes").textContent,
   }));
-  ok(/from/.test(statText.size), "stats panel shows sizes");
+  ok(/\d/.test(statText.size), `the result reports its size (${statText.size})`);
+  ok(/→/.test(statText.totals),
+     `the run reports what it started and ended at (${statText.totals})`);
 
   /* ---- the candidate chips ARE the format control -----------------------
    * And they answer instantly: every encode came home with the run, so a tap
    * is a relabel, not another bake-off. Measured, because "immediately" is the
    * whole reason this control teaches itself. */
-  await page.evaluate(() => selectItem(state.items.find((i) => i.name === "ui.png").id));
+  await page.evaluate(() => imgc.select(state.items.find((i) => i.name === "ui.png").id));
   await new Promise((r) => setTimeout(r, 200));
   const swap = await page.evaluate(() => {
     const it = () => state.items.find((i) => i.name === "ui.png");
     const was = { fmt: it().fmt, bytes: it().newBytes, url: it().afterURL };
-    const card = document.querySelector('#cands .cand[data-format="jpeg"]');
+    const card = document.querySelector('#cands .chip[data-format="jpeg"]');
     if (!card) return { found: false };
     const t0 = performance.now();
     card.click();
@@ -327,16 +349,20 @@ try {
      "the shown bytes are that candidate's own");
   await new Promise((r) => setTimeout(r, 200));
   ok(await page.evaluate(() =>
-      !!document.querySelector('#cands .cand.current[data-format="jpeg"]')),
+      // "Which one is on screen" is carried by aria-pressed rather than by a
+      // class, so the styling and the accessibility name cannot drift apart.
+      !!document.querySelector('#cands .chip[data-format="jpeg"][aria-pressed="true"]')),
      "the chosen chip is marked as the one on screen");
-  ok(/because you picked it/.test(await page.evaluate(() =>
-      document.getElementById("narration").textContent)),
-     "the narration says why this one is showing");
+  /* The sentence explaining the choice moved from the stage to the block the
+     chips live in, which is where the question is actually being asked. */
+  ok(/because you chose it/.test(await page.evaluate(() =>
+      document.getElementById("chip-why").textContent)),
+     "the panel says why this one is showing");
 
   // And the winner chip is the way back to the automatic answer.
   const back = await page.evaluate(() => {
     const it = () => state.items.find((i) => i.name === "ui.png");
-    document.querySelector("#cands .cand.win")?.click();
+    document.querySelector('#cands .chip[data-win="1"]')?.click();
     return { fmt: it().fmt, pick: it().pick };
   });
   ok(back.pick === null, `the winner chip restores the automatic choice (${JSON.stringify(back)})`);
@@ -363,11 +389,11 @@ try {
       out.floorIsNotAControl = floor.type === "hidden";
       /* An off-preset floor no longer arrives from a slider - there isn't one.
          It comes from a saved setting, a destination, or a per-image override,
-         all of which land on the hidden floor and then call reflectQualityHint
+         all of which land on the hidden floor and then call reflectQualityWords
          to bring the words back in step. That reconciliation is what this
          checks, because a floor the words disagree with is the floor-99 bug. */
       floor.value = "87";
-      reflectQualityHint();
+      imgc.reflectQualityWords();
       out.offPreset = sel.value;
       out.offPresetWords = sel.querySelector('option[value="custom"]').textContent;
       sel.value = "90";
@@ -490,17 +516,15 @@ try {
       origin: new URL(BASE).origin,
       permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
     }).catch(() => {});
-    await page.evaluate(() => selectItem(state.items.find((i) => i.name === "ui.png").id));
+    await page.evaluate(() => imgc.select(state.items.find((i) => i.name === "ui.png").id));
     await new Promise((r) => setTimeout(r, 300));
     ok(!(await page.evaluate(() => document.getElementById("copy-one").disabled)),
        "the copy button is live for a finished image");
     await page.bringToFront();
-    /* Copy lives in the panel now — it is a second way to get one file out, so
-       it does not compete with Download for the primary slot. Open the drawer
-       the way a person does, then press it for real: a click that skips hit
-       testing would not notice the button being covered by something. */
-    await page.evaluate(() => document.getElementById("insp-toggle").click());
-    await new Promise((r) => setTimeout(r, 500));
+    /* Copy sits on the stage's bottom bar beside Download - there is no drawer to
+       open first any more. Still pressed for real rather than dispatched: a click
+       that skips hit testing would not notice the button being covered by
+       something. */
     await page.click("#copy-one");
     await new Promise((r) => setTimeout(r, 1200));
     const said = await page.evaluate(() => document.getElementById("toast").textContent);
@@ -547,15 +571,13 @@ try {
   const downloadDone = new Promise((resolve) => {
     cdp.on("Browser.downloadProgress", (e) => { if (e.state === "completed") resolve(); });
   });
-  /* "Download all" is the list view's primary control, so this has to be on
-     the list to press it — which is exactly what "one primary control per
-     screen" means. Clearing the selection is what the back button does. */
-  await page.evaluate(() => {
-    setPanel(false);
-    selected = null;
-    scheduleRender(); renderNow();
-  });
+  /* "Download all" is in the bar now, which belongs to the run rather than to any
+     one image - so there is no view to leave and no selection to clear first. It
+     is pressable whenever anything has finished, which is what the button's own
+     disabled state is asserted on below. */
   await new Promise((r) => setTimeout(r, 500));
+  ok(!(await page.evaluate(() => document.getElementById("save-btn").disabled)),
+     "Download all is live once the run has results");
   await page.click("#save-btn");
   await downloadDone;
   const zips = readdirSync(DL).filter((f) => f.endsWith(".zip"));

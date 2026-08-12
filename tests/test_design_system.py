@@ -204,24 +204,96 @@ class TheDesktopAppHasNoPaletteOfItsOwn(unittest.TestCase):
         self.assertEqual(sorted(used - defined), [])
 
 
-class MotionIsTokenised(unittest.TestCase):
-    """The rules the brief asked for, enforced on both app layers. The full
-    check with its per-declaration reporting is in verify_tokens.mjs; these are
-    the two that must never regress.
+WEB_CSS_DIR = WEB / "css"
 
-    The brief proposed a new --oz-motion-* set and a second --oz-ease-exit.
-    Deliberately not done: the token layer already ships --oz-duration-*,
-    --oz-ease-* and the --oz-spring-* pairs, so a parallel set would be the
-    duplication this work removes, and --oz-ease-exit already exists with a
-    different curve - redefining it would silently change every exit animation.
+# The browser app's stylesheets, in load order. base.css is where every colour
+# and space is *defined*; the others may only consume them by name.
+WEB_SHEETS = ("base.css", "layout.css", "controls.css",
+              "queue.css", "compare.css", "facts.css")
+
+
+def _web_css(name: str) -> str:
+    return re.sub(r"/\*.*?\*/", "", _read(WEB_CSS_DIR / name), flags=re.S)
+
+
+class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
+    """The browser app was reset to a baseline of its own: system faces, a six
+    name palette, no brand layer. That is a deliberate break from the token
+    layer, which now serves only the desktop app.
+
+    A baseline still needs the property the token layer was bought for - values
+    defined once - so it is enforced here directly. base.css defines; every other
+    sheet consumes. Without this the reset would drift back into scattered
+    literals within a few edits, which is the state it was reset out of.
+    """
+
+    def test_every_sheet_exists(self):
+        for name in WEB_SHEETS:
+            with self.subTest(sheet=name):
+                self.assertTrue((WEB_CSS_DIR / name).is_file(),
+                                f"web/css/{name} is missing")
+
+    def test_index_links_them_all_with_base_first(self):
+        html = _read(WEB / "index.html")
+        seen = [html.find(f"/css/{name}") for name in WEB_SHEETS]
+        for name, at in zip(WEB_SHEETS, seen):
+            with self.subTest(sheet=name):
+                self.assertNotEqual(at, -1, f"index.html does not link {name}")
+        self.assertEqual(seen, sorted(seen),
+                         "base.css must load before the sheets that consume it")
+
+    def test_only_base_defines_colour_literals(self):
+        """A hex outside base.css is a value with no name, and a value with no
+        name is one nobody can change in both themes at once."""
+        for name in WEB_SHEETS[1:]:
+            with self.subTest(sheet=name):
+                found = re.findall(r"#[0-9a-fA-F]{3,8}\b", _web_css(name))
+                # compare.css paints the transparency checkerboard and the
+                # caliper, both of which sit on top of a photograph and must not
+                # follow the page theme. They are the documented exception.
+                if name == "compare.css":
+                    continue
+                self.assertEqual(found, [], f"{name} hand-types {found}")
+
+    def test_every_token_used_is_defined_in_base(self):
+        defined = set(re.findall(r"^\s*(--[a-z0-9-]+)\s*:", _web_css("base.css"), re.M))
+        for name in WEB_SHEETS[1:]:
+            used = set(re.findall(r"var\((--[a-z0-9-]+)", _web_css(name)))
+            # Locally-set custom properties, written by JS or by a sibling rule.
+            used -= {"--clip", "--bar-h"}
+            with self.subTest(sheet=name):
+                self.assertEqual(sorted(used - defined), [],
+                                 f"{name} uses tokens base.css does not define")
+
+    def test_the_page_carries_no_inline_script(self):
+        """The CSP forbids inline script outright rather than allow-listing a
+        hash. An inline <script> here fails only in production, and only after a
+        deploy, which is the worst way to find out."""
+        html = _read(WEB / "index.html")
+        self.assertEqual(re.findall(r"<script(?![^>]*\bsrc=)[^>]*>", html), [])
+
+
+class MotionIsTokenised(unittest.TestCase):
+    """Two rules on both interfaces, and one that only the desktop app can meet.
+
+    The layout and `all` rules are about performance and hold anywhere: a
+    transition on a layout property forces reflow on every frame, and `all`
+    animates properties nobody chose. Those apply to the browser app's baseline
+    exactly as they did to its predecessor.
+
+    The literal-duration rule is different. It exists to keep one motion
+    vocabulary - --oz-duration-*, --oz-ease-* - and only the desktop app reads
+    that layer now. Holding the browser app to it would mean inventing a parallel
+    motion token set for a baseline whose entire point is not having one, so it is
+    scoped to the layer where it means something.
     """
 
     LAYOUT = ("width", "height", "top", "right", "bottom", "left",
               "margin", "padding", "inset")
 
     def layers(self):
-        return [("app.css", re.sub(r"/\*.*?\*/", "", _read(WEB / "app.css"), flags=re.S)),
-                ("webui/app.html", _desktop_css())]
+        return [(f"css/{name}", _web_css(name)) for name in WEB_SHEETS] + [
+            ("webui/app.html", _desktop_css())]
 
     def test_no_transition_touches_a_layout_property(self):
         for name, css in self.layers():
@@ -241,7 +313,9 @@ class MotionIsTokenised(unittest.TestCase):
                                         f"{name}: name the properties")
 
     def test_no_literal_durations_or_curves(self):
-        for name, css in self.layers():
+        """Desktop only - see the class docstring. The browser app's baseline has
+        no motion vocabulary to be consistent with, by design."""
+        for name, css in [("webui/app.html", _desktop_css())]:
             for kind, value in re.findall(r"(transition|animation)\s*:\s*([^;{}]+);", css):
                 bare = re.sub(r"var\(\s*--[a-z0-9-]+\s*(,[^)]*)?\)", " ", value)
                 with self.subTest(file=name, kind=kind):

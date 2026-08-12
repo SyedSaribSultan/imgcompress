@@ -52,7 +52,7 @@ const audit = () => {
   }
   // Does the toast announce itself, and does it sit on top of the controls?
   const toast = document.getElementById("toast");
-  const bar = document.getElementById("bar-controls");
+  const bar = document.getElementById("plan-fields");
   if (toast && bar) {
     const t = toast.getBoundingClientRect(), c = bar.getBoundingClientRect();
     out.notes.push(`toast box ${Math.round(t.top)}-${Math.round(t.bottom)}, ` +
@@ -82,15 +82,14 @@ try {
   await pg.waitForFunction(() => state.items.every((i) =>
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   await new Promise((r) => setTimeout(r, 600));
-  /* Three files, so this lands on the list. Everything below is about the
-     result view and the evidence drawer, so open one image and then its panel
-     - the same two moves a person makes. Measured while shut, every control
-     in there reports `offsetParent === null` and the probe would pass over an
-     empty set, which is the failure mode this whole suite keeps finding. */
-  await pg.evaluate(() => selectItem(state.items[0].id));
-  await new Promise((r) => setTimeout(r, 400));
-  await pg.evaluate(() => document.getElementById("insp-toggle").click());
-  await new Promise((r) => setTimeout(r, 600));
+  /* Three files. Everything below is about the result and its evidence, so put one
+     image on the stage - there is no drawer to open after it, because the detail
+     region is always present. The old two-step mattered: measured while shut,
+     every control in there reported `offsetParent === null` and the probe passed
+     over an empty set, which is the failure mode this whole suite keeps finding.
+     The assertion below that the set is non-empty is what still guards it. */
+  await pg.evaluate(() => imgc.select(state.items[0].id));
+  await new Promise((r) => setTimeout(r, 700));
   await pg.screenshot({ path: path.join(here, "shot-studio.png") });
   console.log("\n=== studio, with results ===");
   const studio = await pg.evaluate(audit);
@@ -105,8 +104,9 @@ try {
   // from the keyboard?
   const keys = await pg.evaluate(() => {
     const order = [];
+    // #facts is what the evidence drawer became: same controls, no drawer.
     const els = [...document.querySelectorAll(
-      "#inspector-body button, #inspector-body input, #inspector-body select")]
+      "#facts button, #facts input, #facts select")]
       .filter((e) => e.offsetParent !== null);
     for (const e of els) order.push(`${e.tagName.toLowerCase()}#${e.id || e.className}`);
     return order;
@@ -117,8 +117,8 @@ try {
   /* The chips are the primary control, so they have to be operable without a
      pointer: focusable in order, and Enter must do what a tap does. */
   const chipKeys = await pg.evaluate(() => {
-    const chips = [...document.querySelectorAll("#cands .cand")];
-    const first = chips.find((c) => !c.classList.contains("current"));
+    const chips = [...document.querySelectorAll("#cands .chip")];
+    const first = chips.find((c) => c.getAttribute("aria-pressed") !== "true");
     const was = state.items[0].fmt;
     first.focus();
     const focusedIsChip = document.activeElement === first;
@@ -128,7 +128,9 @@ try {
       count: chips.length, focusedIsChip,
       pressed: chips.map((c) => c.getAttribute("aria-pressed")),
       changed: state.items[0].fmt !== was,
-      labelled: chips.map((c) => c.title).every(Boolean),
+      // aria-label, not title: the three spans in a chip are meaningless read one
+      // at a time, so the whole story is put in the accessible name.
+      labelled: chips.map((c) => c.getAttribute("aria-label")).every(Boolean),
     };
   });
   console.log("\nchips from the keyboard:", JSON.stringify(chipKeys, null, 1));
@@ -139,28 +141,33 @@ try {
   ok(chipKeys.pressed.every((p) => p === "true" || p === "false"),
      `every chip reports its pressed state (${chipKeys.pressed.join(",")})`);
 
-  // The narration is a live region, so a result announces itself.
+  /* A result announces itself, and says why it is the one showing. The sentence
+     moved off the stage and into the block the chips live in, and the live region
+     that speaks it is the toast - a role=status, so it is announced without
+     stealing focus. The old assertion that the sentence "ends in a real control"
+     is gone with the design it described: the controls are the chips beside it
+     now, not a link buried in a paragraph. */
   const narration = await pg.evaluate(() => ({
-    live: document.getElementById("narration").getAttribute("aria-live"),
-    text: document.getElementById("narration").textContent,
-    action: document.querySelector("#narration [data-narr]")?.tagName,
+    live: document.getElementById("toast").getAttribute("aria-live"),
+    role: document.getElementById("toast").getAttribute("role"),
+    text: document.getElementById("chip-why").textContent,
   }));
   console.log("\nnarration:", JSON.stringify(narration, null, 1));
-  ok(!!narration.live, `the narration is a live region (${narration.live || "not announced"})`);
-  ok(!!narration.text.trim(), "the narration says something");
-  ok(narration.action === "BUTTON",
-     `the narration ends in a real control (${narration.action || "none"})`);
+  ok(!!narration.live, `results are announced (${narration.live || "not announced"})`);
+  ok(narration.role === "status",
+     `and announced without stealing focus (role=${narration.role})`);
+  ok(!!narration.text.trim(), "the panel says why this version is the one showing");
 
   // Enter in the name field means "done renaming", and nothing else.
   await pg.evaluate(() => {
-    const inp = document.getElementById("insp-name");
+    const inp = document.getElementById("out-name");
     inp.focus(); inp.value = "renamed here";
   });
   await pg.keyboard.press("Enter");
   await new Promise((r) => setTimeout(r, 300));
   const renamed = await pg.evaluate(() =>
     state.items.some((i) => i.name === "renamed here.png"));
-  const released = await pg.evaluate(() => document.activeElement?.id !== "insp-name");
+  const released = await pg.evaluate(() => document.activeElement?.id !== "out-name");
   ok(renamed, "Enter in the name field commits the name");
   ok(released, "and releases the field, which is what Enter means here");
 } finally { await b.close(); server.kill(); }

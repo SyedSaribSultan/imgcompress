@@ -1,0 +1,183 @@
+/* Controls: buttons, native form fields, the toast, the one dialog.
+ *
+ * Two button weights and no more. `.btn` is every action; `.btn.primary` is the
+ * one action a region is for, and a region gets at most one. Everything else -
+ * quieter, smaller, iconic - is the same button with less padding, because a
+ * third weight is a third thing to decide and nobody could tell the second from
+ * the third anyway.
+ *
+ * The form fields are native and stay native. A <select> here is a real select:
+ * the operating system's own popup opens, the keyboard works, and no part of
+ * this file tries to repaint a control it does not fully own.
+ */
+
+.btn {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.btn:hover:not(:disabled) { border-color: var(--c-ink-3); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+.btn.primary {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-accent-ink);
+  font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+
+.btn.sm { padding: var(--s-1) var(--s-2); font-size: 13px; }
+
+/* No border, no fill - for actions that sit inside something already framed. */
+.btn.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--c-ink-2);
+}
+.btn.quiet:hover:not(:disabled) { background: var(--c-sunk); color: var(--c-ink); }
+
+/* ------------------------------ form fields ------------------------------- */
+
+select, input[type="text"], input[type="number"] {
+  font: inherit;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  max-width: 100%;
+}
+input[type="number"] { width: 7ch; }
+
+/* A labelled row in the plan. The label is the question, the control is the
+   answer, and they stay on one line until the column is too narrow to hold
+   both - at which point the control drops below its own label rather than
+   being squeezed to nothing. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  padding: var(--s-1) 0;
+}
+.field > label {
+  flex: 0 0 92px;
+  color: var(--c-ink-2);
+}
+/* min-width: 0 is load-bearing, not defensive. A <select>'s intrinsic minimum is
+   the width of its longest <option>, and a flex item will not shrink below its
+   intrinsic minimum unless told it may - so "indistinguishable unless you
+   compare" propped the whole sidebar open to 497px inside a 375px viewport and
+   the page scrolled sideways. */
+.field > select,
+.field > input { flex: 1 1 120px; min-width: 0; }
+
+/* The row that pairs two numbers - a size and its unit, a limit and its edge. */
+.field .pair {
+  flex: 1 1 120px;
+  display: flex;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.field .pair > * { min-width: 0; }
+.field .pair > select { flex: 1; }
+/* Wide enough for four digits and the spinner. At the shared 7ch it clipped
+   "2560" to "256" plus an arrow, which reads as a different number. */
+.field .pair > input[type="number"] { flex: 0 0 9ch; width: auto; }
+
+/* A static unit beside a number, not a control - so it is never focusable and
+   never looks like something to click. */
+.field .pair > .unit { flex: none; color: var(--c-ink-3); align-self: center; }
+
+/* Wins over `.field > label` on specificity, deliberately: a checkbox's label is
+   the whole row, not the 92px question column, and inheriting that basis broke
+   "Add -min to filenames" across three lines. */
+.field > label.check {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 1 1 100%;
+  color: var(--c-ink-2);
+}
+.check input { margin: 0; flex: none; }
+
+/* What the current plan will actually do, in words, under the fields that set
+   it. It is a readout and never a control, so it is never focusable. */
+.plan-why {
+  color: var(--c-ink-3);
+  font-size: 13px;
+  padding-top: var(--s-2);
+}
+
+/* ------------------------------- segmented ------------------------------- */
+
+/* Mutually exclusive choices where all of them fit on screen: cheaper to read
+   than a select, because the alternatives are visible without opening
+   anything. Pressed state is carried by aria-pressed, so the styling and the
+   accessibility name cannot drift apart. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--c-raised);
+}
+.segmented > button {
+  font: inherit;
+  padding: var(--s-1) var(--s-3);
+  border: 0;
+  border-right: 1px solid var(--c-line);
+  background: transparent;
+  color: var(--c-ink-2);
+  cursor: pointer;
+}
+.segmented > button:last-child { border-right: 0; }
+.segmented > button[aria-pressed="true"] {
+  background: var(--c-accent);
+  color: var(--c-accent-ink);
+}
+
+/* -------------------------------- toast ---------------------------------- */
+
+/* Transient, and never the only place something is said. Failures also land on
+   the row they belong to; this is the acknowledgement, not the record. */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--s-5);
+  transform: translate(-50%, calc(100% + var(--s-6)));
+  max-width: min(90vw, 460px);
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+  transition: transform 0.2s ease;
+  z-index: 20;
+}
+#toast[data-up="1"] { transform: translate(-50%, 0); }
+
+/* -------------------------------- dialog --------------------------------- */
+
+dialog {
+  max-width: min(92vw, 460px);
+  padding: var(--s-5);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised);
+  color: var(--c-ink);
+}
+dialog::backdrop { background: rgb(0 0 0 / 0.5); }
+dialog p { padding: var(--s-3) 0 var(--s-4); color: var(--c-ink-2); }
+dialog .row { display: flex; gap: var(--s-2); justify-content: flex-end; }

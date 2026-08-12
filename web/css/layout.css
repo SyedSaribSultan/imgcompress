@@ -1,0 +1,180 @@
+/* The dashboard shell.
+ *
+ * One page, four regions, all of them on screen at once:
+ *
+ *   #bar     what you are doing to everything - intake and output
+ *   #side    the plan, and the queue it applies to
+ *   #stage   the image being looked at
+ *   #facts   what happened to it, and how to change that
+ *
+ * This replaces a set of mutually exclusive screens. Nothing here appears or
+ * disappears as a mode: the regions are fixed, and their contents go quiet when
+ * there is nothing to say. That is the whole reason the arrangement is a grid of
+ * named areas rather than a stack of views - a region cannot move house, so a
+ * person only has to learn where a thing is once.
+ *
+ * Only this file positions anything. The region stylesheets style what is
+ * inside their own region and never touch the shell.
+ */
+
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ------------------------------- the bar --------------------------------- */
+
+/* Wraps, and has to. The brand plus three nowrap buttons have a min-content width
+   of about 500px, and flex items do not shrink below that - so on a 375px phone
+   the bar silently propped the entire body grid open to 497px and every region
+   under it inherited the overflow. Wrapping to a second line is the honest
+   answer; shrinking the buttons would mean truncating the labels. */
+#bar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--c-line);
+  background: var(--c-bg);
+}
+
+#bar .brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-weight: 600;
+  color: var(--c-ink);
+  text-decoration: none;
+}
+
+/* Batch progress, as a hairline along the bottom edge of the bar. It belongs to
+   the run rather than to any region, so it lives on the one element that outlives
+   every selection.
+   Anchored to the bar's own bottom edge rather than offset from its top by a
+   guessed height - the guess was 41px against a bar that is 56px tall and taller
+   still once it wraps, so the line was drawn floating inside the header. */
+#batch {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: transparent;
+  overflow: hidden;
+  transition: opacity 0.2s linear;
+}
+/* Grown with a transform rather than a width. Animating width forces layout on
+   every frame of a batch that is already saturating the machine; a scale on the
+   compositor costs nothing. */
+#batch > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: var(--c-accent);
+  transition: transform 0.2s linear;
+}
+
+/* ------------------------------ the regions ------------------------------ */
+
+#dash {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "side stage"
+    "side facts";
+  min-height: 0;
+}
+
+#side {
+  grid-area: side;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  border-right: 1px solid var(--c-line);
+  background: var(--c-sunk);
+}
+
+#stage {
+  grid-area: stage;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--c-sunk);
+}
+
+/* Capped, and it scrolls past the cap. The comparison is what the product is for,
+   so the detail region is not allowed to grow into the stage's share - at 42vh a
+   run whose chips wrapped to three rows left the picture with barely half the
+   height it should have had. */
+#facts {
+  grid-area: facts;
+  border-top: 1px solid var(--c-line);
+  background: var(--c-bg);
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+/* A region's own heading row: the label, then whatever acts on that region. */
+.region-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+}
+
+/* The plan's fields share the heading's inset, so the labels line up under it
+   instead of running into the window edge. */
+#plan-fields { padding: 0 var(--s-4) var(--s-4); }
+
+/* Each block inside #facts is a separate concern and says so with a rule above
+   it. They are laid out in columns while there is room and stack when there is
+   not, so no block is ever the reason the page scrolls sideways. */
+.fact-blocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--c-line);
+}
+
+/* Once there is room, the versions block takes half. Three equal columns wrapped
+   seven chips onto four rows, which pushed the last of them below the region's
+   scroll line - and the chips are the primary control, so needing to scroll to
+   reach one is the control being hidden again by a different mechanism. */
+@media (min-width: 1100px) {
+  .fact-blocks { grid-template-columns: 2fr 1fr 1fr; }
+}
+.fact-blocks > section {
+  padding: var(--s-4);
+  border-right: 1px solid var(--c-line);
+}
+.fact-blocks > section:last-child { border-right: 0; }
+
+/* ------------------------------- narrow ---------------------------------- */
+
+/* One column, in the order the work happens: what you are doing, then the
+   picture, then the detail. The stage keeps a fixed share of the viewport so it
+   never collapses to a sliver on a phone. */
+@media (max-width: 860px) {
+  body { overflow: auto; }
+
+  #dash {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "side" "stage" "facts";
+  }
+
+  #side {
+    border-right: 0;
+    border-bottom: 1px solid var(--c-line);
+    grid-template-rows: auto auto;
+  }
+
+  #stage { height: 52vh; }
+  #facts { max-height: none; overflow: visible; }
+}

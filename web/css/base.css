@@ -1,0 +1,148 @@
+/* Reset, tokens, and element defaults.
+ *
+ * This is a deliberate baseline, not a design system. There are no brand faces,
+ * no shadow scale, no motion vocabulary and no component classes here - just
+ * enough for semantic HTML to be legible. Every value below is defined once and
+ * consumed by name; if a colour or a space is needed twice, it becomes a token
+ * rather than a second literal.
+ *
+ * The palette is greyscale plus one accent, and it is derived rather than
+ * listed: light and dark redefine the same six names, so nothing downstream
+ * needs to know which mode it is in.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces, back to front. */
+  --c-bg: #ffffff;
+  --c-sunk: #f4f4f5;
+  --c-raised: #ffffff;
+  --c-line: #d8d8dc;
+
+  /* Ink, loudest to quietest. */
+  --c-ink: #17171a;
+  --c-ink-2: #55555e;
+  --c-ink-3: #83838d;
+
+  /* One accent, used for the primary action and nothing decorative. */
+  --c-accent: #1d4ed8;
+  --c-accent-ink: #ffffff;
+
+  /* Verdicts. Never the only carrier of meaning - each is paired with words. */
+  --c-good: #157347;
+  --c-warn: #8a5300;
+  --c-bad: #b42318;
+
+  /* Space. A 4px base, named by step so a layout reads as a ratio. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+
+  --radius: 6px;
+
+  /* Two stacks: the UI face is the reader's own, and figures get tabular
+     digits so a column of sizes lines up and stops jittering as it counts. */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-num: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-bg: #16161a;
+    --c-sunk: #1e1e23;
+    --c-raised: #26262c;
+    --c-line: #38383f;
+
+    --c-ink: #f2f2f4;
+    --c-ink-2: #b0b0b8;
+    --c-ink-3: #83838d;
+
+    --c-accent: #6c93f8;
+    --c-accent-ink: #10101a;
+
+    --c-good: #55c68d;
+    --c-warn: #e0aa4a;
+    --c-bad: #f08a80;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font: 14px/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Figures, wherever they appear. Tabular so widths do not shift mid-count. */
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+h1, h2, h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+
+/* Section labels. Small and quiet: the data is the content, not its name. */
+h2, h3 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-ink-3);
+}
+
+p { margin: 0; }
+
+img, canvas { max-width: 100%; }
+
+kbd {
+  font: 11px var(--font-num);
+  padding: 1px var(--s-1);
+  border: 1px solid var(--c-line);
+  border-radius: 3px;
+  color: var(--c-ink-3);
+}
+
+/* One focus treatment for everything, and it is never removed. */
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* Reachable by keyboard, out of the way otherwise. */
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  z-index: 10;
+}
+.skip:focus { left: var(--s-2); }
+
+/* Available to screen readers, absent from the page. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.muted { color: var(--c-ink-3); }
+.spacer { flex: 1; }
+
+[hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

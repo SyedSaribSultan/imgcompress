@@ -12,7 +12,8 @@ reason that applies to design tools and nobody else. Someone compressing a photo
 and was never told why. One list, named after destinations, is the fix.
 
 This table is the single source of truth for the Python side. `web/worker.js`,
-`web/app.js` and `imgcompress/webui/app.html` carry the same entries with the
+`web/destinations.js` (generated from this file) and
+`imgcompress/webui/app.html` carry the same entries with the
 same numbers; if you change one, change all four. `tests/test_compress.py` has
 a test per destination so the Python side cannot drift on its own.
 """

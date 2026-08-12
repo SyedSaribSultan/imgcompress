@@ -58,25 +58,31 @@ try {
     floor: document.getElementById("quality").value,
     visible: document.getElementById("quality").type !== "hidden",
     note: document.getElementById("quality-note").textContent,
-    words: document.querySelector("#quality-preset ~ .plan-shadow, .plan-pick .plan-shadow")
-      ? [...document.querySelectorAll(".plan-pick")]
-          .find((p) => p.querySelector("#quality-preset"))
-          .querySelector(".plan-shadow").textContent
-      : null,
+    /* The words a person actually reads. This used to be dug out of
+       `.plan-shadow`, a hidden span that existed to measure text so an inline
+       <select> could be sized to its own current value. The plan is labelled
+       fields now, so the words are simply the selected option - which is the
+       thing the promise was always about, read from the control itself rather
+       than from a ruler standing next to it. */
+    words: document.getElementById("quality-preset").selectedOptions[0]?.textContent,
     target: state.settings.qualityTarget,
   }));
   ok(q80.floor === "80" && q80.target === 80,
      `picking a lower bar sets the floor to 80 (${JSON.stringify(q80)})`);
   ok(!q80.visible, "the raw floor is not a control anyone can see");
   ok(/side by side/.test(q80.words || ""),
-     `and the sentence says so in words (${JSON.stringify(q80.words)})`);
+     `and the control says so in words (${JSON.stringify(q80.words)})`);
+  // The readout under the plan restates what the whole plan will now do, so the
+  // words and the floor cannot drift apart unnoticed.
+  ok(/side by side/.test(q80.note || ""),
+     `and the plan's own summary agrees (${JSON.stringify(q80.note)})`);
 
   // A floor between the landmarks arrives from a saved setting or a
   // destination, never from a click, and gets the hidden entry rather than
   // being snapped to a word it did not mean.
   const custom = await pg.evaluate(() => {
     document.getElementById("quality").value = "87";
-    reflectQualityHint();
+    imgc.reflectQualityWords();
     const opt = document.getElementById("quality-preset");
     return { preset: opt.value, label: opt.querySelector('option[value="custom"]').textContent,
              hidden: opt.querySelector('option[value="custom"]').hidden };

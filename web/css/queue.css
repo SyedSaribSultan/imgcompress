@@ -1,0 +1,136 @@
+/* The queue: every image in the run, and which one the stage is showing.
+ *
+ * It is a listbox, not a set of cards. Each row carries four facts in a fixed
+ * order - a thumbnail, the name, what it weighs now, and how much that saved -
+ * so the column of numbers can be read down without reading any row. A row that
+ * is still working says what it is doing in place of the numbers it does not
+ * have yet, rather than showing a placeholder where a result will later appear.
+ */
+
+#queue-sec {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  border-top: 1px solid var(--c-line);
+}
+
+#queue-list {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 var(--s-2) var(--s-2);
+}
+#queue-list:focus-visible { outline-offset: -2px; }
+
+.row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 var(--s-2);
+  width: 100%;
+  padding: var(--s-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row:hover { background: var(--c-raised); }
+
+/* The one on the stage. Marked with a fill and a left edge, not colour alone,
+   and aria-selected carries the same fact to anything not looking at pixels. */
+.row[aria-selected="true"] {
+  background: var(--c-raised);
+  border-color: var(--c-line);
+  box-shadow: inset 2px 0 0 var(--c-accent);
+}
+
+.row > .thumb {
+  grid-row: 1 / span 2;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--c-sunk);
+}
+
+.row > .name {
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The weight after compressing, right-aligned so the column reads as a column */
+.row > .now {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 13px;
+  color: var(--c-ink-2);
+}
+
+/* Second line: either the saving, or what this row is doing right now. */
+.row > .sub {
+  grid-column: 2 / span 2;
+  grid-row: 2;
+  font-size: 12px;
+  color: var(--c-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row > .sub.good { color: var(--c-good); }
+.row > .sub.bad { color: var(--c-bad); }
+
+/* Per-row progress, under the row it belongs to. */
+.row > .track {
+  grid-column: 1 / span 3;
+  grid-row: 3;
+  height: 2px;
+  margin-top: var(--s-1);
+  background: var(--c-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+/* A transform, not a width - see the note on #batch in layout.css. */
+.row > .track > i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: var(--c-accent);
+  transition: transform 0.2s linear;
+}
+
+/* ------------------------------ empty state ------------------------------ */
+
+/* What to do, and nothing else. No headline, no pitch, no format badges - the
+   one sentence that tells a first-time visitor which action starts the work.
+   It is also the drop target, which is why it fills its region rather than
+   sitting centred in a box of its own. */
+#queue-empty {
+  display: grid;
+  place-content: center;
+  gap: var(--s-3);
+  justify-items: center;
+  padding: var(--s-6) var(--s-4);
+  text-align: center;
+  color: var(--c-ink-3);
+}
+
+/* The whole window accepts a drop. Saying so only while something is being
+   dragged keeps the affordance out of the way the rest of the time. */
+body[data-drag="1"] #side { outline: 2px dashed var(--c-accent); outline-offset: -4px; }
+
+#queue-foot {
+  padding: var(--s-2) var(--s-4);
+  border-top: 1px solid var(--c-line);
+  font-size: 12px;
+  color: var(--c-ink-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
