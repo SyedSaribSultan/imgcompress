@@ -56,6 +56,44 @@
      digits so a column of sizes lines up and stops jittering as it counts. */
   --font-ui: var(--oz-font-body);
   --font-num: var(--oz-font-mono);
+
+  /* Interaction states, straight off the system ramps. Hover and press are
+     colour steps, never invented tints. */
+  --c-raised-hover: var(--oz-color-fill-elevated-hover);
+  --c-raised-active: var(--oz-color-fill-elevated-active);
+  --c-accent-hover: var(--oz-color-fill-brand-hover);
+  --c-accent-active: var(--oz-color-fill-brand-active);
+  --c-selected: var(--oz-color-fill-selected);
+  --c-border-selected: var(--oz-color-border-selected);
+  --c-line-hover: var(--oz-color-border-secondary-hover);
+
+  /* Depth. Three rungs of the system's elevation scale: resting control,
+     floating bar, overlay. */
+  --elev-1: var(--oz-elevation-x-small);
+  --elev-2: var(--oz-elevation-medium);
+  --elev-3: var(--oz-elevation-large);
+
+  /* Motion. Effects springs for colour and depth, spatial springs for
+     anything that moves - and all spatial travel multiplied by the system's
+     reduced-motion scale, so the preference collapses movement here without
+     this app doing anything. */
+  --dur-fx: var(--oz-spring-effects-fast-ms);
+  --ease-fx: var(--oz-spring-effects-fast);
+  --dur-move: var(--oz-spring-spatial-fast-ms);
+  --ease-move: var(--oz-spring-spatial-fast);
+  --motion-scale: var(--oz-motion-spatial-scale);
+
+  /* The overlay recipe behind the one dialog. */
+  --overlay-dim: var(--oz-overlay-dimness);
+  --overlay-blur: var(--oz-overlay-blur);
+
+  /* Extra radius rungs: cards and overlays sit a step softer than controls. */
+  --radius-sm: var(--oz-radius-2);
+  --radius-lg: var(--oz-radius-6);
+
+  /* The select's chevron. A metal grey that reads on both grounds, so one
+     data URI serves both themes without a wrapper element per control. */
+  --icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23898f98' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 *, *::before, *::after { box-sizing: border-box; }

@@ -49,6 +49,24 @@ This project follows [Semantic Versioning](https://semver.org/).
   below 13px anywhere; the evidence panels appear when there is evidence instead
   of sitting as dimmed scaffolding.
 
+- **Works offline, installs as an app, and the OS can hand it files.** A
+  service worker precaches the whole compressor - codecs included - so after
+  one visit it runs with no network at all, which is the "nothing is uploaded"
+  promise made physical. The manifest registers image file handlers: installed,
+  "Open with imgcompress" appears in the file manager and dropped launches land
+  straight in the queue.
+- **The panels are the person's own.** The sidebar's edge and the evidence
+  panel's top edge drag (or arrow-key, focused) between sane bounds, remember
+  their size, and double-click back to automatic.
+- **Focus mode.** F, Escape, or the stage button: the comparison and nothing
+  else. The queue keeps working behind it.
+- **Every control got the refinement pass** on the token system: elevation at
+  rest and on hover, real hover/press states off the system ramps (press squash
+  through the spatial scale, so reduced motion collapses it), custom select
+  chrome with a masked chevron, selected rows and chips on the system's
+  selected fill, glass floating bars over the photograph, pill progress tags,
+  an overlay-dimmed blurred dialog backdrop, and vendored Lucide glyphs beside
+  their words - never instead of them (ISC, see vendor/LICENSES.md).
 - **The browser app reads the HeyOz token layer again**, through one
   indirection: `base.css` aliases the app's six-name vocabulary onto `--oz-*`
   values (brand accent, surfaces, ink ramp, spacing steps, radius, Geist /

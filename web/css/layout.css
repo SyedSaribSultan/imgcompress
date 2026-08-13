@@ -86,13 +86,55 @@ body {
    type - labels wrapped three deep and the plan read as a ransom note. */
 #dash {
   display: grid;
-  grid-template-columns: clamp(300px, 26vw, 384px) minmax(0, 1fr);
+  /* --side-w is the person's own width for the panel, written by js/panels.js
+     when the edge is dragged and remembered. Unset, the panel breathes with
+     the window. */
+  grid-template-columns: var(--side-w, clamp(300px, 26vw, 384px)) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
     "side stage"
     "side facts";
   min-height: 0;
 }
+
+/* ---- focus mode: the comparison, and nothing else -----------------------
+   Entered and left with F (or the button on the stage). The regions are not
+   destroyed, just out of the way - the plan keeps running the queue. */
+body[data-focus="1"] #side,
+body[data-focus="1"] #facts { display: none; }
+body[data-focus="1"] #dash {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "stage";
+}
+
+/* ---- the person's own panel sizes ---------------------------------------
+   Two handles, written as real separators: draggable with a pointer,
+   steppable with arrow keys. Hidden on one-column layouts, where there is
+   nothing beside anything to trade space with. */
+.pane-handle {
+  position: absolute;
+  z-index: 5;
+  background: transparent;
+  transition: background-color var(--dur-fx) var(--ease-fx);
+}
+.pane-handle:hover,
+.pane-handle:focus-visible,
+.pane-handle[data-dragging="1"] { background: var(--c-accent); opacity: 0.5; }
+#side-handle {
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  cursor: col-resize;
+}
+#facts-handle {
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 6px;
+  cursor: row-resize;
+}
+#side, #facts { position: relative; }
 
 /* Pictures first, then the plan, then the one line for the command line.
  *
@@ -161,7 +203,9 @@ body {
   grid-area: facts;
   border-top: 1px solid var(--c-line);
   background: var(--c-bg);
-  max-height: 30vh;
+  /* --facts-h is the person's own height for the evidence, written by
+     js/panels.js from the top-edge handle. */
+  max-height: var(--facts-h, 30vh);
   overflow-y: auto;
 }
 
@@ -232,4 +276,7 @@ body {
 
   #stage { height: 52vh; }
   #facts { max-height: none; overflow: visible; }
+
+  /* One column: there is nothing beside anything to trade space with. */
+  .pane-handle { display: none; }
 }

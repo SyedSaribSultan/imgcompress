@@ -14,3 +14,10 @@ codecs (Apache-2.0, Google LLC):
 
 No modifications were made to the codecs; the `.js` glue files are esbuild
 IIFE bundles of the packages' published ES modules.
+
+# Icons
+
+The interface glyphs (inline `<svg>` in `index.html` and the select chevron
+data URI in `css/base.css`) are from [Lucide](https://lucide.dev)
+(ISC licence, © Lucide contributors), copied as plain SVG paths - no script,
+no font, no requests.

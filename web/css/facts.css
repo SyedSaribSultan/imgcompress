@@ -25,22 +25,35 @@
   font: inherit;
   display: grid;
   grid-template-columns: auto;
-  gap: 1px;
-  padding: var(--s-2);
-  min-width: 76px;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3);
+  min-width: 84px;
   border: 1px solid var(--c-line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--c-raised);
   color: var(--c-ink);
+  box-shadow: var(--elev-1);
   cursor: pointer;
   text-align: left;
+  transition:
+    background-color var(--dur-fx) var(--ease-fx),
+    border-color var(--dur-fx) var(--ease-fx),
+    box-shadow var(--dur-fx) var(--ease-fx),
+    transform var(--dur-move) var(--ease-move);
 }
-.chip:hover { border-color: var(--c-ink-3); }
+.chip:hover:not(:disabled) {
+  border-color: var(--c-line-hover);
+  box-shadow: var(--elev-2);
+  transform: translateY(calc(-1px * var(--motion-scale)));
+}
+.chip:active:not(:disabled) { transform: none; }
+.chip:disabled { cursor: default; opacity: 0.75; box-shadow: none; }
 
-/* The one on the stage. */
+/* The one on the stage: the system's selected fill and edge. */
 .chip[aria-pressed="true"] {
-  border-color: var(--c-accent);
-  box-shadow: inset 0 0 0 1px var(--c-accent);
+  background: var(--c-selected);
+  border-color: var(--c-border-selected);
+  box-shadow: inset 0 0 0 1px var(--c-border-selected);
 }
 
 .chip > .cf { font-size: 14px; font-weight: 600; }

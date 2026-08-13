@@ -26,10 +26,10 @@
 
 .row {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   grid-template-rows: auto auto;
   align-items: center;
-  gap: 0 var(--s-2);
+  gap: 0 var(--s-3);
   width: 100%;
   padding: var(--s-2);
   border: 1px solid transparent;
@@ -39,24 +39,30 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color var(--dur-fx) var(--ease-fx),
+    border-color var(--dur-fx) var(--ease-fx),
+    box-shadow var(--dur-fx) var(--ease-fx);
 }
-.row:hover { background: var(--c-raised); }
+.row:hover { background: var(--c-raised); box-shadow: var(--elev-1); }
 
-/* The one on the stage. Marked with a fill and a left edge, not colour alone,
-   and aria-selected carries the same fact to anything not looking at pixels. */
+/* The one on the stage. Marked with the system's selected fill and a left
+   edge, not colour alone, and aria-selected carries the same fact to anything
+   not looking at pixels. */
 .row[aria-selected="true"] {
-  background: var(--c-raised);
-  border-color: var(--c-line);
+  background: var(--c-selected);
+  border-color: var(--c-border-selected);
   box-shadow: inset 2px 0 0 var(--c-accent);
 }
 
 .row > .thumb {
   grid-row: 1 / span 2;
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
   background: var(--c-sunk);
+  box-shadow: var(--elev-1);
 }
 
 .row > .name {

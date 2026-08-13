@@ -58,17 +58,28 @@
        plan is offering. Silent otherwise. -->
   <span class="muted" id="caps-note" hidden></span>
 
-  <!-- Three states, cycled: Match my device (nothing stamped), Light, Dark.
-       The visible word is always the CURRENT state; the title says what a
-       click moves to. -->
-  <button class="btn quiet" id="theme-btn">Theme</button>
+  <!-- Three modes, cycled: Match my device, Light, Dark. The visible word is
+       always the CURRENT mode; the title says what a click moves to. The
+       glyphs on these buttons are vendored Lucide icons (ISC licence, see
+       vendor/LICENSES.md) - always beside their words, never instead of them. -->
+  <button class="btn quiet" id="theme-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>
+    <span id="theme-word">Theme</span>
+  </button>
 
-  <button class="btn" id="add-btn">Add pictures</button>
-  <button class="btn" id="clear-btn" hidden>Clear</button>
+  <button class="btn" id="add-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+    Add pictures
+  </button>
+  <button class="btn" id="clear-btn" hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+    Clear
+  </button>
   <!-- The one primary action on the page. Hidden rather than disabled while
        there is nothing to download: a greyed-out button is a dead thing taking
        up the slot that answers "what do I do now". -->
   <button class="btn primary" id="save-btn" hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
     <span id="save-label">Download</span>
   </button>
 
@@ -95,7 +106,10 @@
       </div>
 
       <div id="queue-empty">
-        <button class="btn primary" id="empty-add">Choose pictures</button>
+        <button class="btn primary" id="empty-add">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+          Choose pictures
+        </button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
         <p class="muted">Your pictures never leave your computer.</p>
       </div>
@@ -219,6 +233,11 @@
       folders and scripts:
       <a href="https://github.com/SyedSaribSultan/imgcompress" target="_blank"
          rel="noopener"><code>pip install imgcompress</code></a></p>
+
+    <!-- The panel's edge is the person's: drag it, or focus it and use the
+         arrow keys. Double-click puts the width back to automatic. -->
+    <div class="pane-handle" id="side-handle" role="separator" tabindex="0"
+         aria-orientation="vertical" aria-label="Resize the side panel"></div>
   </aside>
 
   <!-- ============================= THE STAGE =============================
@@ -260,6 +279,11 @@
              that is the current state, and two adjacent Fits read as a fault. -->
         <button class="btn quiet sm" id="zoom-reset">Reset</button>
       </div>
+      <!-- The comparison, alone: F or this button hides everything else. -->
+      <button class="btn quiet sm" id="focus-btn" aria-pressed="false" title="Show only the comparison (F)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>
+        Focus
+      </button>
     </div>
 
     <div class="stage-bar bottom">
@@ -268,10 +292,16 @@
       <span class="size num" id="s-size">—</span>
       <span class="saved num" id="s-saved"></span>
       <span class="spacer"></span>
-      <button class="btn sm" id="copy-one">Copy</button>
+      <button class="btn sm" id="copy-one">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        Copy
+      </button>
       <!-- Secondary: this gets one file out, where the bar gets the run out. Two
            primary buttons on one screen are two answers to the same question. -->
-      <button class="btn sm" id="dl-one">Download</button>
+      <button class="btn sm" id="dl-one">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        Download
+      </button>
     </div>
 
     <p id="stage-empty">Nothing to compare yet.</p>
@@ -287,6 +317,8 @@
        kept, and the way to override the plan for this image alone.
        =================================================================== -->
   <section id="facts" aria-label="Details">
+    <div class="pane-handle" id="facts-handle" role="separator" tabindex="0"
+         aria-orientation="horizontal" aria-label="Resize the details panel"></div>
     <div class="fact-blocks">
 
       <section id="versions" aria-labelledby="versions-h">

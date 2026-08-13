@@ -11,7 +11,8 @@
  * a separate judgement and lives here.
  */
 
-import { $, toast } from "./dom.js";
+import { $, setText, toast } from "./dom.js";
+import { bindPanels } from "./panels.js";
 import { state, current, select, isReady, isBusy, totals } from "./state.js";
 import { scheduleRender, renderNow } from "./render.js";
 import { human, splitName } from "./format.js";
@@ -104,7 +105,8 @@ function themeMode() {
 function reflectTheme() {
   const cur = themeMode();
   const btn = $("theme-btn");
-  btn.textContent = `Theme: ${THEME_WORD[cur]}`;
+  // The word, not the whole button: the glyph beside it stays put.
+  setText($("theme-word"), `Theme: ${THEME_WORD[cur]}`);
   btn.title = `Switch to ${THEME_WORD[THEME_NEXT[cur]]}`;
   btn.setAttribute("aria-label",
     `Theme: ${THEME_WORD[cur]}. Click to switch to ${THEME_WORD[THEME_NEXT[cur]]}.`);
@@ -313,6 +315,10 @@ function bindStage() {
   $("copy-one").addEventListener("click", () => copyImage(current()));
   $("save-btn").addEventListener("click", downloadAll);
 
+  /* Focus mode: the comparison and nothing else. The regions are hidden, not
+     destroyed - the queue keeps working behind it. */
+  $("focus-btn").addEventListener("click", toggleFocus);
+
   // A resize changes the fit scale and therefore where the divider cuts.
   addEventListener("resize", () => { applyZoom(); applySplit(); });
 }
@@ -348,7 +354,19 @@ function bindFacts() {
   });
 }
 
-/* The two keys worth having, and nothing that needs a legend to discover.
+/* Focus mode: everything but the comparison steps aside. Entered and left
+ * with F or the stage button; Escape also leaves, because Escape means "out". */
+function setFocus(on) {
+  if (on) document.body.dataset.focus = "1";
+  else delete document.body.dataset.focus;
+  $("focus-btn").setAttribute("aria-pressed", String(!!on));
+  // The stage's box just changed size; the fit and the caliper follow it.
+  applyZoom();
+  applySplit();
+}
+function toggleFocus() { setFocus(!document.body.dataset.focus); }
+
+/* The three keys worth having, and nothing that needs a legend to discover.
  * Holding Space flickers between the two images on top of each other, which is
  * how a difference at a floor of 90 actually becomes visible. */
 function bindKeys() {
@@ -363,6 +381,10 @@ function bindKeys() {
       setMode(flickerFrom === "after" ? "split" : "after");
     } else if (e.key === "d" || e.key === "D") {
       setMode(getMode() === "diff" ? "split" : "diff");
+    } else if (e.key === "f" || e.key === "F") {
+      toggleFocus();
+    } else if (e.key === "Escape" && document.body.dataset.focus) {
+      setFocus(false);
     }
   });
   addEventListener("keyup", (e) => {
@@ -402,6 +424,7 @@ window.state = state;
 loadSettings();
 state.settings = currentSettings();
 bindTheme();
+bindPanels();
 bindIntake();
 bindPlan();
 bindQueue();
@@ -421,3 +444,24 @@ setBatchEndHandler(() => {
 startEngine();
 scheduleRender();
 dispatch();
+
+/* The app is fully client-side, so it can be fully offline: the service
+   worker caches everything the page needs, and after the first visit the
+   whole compressor runs with no network at all - which is the privacy promise
+   made physical. Registration failing (old browser, file: URL) costs nothing
+   but the offline capability. */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+/* Installed as an app, the OS can hand files straight here - right-click an
+   image, "Open with imgcompress". The launch queue is that handoff. */
+if ("launchQueue" in window && window.launchQueue.setConsumer) {
+  window.launchQueue.setConsumer(async (launch) => {
+    const files = [];
+    for (const handle of launch.files || []) {
+      try { files.push(await handle.getFile()); } catch { /* skip the unreadable */ }
+    }
+    if (files.length) addFiles(files);
+  });
+}

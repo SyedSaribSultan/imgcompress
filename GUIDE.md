@@ -478,8 +478,27 @@ What's honestly different from the desktop version now:
 Deploys from `web/` as the Vercel project root (`vercel.json` holds the strict
 CSP and cache headers — no third-party requests of any kind). The browser test
 harness lives in `tests/web/`: the promise-suite E2E, the perf bench with its
-snapshot gates, the fixture generators, and a static server that replays
-production's headers. `tests/web/README.md` has the run instructions.
+snapshot gates, the width-sweep and theme probes, the fixture generators, and a
+static server that replays production's headers. `tests/web/README.md` has the
+run instructions.
+
+**It is an installable, fully-offline PWA.** `sw.js` precaches the whole
+compressor on the first visit — codecs and faces included — with the app shell
+network-first (deploys land on the next visit; offline gets the last one seen)
+and the heavy `/vendor/` + `/fonts/` payloads cache-first. Bump `VERSION` in
+`sw.js` only when the cached SET changes shape; content changes need nothing.
+The manifest registers image `file_handlers`, and `main.js` consumes
+`window.launchQueue`, so an installed copy appears in the OS "Open with" menu
+and launches land straight in the queue. `vercel.json` serves `sw.js` with
+`no-cache` so a new worker is picked up promptly.
+
+**The panels are user-sized.** `js/panels.js` binds the two `role="separator"`
+handles (sidebar right edge, evidence top edge): pointer-draggable,
+arrow-steppable, double-click/Home to reset, persisted in localStorage as
+`--side-w` / `--facts-h` on `<html>` — layout.css reads them with automatic
+fallbacks, so "never touched" and "reset" are the same state. Focus mode
+(`F`, Escape, or the stage button) hides the side and facts regions;
+`body[data-focus="1"]` carries it.
 
 ### Design system
 

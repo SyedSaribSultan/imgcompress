@@ -1,7 +1,8 @@
 {
   "name": "imgcompress",
   "short_name": "imgcompress",
-  "description": "Image compression that proves it didn't ruin your image. Runs entirely in your browser.",
+  "id": "/",
+  "description": "Image compression that proves it didn't ruin your image. Runs entirely on your device — nothing is uploaded.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#070605",
@@ -9,5 +10,20 @@
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
-  ]
+  ],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "image/png": [".png"],
+        "image/jpeg": [".jpg", ".jpeg"],
+        "image/webp": [".webp"],
+        "image/gif": [".gif"],
+        "image/bmp": [".bmp"],
+        "image/tiff": [".tif", ".tiff"],
+        "image/avif": [".avif"]
+      }
+    }
+  ],
+  "launch_handler": { "client_mode": "focus-existing" }
 }

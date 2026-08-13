@@ -90,11 +90,15 @@
 #divider > .tag {
   position: absolute;
   top: var(--s-3);
-  padding: 2px var(--s-2);
-  border-radius: 3px;
+  padding: 3px var(--s-2);
+  border-radius: 999px;
   background: rgb(0 0 0 / 0.66);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   color: #fff;
   font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 #divider > .tag.l { right: var(--s-2); }
@@ -150,8 +154,13 @@
   gap: var(--s-2);
   padding: var(--s-2);
   border: 1px solid var(--c-line);
-  border-radius: var(--radius);
-  background: var(--c-bg);
+  border-radius: var(--radius-lg);
+  /* Floating glass over the photograph: mostly the page ground, with the
+     picture faintly alive behind it. */
+  background: color-mix(in srgb, var(--c-bg) 86%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--elev-2);
   z-index: 2;
 }
 .stage-bar.top { top: var(--s-3); }
@@ -206,8 +215,10 @@
   align-items: center;
   gap: var(--s-2);
   padding: var(--s-2) var(--s-4);
-  border-radius: var(--radius);
+  border-radius: 999px;
   background: rgb(0 0 0 / 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   color: #fff;
   font-size: 15px;
   z-index: 2;

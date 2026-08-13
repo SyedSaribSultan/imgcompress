@@ -258,7 +258,9 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
         for name in WEB_SHEETS[1:]:
             used = set(re.findall(r"var\((--[a-z0-9-]+)", _web_css(name)))
             # Locally-set custom properties, written by JS or by a sibling rule.
-            used -= {"--clip", "--bar-h"}
+            # --side-w and --facts-h are the person's own panel sizes, written
+            # by js/panels.js onto <html>.
+            used -= {"--clip", "--bar-h", "--side-w", "--facts-h"}
             with self.subTest(sheet=name):
                 self.assertEqual(sorted(used - defined), [],
                                  f"{name} uses tokens base.css does not define")
