@@ -96,23 +96,22 @@ export function currentPick(it) {
  *  Returns the sentence to acknowledge with, or "" if nothing changed. It does
  *  not render and does not toast - the caller owns both, so this stays callable
  *  from a test without a document. */
+/** The view a given pick names, or null. One resolver, shared by the real
+ *  choice and the hover preview, so the two can never show different bytes for
+ *  the same chip. */
+function viewFor(it, format) {
+  if (format === ORIGINAL_PICK) return originalView(it);
+  if (it.auto && format === it.auto.fmt && !it.auto.passthrough) return it.auto;
+  const row = it.candidates.find((c) => c.format === format);
+  return row ? candidateView(it, row) : null;
+}
+
 export function chooseCandidate(format) {
   const it = state.selected ? state.byId.get(state.selected) : null;
   if (!it || !it.auto) return "";
   if (currentPick(it) === format) return "";     // already the one on screen
 
-  let view, said;
-  if (format === ORIGINAL_PICK) {
-    view = originalView(it);
-    said = "Keeping your original — nothing compressed";
-  } else if (format === it.auto.fmt && !it.auto.passthrough) {
-    view = it.auto;                              // the winner chip IS the way back
-    said = "Back to the smallest one that passed";
-  } else {
-    const row = it.candidates.find((c) => c.format === format);
-    view = row && candidateView(it, row);
-    said = view && `Keeping ${fmtLabel(format)} for this image`;
-  }
+  const view = viewFor(it, format);
   if (!applyView(it, view)) return "";
 
   it.pick = (view === it.auto) ? null : format;
@@ -120,5 +119,23 @@ export function chooseCandidate(format) {
      it and let the stage rebuild it on demand rather than showing a heatmap of
      an encode nobody is looking at any more. */
   it.diffURL = null;
-  return said;
+  return format === ORIGINAL_PICK ? "Keeping your original — nothing compressed"
+    : view === it.auto ? "Back to the smallest one that passed"
+    : `Keeping ${fmtLabel(format)} for this image`;
+}
+
+/* Hovering a chip tries it on: the stage shows that encode until the pointer
+ * leaves, and NOTHING is committed - `it.pick` never moves. Try-before-choose,
+ * at the cost of an object URL. */
+export function previewCandidate(format) {
+  const it = state.selected ? state.byId.get(state.selected) : null;
+  if (!it || !it.auto || currentPick(it) === format) return false;
+  return applyView(it, viewFor(it, format));
+}
+
+/** Put the stage back on whatever is actually chosen. */
+export function endPreview() {
+  const it = state.selected ? state.byId.get(state.selected) : null;
+  if (!it || !it.auto) return false;
+  return applyView(it, viewFor(it, currentPick(it)));
 }

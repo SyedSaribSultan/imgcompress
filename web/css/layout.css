@@ -42,6 +42,8 @@ body {
   background: var(--c-bg);
 }
 
+/* A button, because it opens the help card - but dressed as the wordmark it
+   is. People expect a logo to lead somewhere. */
 #bar .brand {
   display: flex;
   align-items: center;
@@ -49,6 +51,11 @@ body {
   font-weight: 600;
   color: var(--c-ink);
   text-decoration: none;
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
 }
 
 /* Batch progress, as a hairline along the bottom edge of the bar. It belongs to
@@ -160,8 +167,20 @@ body[data-focus="1"] #dash {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+  /* Never a horizontal scrollbar: anything that cannot fit the panel's width
+     wraps or is cut, it does not widen the panel's scroll range. */
+  overflow-x: clip;
   border-right: 1px solid var(--c-line);
   background: var(--c-sunk);
+}
+
+/* The section label stays while its fields scroll under it, so you always
+   know which region you are adjusting. */
+#plan-sec > .region-head {
+  position: sticky;
+  top: 0;
+  background: var(--c-sunk);
+  z-index: 2;
 }
 #side > * { min-width: 0; flex: 0 0 auto; }
 /* The queue grows into whatever is spare, shrinks to a floor a few rows tall
@@ -235,8 +254,11 @@ body[data-focus="1"] #dash {
    seven chips onto four rows, which pushed the last of them below the region's
    scroll line - and the chips are the primary control, so needing to scroll to
    reach one is the control being hidden again by a different mechanism. */
+/* minmax(0, ·) floors each track at zero: a bare fr cannot shrink an item
+   below its min-content, so one long <option> in the override select was
+   silently widening its column and squeezing the chips into a single file. */
 @media (min-width: 1100px) {
-  .fact-blocks { grid-template-columns: 2fr 1fr 1fr; }
+  .fact-blocks { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
 }
 .fact-blocks > section {
   padding: var(--s-4);

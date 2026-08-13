@@ -11,21 +11,21 @@
  * a separate judgement and lives here.
  */
 
-import { $, setText, toast } from "./dom.js";
+import { $, setText, show, toast, toastAside } from "./dom.js";
 import { bindPanels } from "./panels.js";
 import { state, current, select, isReady, isBusy, totals } from "./state.js";
 import { scheduleRender, renderNow } from "./render.js";
 import { human, splitName } from "./format.js";
 import {
   loadSettings, currentSettings, saveSettings, reflectPlan, reflectQualityWords,
-  onQualityPreset, onDestination, alphaQuestion,
+  onQualityPreset, onDestination, alphaQuestion, alphaItemCount, resetPlan,
 } from "./settings.js";
 import {
   startEngine, dispatch, requeue, removeItems, cancelAll, setBatchEndHandler, pool,
   holdWork,
 } from "./engine.js";
 import { addFiles, filesFromDataTransfer } from "./intake.js";
-import { chooseCandidate } from "./views.js";
+import { chooseCandidate, previewCandidate, endPreview } from "./views.js";
 import {
   setMode, getMode, applySplit, applyZoom, zoomAt, stepZoom, resetZoom, panBy,
   onSelectionChanged, getZoom, getPan, setView,
@@ -58,6 +58,10 @@ function onFormatPin() {
   const question = alphaQuestion();
   if (!question) { pushSettings(); return; }
   $("alpha-ask-body").textContent = question;
+  // The buttons state their consequence, count included: "Keep 2 as PNG" is a
+  // decision; "Keep those as PNG" is a hope.
+  const n = alphaItemCount();
+  setText($("alpha-keep"), `Keep ${n === 1 ? "it" : `all ${n}`} as PNG`);
   $("alpha-ask").showModal();
 }
 
@@ -147,31 +151,68 @@ function bindIntake() {
     e.target.value = "";        // so re-picking the same file fires again
   });
 
+  /* Clearing six results in one click is not a decision to confirm - it is a
+     decision to be able to take back. The items leave the screen at once and
+     the bytes are only truly let go when the undo window closes; undo does not
+     tax the common case the way a confirm dialog would. */
   $("clear-btn").addEventListener("click", () => {
     if (state.items.some(isBusy)) cancelAll();
-    removeItems(state.items.map((i) => i.id));
-    toast("Cleared");
+    const kept = state.items.splice(0, state.items.length);
+    state.byId.clear();
+    state.selected = null;
+    scheduleRender();
+    let undone = false;
+    toast(`Cleared ${kept.length} picture${kept.length === 1 ? "" : "s"}`, {
+      label: "Undo",
+      onAction: () => {
+        undone = true;
+        for (const it of kept) { state.items.push(it); state.byId.set(it.id, it); }
+        select(kept[0]?.id);
+        scheduleRender();
+      },
+    });
+    /* The object URLs are released only after the undo window has passed -
+       revoking them up front would make undo restore broken previews. */
+    setTimeout(() => {
+      if (undone) return;
+      for (const it of kept) {
+        if (it.beforeURL) URL.revokeObjectURL(it.beforeURL);
+        if (it.afterURL) URL.revokeObjectURL(it.afterURL);
+        if (it.thumbURL) URL.revokeObjectURL(it.thumbURL);
+      }
+    }, 12_000);
   });
 
   /* The whole window is the drop target. A drop zone that is only part of the
-     page is a thing to aim at, and there is no reason to make anyone aim. */
+     page is a thing to aim at, and there is no reason to make anyone aim. The
+     overlay says what letting go will do, and to how many - feedforward for
+     the gesture in flight. */
   let dragDepth = 0;
   addEventListener("dragenter", (e) => {
     if (!e.dataTransfer?.types?.includes("Files")) return;
     dragDepth++;
     document.body.dataset.drag = "1";
+    const n = [...(e.dataTransfer.items || [])].filter((i) => i.kind === "file").length;
+    setText($("drop-say"), n > 1 ? `Drop to add ${n} pictures`
+      : n === 1 ? "Drop to add this picture" : "Drop to add pictures");
+    show($("drop-say"), true);
   });
   addEventListener("dragover", (e) => {
     if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
   });
   addEventListener("dragleave", () => {
-    if (--dragDepth <= 0) { dragDepth = 0; delete document.body.dataset.drag; }
+    if (--dragDepth <= 0) {
+      dragDepth = 0;
+      delete document.body.dataset.drag;
+      show($("drop-say"), false);
+    }
   });
   addEventListener("drop", async (e) => {
     if (!e.dataTransfer?.types?.includes("Files")) return;
     e.preventDefault();
     dragDepth = 0;
     delete document.body.dataset.drag;
+    show($("drop-say"), false);
     addFiles(await filesFromDataTransfer(e.dataTransfer));
   });
 
@@ -213,12 +254,34 @@ function bindPlan() {
   $("alpha-cancel").addEventListener("click", () => settleAlpha(null));
   // Escape closes a dialog natively, and that is a cancel like any other.
   $("alpha-ask").addEventListener("cancel", (e) => { e.preventDefault(); settleAlpha(null); });
+
+  // One step back to the destination's defaults, shown only while something
+  // differs from them.
+  $("plan-reset").addEventListener("click", () => { resetPlan(); pushSettings(); });
+
+  /* The disclosure remembers its state: someone who works from More choices
+     should not have to reopen it every visit. */
+  const more = $("more-choices");
+  try { more.open = localStorage.getItem("imgc-more") === "1"; } catch { /* fine */ }
+  more.addEventListener("toggle", () => {
+    try { localStorage.setItem("imgc-more", more.open ? "1" : "0"); } catch { /* fine */ }
+  });
 }
 
 function bindQueue() {
   const list = $("queue-list");
 
   list.addEventListener("click", (e) => {
+    /* The row's own actions come first: remove and retry act on the row they
+       sit on, without moving the selection to it. */
+    const act = e.target.closest(".row-act");
+    if (act) {
+      const id = act.closest(".row")?.dataset.id;
+      if (!id) return;
+      if (act.classList.contains("rm")) removeItems([id]);
+      else requeue([id]);
+      return;
+    }
     const row = e.target.closest(".row");
     if (row) pick(row.dataset.id);
   });
@@ -245,6 +308,17 @@ function bindStage() {
   }
 
   $("split").addEventListener("input", applySplit);
+  /* Double-click the caliper to recentre it - the convention every adjustable
+     split obeys. Swallowed before it bubbles to the stage, whose own dblclick
+     means "reset zoom". */
+  $("split").addEventListener("dblclick", (e) => {
+    e.stopPropagation();
+    $("split").value = "50";
+    applySplit();
+  });
+
+  // The empty stage carries its own exit.
+  $("stage-choose").addEventListener("click", () => $("file-input").click());
 
   $("zoom-in").addEventListener("click", () => stepZoom(1));
   $("zoom-out").addEventListener("click", () => stepZoom(-1));
@@ -331,6 +405,29 @@ function bindFacts() {
     if (said) { toast(said); scheduleRender(); }
   });
 
+  /* Hovering a chip tries that encode on, on the stage, and commits nothing -
+     the cheapest possible exploration of a choice. Pointer hover only: on a
+     touch screen there is no hover, and the tap already commits. */
+  $("cands").addEventListener("mouseover", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip || chip.disabled) return;
+    if (previewCandidate(chip.dataset.format)) scheduleRender("stage");
+  });
+  $("cands").addEventListener("mouseleave", () => {
+    if (endPreview()) scheduleRender("stage");
+  });
+
+  /* The resize disclosure's own undo: zero the shrink for this one picture
+     and run it again. */
+  $("keep-size").addEventListener("click", () => {
+    const it = current();
+    if (!it) return;
+    it.override = { ...(it.override || {}), maxDimension: 0 };
+    invalidateRedo();
+    requeue([it.id]);
+    toast("Running again at full size");
+  });
+
   $("ov-apply").addEventListener("click", () => {
     const it = current();
     if (!it) return;
@@ -363,6 +460,20 @@ function setFocus(on) {
   // The stage's box just changed size; the fit and the caliper follow it.
   applyZoom();
   applySplit();
+  // A mode must never trap anyone: the way out is stated the first time in.
+  if (on) hintOnce("focus", "Press Esc or F to leave focus mode.");
+}
+
+/* One-time hints. Each is said exactly once per browser, ever - a hint that
+ * repeats is a nag, and a hint never said leaves a feature undiscoverable. */
+function hintOnce(key, message, action) {
+  const k = `imgc-hint-${key}`;
+  try {
+    if (localStorage.getItem(k)) return;
+    localStorage.setItem(k, "1");
+  } catch { /* private browsing: better to occasionally repeat than never say */ }
+  // Hints are asides: they wait behind anything already showing.
+  toastAside(message, action);
 }
 function toggleFocus() { setFocus(!document.body.dataset.focus); }
 
@@ -385,6 +496,8 @@ function bindKeys() {
       toggleFocus();
     } else if (e.key === "Escape" && document.body.dataset.focus) {
       setFocus(false);
+    } else if (e.key === "?") {
+      $("help").showModal();
     }
   });
   addEventListener("keyup", (e) => {
@@ -432,11 +545,38 @@ bindStage();
 bindFacts();
 bindKeys();
 
+/* The wordmark and "?" both open the one help card. */
+$("brand-btn").addEventListener("click", () => $("help").showModal());
+$("help-close").addEventListener("click", () => $("help").close());
+
 setBatchEndHandler(() => {
   const t = totals();
   if (!t.ready) return;
-  toast(`Done — ${t.ready} picture${t.ready === 1 ? "" : "s"} ready, `
-    + `${human(t.saved)} smaller. Drag the line to check any of them.`);
+  /* The outcome, framed as the person's own gain - this is the moment the
+     product's value is remembered by. */
+  toast(`Done — ${t.ready} picture${t.ready === 1 ? "" : "s"} ready, saved you `
+    + `${human(t.saved)}. Drag the line to check any of them.`);
+  /* And the product's superpower, taught exactly once, at the first moment it
+     is usable. */
+  hintOnce("flick", "Tip: hold Space to flick between before and after — "
+    + "the fastest way to spot a difference.");
+  /* Installing is offered once, and only after the product has shown its
+     worth - a prompt before value is a prompt declined. */
+  if (installable) {
+    hintOnce("install", "Install imgcompress? It works fully offline — "
+      + "nothing ever leaves your device.", {
+      label: "Install",
+      onAction: () => { installable.prompt(); installable = null; },
+    });
+  }
+});
+
+/* The browser announces installability; the nudge above decides when to use
+ * it. Captured quietly so the browser's own mini-infobar does not interrupt. */
+let installable = null;
+addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installable = e;
 });
 
 // Ask what this browser can encode before anything is dropped, so the format
@@ -451,7 +591,18 @@ dispatch();
    made physical. Registration failing (old browser, file: URL) costs nothing
    but the offline capability. */
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.register("/sw.js").then((reg) => {
+    /* A silent superpower earns no trust: the first time the offline layer
+       finishes warming, it is announced - exactly once. */
+    const announce = () => hintOnce("offline",
+      "Ready to work offline — this whole app now runs without internet.");
+    if (navigator.serviceWorker.controller) return;   // already installed before
+    const sw = reg.installing || reg.waiting;
+    if (!sw) return;
+    sw.addEventListener("statechange", () => {
+      if (sw.state === "activated") announce();
+    });
+  }).catch(() => {});
 }
 
 /* Installed as an app, the OS can hand files straight here - right-click an

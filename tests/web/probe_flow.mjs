@@ -251,7 +251,12 @@ try {
   ok(copyable, "the copy button is live for a finished image");
   await pg.bringToFront();   // clipboard writes need a focused document
   await pg.click("#copy-one");
-  await settle(1200);
+  /* Wait for the RECEIPT, not a stopwatch: the headless clipboard can take
+     over a second to hand the promise back, and the app only toasts once it
+     has. A fixed sleep here was a race that happened to win. */
+  await pg.waitForFunction(
+    () => /(^|\s)(Copied|Could not copy)/.test(document.getElementById("toast").textContent),
+    { timeout: 10_000, polling: 100 });
   // Headless Chrome will not always hand a clipboard back to a read(), so the
   // app's own report is the signal: a failure path toasts "Could not copy".
   const copyToast = await pg.evaluate(() => document.getElementById("toast").textContent);

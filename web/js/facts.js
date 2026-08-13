@@ -79,7 +79,12 @@ function renderChips(it, ready) {
        the reason it lost is invisible. So every lossy chip carries its score, and
        one that came in under the floor says so. */
     const under = !row.lossless && row.score != null && row.score < floor;
-    if (under) b.dataset.under = "1";
+    if (under) {
+      b.dataset.under = "1";
+      // The first encounter with "under floor" defines it, in place.
+      b.title = `Scored ${scoreText(row.score, false)}, below the ${floor} the plan asks for. ` +
+        `Still a real file — pick it if size matters more than that promise.`;
+    }
     const match = row.lossless
       ? "identical"
       : (row.score == null ? "" : `match ${scoreText(row.score, false)}`);
@@ -130,7 +135,15 @@ function whyLine(it, ready) {
   const tried = it.candidates.length;
   const passed = it.candidates.filter(
     (c) => c.lossless || c.score == null || c.score >= floor).length;
-  if (tried <= 1) return `Only ${fmtLabel(it.auto.fmt)} could be written here.`;
+  /* One candidate deserves its reason: an automatic system that narrowed the
+     field must say what narrowed it, or the narrowing reads as a fault. */
+  if (tried <= 1) {
+    const pinned = effectiveSettings(it).formats?.length === 1;
+    return `Only ${fmtLabel(it.auto.fmt)} could be written here — ` +
+      (pinned
+        ? "it is the file type pinned in the plan."
+        : "no other format this browser can write could hold this picture.");
+  }
   return `${fmtLabel(it.auto.fmt)} was the smallest of ${passed} version` +
          `${passed === 1 ? "" : "s"} that reached your floor of ${floor}, out of ` +
          `${tried} tried. Tap any other one to keep it instead.`;
@@ -167,6 +180,12 @@ function renderMeasured(it) {
       + `. The visual match below was measured on the compression alone.`);
   }
   show(resizeLine, !!resized);
+  /* The undo, exactly where the realisation happens. Offered only while the
+     shrink is actually undoable - a positive limit in force that an override
+     can zero. When the destination's own ceiling did it (the limit is already
+     zero and the ceiling fired anyway), pretending otherwise would be worse
+     than the shrink. */
+  show($("keep-size"), !!resized && effectiveSettings(it).maxDimension > 0);
 
   const notes = [];
   if (it.note) notes.push(it.note);
@@ -229,6 +248,7 @@ export function renderFacts() {
     $("cands").textContent = "";
     for (const id of ["s-format", "s-score", "s-dims", "s-time"]) setText($(id), "—");
     show($("s-resize"), false);
+    show($("keep-size"), false);
     show($("s-note"), false);
     show($("s-warn"), false);
     $("ov-apply").disabled = true;
@@ -236,8 +256,10 @@ export function renderFacts() {
     return;
   }
 
-  // The override re-runs an image; mid-run that is a race, so it waits.
+  // The override re-runs an image; mid-run that is a race, so it waits - and
+  // the button itself says which of the two states it is in.
   $("ov-apply").disabled = !ready;
+  setText($("ov-apply"), ready ? "Compress again" : "Working…");
   $("remove-btn").disabled = false;
   renderChips(it, ready);
   setText($("chip-why"), whyLine(it, ready));

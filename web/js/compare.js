@@ -52,16 +52,41 @@ function frameSize() {
   return { w: it?.width || 0, h: it?.height || 0 };
 }
 
-/** The scale that fits the image in the viewport. Capped at 1:1 so a 48px icon
- *  is shown at its own size rather than blown up to fill a 900px region - "fit"
- *  should never invent detail that is not there. */
+/** How much of the stage the floating bars actually occlude, measured live so
+ *  a wrapped bar counts at its wrapped height. Fit must place the whole image
+ *  BETWEEN them: chrome over content is the one thing the stage must not do
+ *  to its own default view. */
+function barOcclusion() {
+  const view = $("view").getBoundingClientRect();
+  const top = document.querySelector(".stage-bar.top").getBoundingClientRect();
+  const bottom = document.querySelector(".stage-bar.bottom").getBoundingClientRect();
+  const GAP = 8;
+  return {
+    top: top.height ? Math.max(0, top.bottom - view.top + GAP) : 0,
+    bottom: bottom.height ? Math.max(0, view.bottom - bottom.top + GAP) : 0,
+  };
+}
+
+/** The scale that fits the image in the viewport, between the bars. Capped at
+ *  1:1 so a 48px icon is shown at its own size rather than blown up to fill a
+ *  900px region - "fit" should never invent detail that is not there. */
 function fitScale() {
   const view = $("view");
   const { w, h } = frameSize();
   if (!w || !h) return 1;
   const box = view.getBoundingClientRect();
   if (!box.width || !box.height) return 1;
-  return Math.min(box.width / w, box.height / h, 1);
+  const occ = barOcclusion();
+  const availH = Math.max(80, box.height - occ.top - occ.bottom);
+  return Math.min(box.width / w, availH / h, 1);
+}
+
+/** At fit, the image centres in the space BETWEEN the bars, not behind them. An
+ *  explicit zoom is the person's own framing and gets the whole stage. */
+function fitOffsetY() {
+  if (zoom) return 0;
+  const occ = barOcclusion();
+  return (occ.top - occ.bottom) / 2;
 }
 
 const scaleNow = () => zoom || fitScale();
@@ -96,7 +121,7 @@ export function applyZoom() {
      the scale are applied inside that centred position. */
   const frame = $("frame");
   frame.style.transform =
-    `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${s})`;
+    `translate(-50%, -50%) translate(${pan.x}px, ${pan.y + fitOffsetY()}px) scale(${s})`;
   // Past 1:1, pixels stay pixels. Inspecting compression artefacts through a
   // smoothing filter would be inspecting the filter.
   $("view").dataset.sharp = s >= 1.5 ? "1" : "0";
@@ -150,6 +175,16 @@ export function applySplit() {
   const inFrame = ((dividerX - frame.left) / frame.width) * 100;
   document.querySelector(".after").style.setProperty(
     "--clip", `${Math.max(0, Math.min(100, inFrame))}%`);
+
+  /* The side labels ride the caliper, but they must never ride it off the
+     stage - a label that has left the viewport stops orienting anyone. Pushed
+     to an edge, each tag slides along the line just enough to stay readable. */
+  const x = (view.width * pct) / 100;
+  const tagL = $("tag-l"), tagR = $("tag-r");
+  const overL = tagL.offsetWidth + 16 - x;
+  const overR = tagR.offsetWidth + 16 - (view.width - x);
+  tagL.style.transform = overL > 0 ? `translateX(${overL}px)` : "";
+  tagR.style.transform = overR > 0 ? `translateX(${-overR}px)` : "";
 }
 
 /* ---------------------------------- mode --------------------------------- */
@@ -160,6 +195,14 @@ export function setMode(next) {
   for (const m of ["split", "after", "diff"]) {
     $(`mode-${m}`).setAttribute("aria-pressed", String(m === next));
   }
+  /* With the caliper hidden there is nothing on screen saying WHICH image is
+     showing, and an unlabelled heatmap is a chart without a legend. The badge
+     is both, and absent in split mode where the caliper already says it. */
+  const badge = $("mode-badge");
+  show(badge, next !== "split" && !!current());
+  setText(badge, next === "after"
+    ? "Showing the compressed picture"
+    : "Difference — brighter means more change");
   if (next === "diff") ensureDiff();
   applySplit();
 }
@@ -231,9 +274,14 @@ export function renderStage() {
      its replacement is computed. All three carry honest numbers. */
   const hasResult = !!(it && it.afterURL && it.fmt);
 
+  show($("stage-hero"), !it);
   show($("stage-empty"), !it);
+  // The empty state carries its own exit: a dead end that only describes
+  // itself forces a visual search for what to do next.
+  show($("stage-choose"), !state.items.length);
   show($("view"), !!it);
   show($("split"), !!it && mode === "split");
+  show($("mode-badge"), !!it && mode !== "split" && it.status !== "failed");
   show($("stage-work"), !!(working || (it && it.stale)));
   // The bottom bar is about a result, so it goes away rather than showing
   // dashes where numbers will later be.
@@ -247,7 +295,10 @@ export function renderStage() {
 
   if (it.status === "failed") {
     show($("view"), false);
+    show($("mode-badge"), false);
+    show($("stage-hero"), true);
     show($("stage-empty"), true);
+    show($("stage-choose"), false);
     setText($("stage-empty"), `Could not compress this image — ${it.error || "unknown reason"}.`);
     return;
   }

@@ -104,6 +104,24 @@
 #divider > .tag.l { right: var(--s-2); }
 #divider > .tag.r { left: var(--s-2); }
 
+/* The caliper's grip: the one place the page must LOOK draggable, because
+   dragging it is the product. A white disc with outward chevrons, riding the
+   line's midpoint; hit-testing still belongs to the invisible range slider. */
+#divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background:
+    var(--icon-grip) center / 16px no-repeat,
+    rgb(255 255 255 / 0.92);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
 /* The real control over the split: a native range, invisible but present, so
    the divider is draggable with a mouse and arrow-steppable with a keyboard
    without any of that being reimplemented here. */
@@ -178,7 +196,15 @@
   border-color: transparent;
   background: transparent;
 }
-#out-name:hover:not(:focus) { border-color: var(--c-line); }
+/* Editable, and it says so before it is touched: the pencil appears with the
+   border, together making "this is a field" perceivable. */
+#out-name:hover:not(:focus) {
+  border-color: var(--c-line);
+  background-image: var(--icon-pencil);
+  background-repeat: no-repeat;
+  background-position: right var(--s-2) center;
+  background-size: 13px;
+}
 
 .stage-bar .size { font-size: 15px; color: var(--c-ink-2); }
 .stage-bar .saved { font-size: 15px; color: var(--c-good); }
@@ -191,14 +217,34 @@
 /* What is true when there is nothing to compare, said plainly. Some files this
    browser cannot decode at all, and this is also where that is said - the
    honest substitute for a preview is a sentence, not a broken-image glyph. */
-#stage-empty {
+#stage-hero {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
   padding: var(--s-5);
   text-align: center;
   color: var(--c-ink-3);
+}
+#stage-hero > * { max-width: min(52ch, 100%); }
+
+/* Which image is showing, when the caliper is not on screen to say it. */
+#mode-badge {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px var(--s-3);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.66);
+  color: #fff;
+  font-size: 13px;
+  white-space: nowrap;
+  z-index: 2;
+  pointer-events: none;
 }
 
 /* ------------------------------- progress -------------------------------- */

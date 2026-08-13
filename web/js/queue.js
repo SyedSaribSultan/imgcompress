@@ -46,19 +46,40 @@ function subLine(it) {
   }
 }
 
+/* A row is a <div role="option">, not a <button>: it carries its own hover
+ * actions (remove, retry), and a button inside a button is invalid HTML the
+ * parser dismantles. The list container owns focus and the arrow keys, which
+ * is the listbox pattern's one-tab-stop shape anyway. */
 function makeRow(it) {
-  const el = document.createElement("button");
-  el.type = "button";
+  const el = document.createElement("div");
   el.className = "row";
   el.dataset.id = it.id;
   el.setAttribute("role", "option");
   el.innerHTML =
     '<img class="thumb" alt="" decoding="async">' +
-    '<span class="name"></span>' +
+    '<span class="name"><span class="name-head"></span><span class="name-tail"></span></span>' +
     '<span class="now num"></span>' +
     '<span class="sub"></span>' +
+    '<span class="row-acts">' +
+    '<button type="button" class="row-act retry" title="Try this picture again" aria-label="Try this picture again" hidden>' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>' +
+    '<button type="button" class="row-act rm" title="Remove this picture" aria-label="Remove this picture">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>' +
+    '</span>' +
     '<span class="track" hidden><i></i></span>';
   return el;
+}
+
+/* End-ellipsis hides exactly the part of an export name that distinguishes it
+ * from its siblings, so the tail survives: the last few characters and the
+ * extension stay visible while the middle gives way. The full name rides the
+ * row's title for anyone who wants all of it. */
+function paintName(el, name) {
+  const TAIL = 10;
+  const head = name.length > TAIL ? name.slice(0, -TAIL) : "";
+  const tail = name.length > TAIL ? name.slice(-TAIL) : name;
+  setText(el.querySelector(".name-head"), head);
+  setText(el.querySelector(".name-tail"), tail);
 }
 
 function paintRow(el, it) {
@@ -66,7 +87,9 @@ function paintRow(el, it) {
   if (it.thumbURL && thumb.getAttribute("src") !== it.thumbURL) {
     thumb.src = it.thumbURL;
   }
-  setText(el.querySelector(".name"), it.name);
+  paintName(el, it.name);
+  if (el.title !== it.name) el.title = it.name;
+  show(el.querySelector(".retry"), it.status === "failed");
   setText(el.querySelector(".now"), isReady(it) ? human(it.newBytes) : "");
 
   const sub = el.querySelector(".sub");
@@ -99,6 +122,7 @@ export function renderQueue() {
 
   show($("queue-empty"), !any);
   show(list, any);
+  show($("queue-hint"), any);
   show($("queue-foot"), any);
   show($("clear-btn"), any);
   setText($("queue-count"), String(state.items.length));
@@ -151,15 +175,21 @@ function renderFoot() {
   const t = totals();
   /* Totals over the images that actually have a result. A failed image contributes
      nothing to either side - counting its original in "before" and nothing in
-     "after" would report a saving that never happened. */
+     "after" would report a saving that never happened.
+
+     The saving leads with the percentage, because that is the unit people
+     reason in; the megabytes ride along as the receipt. */
+  const pct = t.before ? Math.round((t.saved / t.before) * 100) : 0;
   setText($("t-sizes"), t.ready ? `${human(t.before)} → ${human(t.after)}` : "");
-  setText($("t-saved"), t.saved ? `${human(t.saved)} saved` : "");
+  setText($("t-saved"), t.saved ? `−${pct}% · ${human(t.saved)} saved` : "");
 
   const failed = state.items.filter((i) => i.status === "failed").length;
   const working = state.items.filter(isBusy).length;
   const parts = [];
-  if (t.ready) parts.push(`${t.ready} ready`);
-  if (working) parts.push(`${working} working`);
+  /* Mid-run, progress is one quantity, not three: "4 of 6 done" answers the
+     only question a wait asks. The breakdown returns when the run settles. */
+  if (working) parts.push(`${t.ready + failed} of ${state.items.length} done`);
+  else if (t.ready) parts.push(`${t.ready} ready`);
   if (failed) parts.push(`${failed} failed`);
   setText($("t-count"), parts.join(" · "));
 
@@ -169,8 +199,10 @@ function renderFoot() {
   // Present only when it would do something. See the note in index.html.
   show(btn, ready > 0);
   btn.disabled = !ready || busy;
-  // The button says what it will actually produce. One image is a file; several
-  // are a zip, and calling that "Download all" without saying so is how people
-  // end up surprised by an archive.
-  setText($("save-label"), ready > 1 ? `Download ${ready} as zip` : "Download");
+  /* The button says what it will actually produce - the shape AND the size,
+     so nobody commits to a download without knowing what it costs. One image
+     is a file; several are a zip. */
+  setText($("save-label"), ready > 1
+    ? `Download ${ready} as zip · ${human(t.after)}`
+    : "Download");
 }

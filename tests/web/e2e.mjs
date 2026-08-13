@@ -526,9 +526,13 @@ try {
        that skips hit testing would not notice the button being covered by
        something. */
     await page.click("#copy-one");
-    await new Promise((r) => setTimeout(r, 1200));
+    /* Wait for the receipt, not a stopwatch - the headless clipboard can take
+       over a second to hand the promise back. */
+    await page.waitForFunction(
+      () => /(^|\s)(Copied|Could not copy)/.test(document.getElementById("toast").textContent),
+      { timeout: 10_000, polling: 100 });
     const said = await page.evaluate(() => document.getElementById("toast").textContent);
-    ok(/^Copied/.test(said), `copying reports success (${said})`);
+    ok(/Copied/.test(said), `copying reports success (${said})`);
   }
 
   // ---- settings change requeues -------------------------------------------

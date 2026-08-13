@@ -129,13 +129,19 @@ select {
 .field > select,
 .field > input { flex: 1 1 120px; min-width: 0; }
 
-/* The row that pairs two numbers - a size and its unit, a limit and its edge. */
+/* The row that pairs two numbers - a size and its unit, a limit and its edge.
+   Allowed to wrap: a control squeezed until its own value cannot be read is
+   worse than a second line. */
 .field .pair {
   flex: 1 1 120px;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--s-2);
   min-width: 0;
 }
+/* Wide enough that its shortest option reads whole when selected; the longer
+   "never" option may ellipsise, and the sentence under the plan restates it. */
+#shrink-mode { flex: 1 1 auto; min-width: 11ch; }
 .field .pair > * { min-width: 0; }
 .field .pair > select { flex: 1; }
 /* Wide enough for four digits and the spinner. At the shared 7ch it clipped
@@ -272,7 +278,10 @@ select {
   left: 50%;
   bottom: var(--s-5);
   transform: translate(-50%, calc(100% + var(--s-6)));
-  max-width: min(90vw, 460px);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: min(90vw, 520px);
   padding: var(--s-3) var(--s-4);
   border: 1px solid var(--c-line);
   border-radius: var(--radius-lg);
@@ -283,6 +292,58 @@ select {
   z-index: 20;
 }
 #toast[data-up="1"] { transform: translate(-50%, 0); }
+/* A receipt must never stand between the pointer and a control: clicks pass
+   through the toast to whatever is under it. Only its own action is real. */
+#toast { pointer-events: none; }
+#toast > #toast-action { flex: none; pointer-events: auto; }
+
+/* ------------------------------ drop overlay ------------------------------ */
+
+/* What letting go will do, said over everything while a drag is in flight.
+   Never interactive - the drop still lands on the window. */
+#drop-say {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--s-3) var(--s-6);
+  border-radius: 999px;
+  background: var(--c-accent);
+  color: var(--c-accent-ink);
+  font-size: 18px;
+  font-weight: 600;
+  box-shadow: var(--elev-3);
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* ------------------------------- help card ------------------------------- */
+
+#help-keys {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s-2) var(--s-3);
+  align-items: baseline;
+  padding: var(--s-3) 0;
+}
+#help-keys > div { display: contents; }
+#help-keys kbd { justify-self: start; }
+#help-keys span { color: var(--c-ink-2); }
+
+/* ----------------------- what differs from automatic ---------------------- */
+
+/* The dot: this field is not where the destination would put it. State made
+   visible instead of remembered. */
+.field[data-changed] > label::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--c-accent);
+  vertical-align: middle;
+}
 
 /* -------------------------------- dialog --------------------------------- */
 

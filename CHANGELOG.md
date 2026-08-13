@@ -6,6 +6,32 @@ This project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Fifty small rights.** The principled-improvements round, everywhere at
+  once: the caliper grew a visible grip and recentres on double-click; fit
+  places the image between the floating bars instead of under them; the side
+  labels never slide off-stage; After/Diff modes carry a badge saying what is
+  showing (and the heatmap its legend); filenames middle-truncate so the
+  distinguishing tail survives, with the full name on hover; every row has
+  hover remove and, when failed, retry; the batch footer reads "4 of 6 done"
+  mid-run and leads the saving with its percentage; the zip button carries the
+  output size and flashes "Saved ✓"; Clear became undoable instead of
+  confirmed; toasts queue, time themselves to their length, pass clicks
+  through, and receipts preempt asides; the drag overlay counts what is about
+  to be dropped; the plan sentence includes a pinned file type, changed fields
+  wear a dot, and "Back to automatic" undoes the lot; the pixel limit offers
+  landmark sizes; More choices remembers being open; the capability notice
+  became a one-time aside instead of permanent header furniture; the alpha
+  dialog's buttons carry the count; the resize disclosure gained a one-click
+  "keep full size for this picture"; under-floor chips explain the floor on
+  hover; hovering any chip previews it on the stage without committing; the
+  per-image override speaks the plan's own quality words; the wordmark and "?"
+  open a shortcuts card; one-time hints teach Space-to-flick, focus-mode's
+  exit, offline readiness, and offer the install at the first moment of
+  demonstrated value; and `prefers-contrast: more` steps the quiet inks up.
+  Deliberately NOT done: multi-select (contradicts the single-selection
+  listbox model - per-row remove covers it), list virtualisation (premature
+  before a real 500-file test), and per-rung savings estimates (this product
+  measures; it does not guess).
 - **"identical — every pixel kept"** as the top rung of the quality control,
   web and CLI (`--lossless`, or `--for lossless`). Only pixel-exact candidates
   enter the bake-off and shrinking turns off visibly, because resizing changes

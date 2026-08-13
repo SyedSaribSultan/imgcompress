@@ -237,12 +237,20 @@ export async function downloadAll() {
     downloadBlob(zip, "imgcompress.zip");
     for (const it of done) it.status = "saved";
     /* If pixels were removed anywhere, the toast that announces the saving
-       says so - the number never travels without that fact. */
+       says so - the number never travels without that fact. And the written
+       report is mentioned, because an artefact nobody knows exists builds no
+       trust. */
     const shrunk = done.filter(
       (it) => it.outW && (it.outW !== it.width || it.outH !== it.height)).length;
-    toast(`Zipped ${done.length} pictures — ${human(totals().saved)} lighter.`
+    toast(`Zipped ${done.length} pictures — saved you ${human(totals().saved)}.`
       + (shrunk ? ` ${shrunk} of them ${shrunk === 1 ? "was" : "were"} shrunk in pixels, `
-        + "not just compressed." : ""));
+        + "not just compressed." : "")
+      + " A written report of everything is inside.");
+    /* Closure on the button itself: the last moment of the flow says it
+       worked, then hands the slot back. Written a beat AFTER the render below
+       repaints the rows, so the renderer does not immediately overwrite it. */
+    setTimeout(() => setText($("save-label"), "Saved ✓"), 80);
+    setTimeout(() => scheduleRender(), 2200);
   } catch {
     toast("Could not build the zip — try downloading pictures one at a time");
   }

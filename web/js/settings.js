@@ -16,7 +16,7 @@
  *   imgcompress/destinations.py.
  */
 
-import { $, setText, show } from "./dom.js";
+import { $, setText, show, toastAside } from "./dom.js";
 import {
   state, D, DEFAULT_DIMENSION, DIMENSION_MODES,
 } from "./state.js";
@@ -123,14 +123,17 @@ export function reflectFormatAvailability() {
     sel.value = "";
     state.settings.formats = null;
   }
-  const note = $("caps-note");
-  if (!note) return;
-  show(note, missing.length > 0);
-  setText(note, missing.length
-    ? `This browser can't save ${missing.map((f) => CAPS_NOTE_LABEL[f] || f).join(" or ")}`
-      + " — everything else still works."
-    : "");
+  /* Said ONCE, as a receipt, not parked in the header forever: a standing
+     warning about a capability most people never reach for habituates into
+     invisibility and takes the header's credibility with it. The per-option
+     "(unavailable here)" labels above carry the fact at the point of choice. */
+  if (missing.length && !capsSaid) {
+    capsSaid = true;
+    toastAside(`This browser can't save ${missing.map((f) => CAPS_NOTE_LABEL[f] || f).join(" or ")}`
+      + " — everything else still works.");
+  }
 }
+let capsSaid = false;
 
 /* --------------------------------- reading -------------------------------- */
 
@@ -197,6 +200,53 @@ export function reflectPlan() {
 
   reflectFormatAvailability();
   reflectQualityWords();
+  reflectDirty();
+}
+
+/* ------------------------- what differs from automatic -------------------- */
+
+/** Whether each field currently differs from the destination's own defaults.
+ *  A dot appears on changed fields (state must be visible, not remembered),
+ *  and "Back to automatic" appears only while there is something to go back
+ *  from. */
+export function reflectDirty() {
+  const d = D.DESTINATION_NUMBERS[$("target").value];
+  if (!d) return;
+  const identical = isLosslessPlan();
+  const dirty = {
+    "quality-preset": identical || Number($("quality").value) !== d.qualityTarget,
+    "shrink-mode": !identical &&
+      ($("shrink-mode").value === "never") !== !d.maxDimension,
+    "maxdim": !identical && $("shrink-mode").value === "cap" &&
+      Number($("maxdim").value) !== (d.maxDimension || DEFAULT_DIMENSION),
+    "plan-goal": $("plan-goal").value !== "small",
+    "plan-format": !!$("plan-format").value,
+    "plan-fit": $("plan-fit").value !== "longest",
+  };
+  let any = false;
+  for (const [id, on] of Object.entries(dirty)) {
+    const field = $(id)?.closest(".field");
+    if (field) field.toggleAttribute("data-changed", on);
+    any = any || on;
+  }
+  show($("plan-reset"), any);
+}
+
+/** One step back to the destination's own defaults. It resets the KNOBS, not
+ *  the destination: where the pictures are going was the real decision, and
+ *  this is not the control that made it. */
+export function resetPlan() {
+  const d = D.DESTINATION_NUMBERS[$("target").value];
+  if (!d) return;
+  $("quality").value = String(d.qualityTarget);
+  $("quality-preset").value = String(Math.round(d.qualityTarget));
+  $("maxdim").value = String(d.maxDimension || DEFAULT_DIMENSION);
+  $("shrink-mode").value = d.maxDimension ? "cap" : "never";
+  $("plan-fit").value = "longest";
+  $("plan-goal").value = "small";
+  $("plan-format").value = "";
+  state.settings.formats = null;
+  reflectPlan();
 }
 
 /** The floor and its words, kept in agreement in both directions: a click on the
@@ -217,9 +267,14 @@ export function reflectQualityWords() {
 
   const capping = $("plan-goal").value === "cap";
   const words = wordsForQuality(q);
-  setText($("quality-note"), capping
+  /* The sentence is the whole plan restated, so it must carry EVERY active
+     constraint - a pinned file type included. A readout that omits one is the
+     control/engine drift this line exists to prevent. */
+  const pin = $("plan-format").value;
+  const pinned = pin ? ` Always saved as ${fmtLabel(pin)}.` : "";
+  setText($("quality-note"), (capping
     ? `The best quality that fits under ${human(parseSize($("plan-cap").value))}, and never worse than ${words}.`
-    : `The smallest file that still looks ${words}.`);
+    : `The smallest file that still looks ${words}.`) + pinned);
 }
 
 /** A click on the words. "custom" is not a choice a person can make - it only

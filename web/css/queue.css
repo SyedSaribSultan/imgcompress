@@ -11,7 +11,7 @@
    dividing rule belongs to the plan below, not to this region's top edge. */
 #queue-sec {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 0;
 }
 
@@ -64,13 +64,83 @@
   background: var(--c-sunk);
   box-shadow: var(--elev-1);
 }
+/* Not decoded yet: a quiet shimmer says "coming", where a blank square says
+   "broken". The global reduced-motion rule in base.css stills it. */
+.row > .thumb:not([src]) {
+  background-image: linear-gradient(100deg,
+    var(--c-sunk) 40%, var(--c-raised) 50%, var(--c-sunk) 60%);
+  background-size: 200% 100%;
+  animation: thumb-wait 1.4s linear infinite;
+}
+@keyframes thumb-wait {
+  from { background-position: 120% 0; }
+  to { background-position: -80% 0; }
+}
 
+/* The standing invitation under the list. */
+#queue-hint {
+  padding: var(--s-1) var(--s-4) var(--s-2);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Middle truncation: the head gives way, the tail - the distinguishing
+   characters and the extension - survives at any width. */
 .row > .name {
   grid-column: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  min-width: 0;
   white-space: nowrap;
 }
+.row .name-head {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.row .name-tail { flex: none; }
+
+/* The row's own actions, revealed by attention: hover or focus on a pointer,
+   always present where there is no hover to have. They sit over the size
+   column so nothing jumps when they appear. */
+.row > .row-acts {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  display: none;
+  align-items: center;
+  gap: var(--s-1);
+  justify-self: end;
+}
+.row:hover > .row-acts,
+.row:focus-within > .row-acts { display: inline-flex; }
+.row:hover > .now,
+.row:focus-within > .now { visibility: hidden; }
+/* No hover to have: the actions get their own column and the size stays. */
+@media (pointer: coarse) {
+  .row { grid-template-columns: 40px minmax(0, 1fr) auto auto; }
+  .row > .row-acts { display: inline-flex; grid-column: 4; grid-row: 1 / span 2; }
+  .row > .now { visibility: visible; }
+  .row:hover > .now { visibility: visible; }
+  .row-act { width: var(--s-target); }
+}
+.row-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-sm);
+  background: var(--c-raised);
+  color: var(--c-ink-2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fx) var(--ease-fx),
+    border-color var(--dur-fx) var(--ease-fx);
+}
+.row-act:hover { color: var(--c-ink); border-color: var(--c-line-hover); }
+.row-act.rm:hover { color: var(--c-bad); border-color: var(--c-bad); }
 
 /* The weight after compressing, right-aligned so the column reads as a column */
 .row > .now {
