@@ -19,6 +19,7 @@ const DESTINATION_ORDER = [
   "web",
   "documents",
   "email",
+  "social",
   "thumbnail",
   "original"
 ];
@@ -39,6 +40,11 @@ const DESTINATION_FORMATS = {
     "png"
   ],
   "email": [
+    "jpeg",
+    "png8",
+    "png"
+  ],
+  "social": [
     "jpeg",
     "png8",
     "png"
@@ -85,6 +91,12 @@ const DESTINATION_NUMBERS = {
     "maxDimension": 1920,
     "qualityTarget": 88.0,
     "help": "Small enough to attach, and opens everywhere."
+  },
+  "social": {
+    "label": "Social media post",
+    "maxDimension": 2048,
+    "qualityTarget": 88.0,
+    "help": "Sized and saved so Instagram, X and Facebook won't shrink it again themselves."
   },
   "thumbnail": {
     "label": "Thumbnail or avatar",

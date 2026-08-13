@@ -115,6 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  imgcompress hero.png --for documents  safe to import into a design tool\n"
             "  imgcompress input/ --for email        small enough to attach\n"
             "  imgcompress input/ -q 95              hold a higher visual match\n"
+            "  imgcompress scans/ --lossless         never change a pixel\n"
             "  imgcompress hero.jpg --under 200KB    best quality that fits a limit\n"
             "  imgcompress input/ --fit width -m 1600   pin every image to 1600px wide\n"
             "  imgcompress input/ --fast             quicker, slightly bigger\n"
@@ -160,6 +161,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-f", "--format", dest="formats", action="append",
                         choices=sorted(enc.ALL),
                         help="always use this format; repeat to allow several")
+    parser.add_argument("--lossless", action="store_true",
+                        help="never change a pixel: only pixel-exact formats, "
+                             "never resized. Files come out larger this way. "
+                             "Shorthand for --for lossless")
     parser.add_argument("--fast", action="store_true",
                         help="skip the slowest final passes; a few percent bigger")
     parser.add_argument("--no-zopfli", action="store_true",
@@ -212,6 +217,15 @@ def main(argv=None) -> int:
     # so a script that says `--target figma` keeps landing on the design-tool
     # rules under their new name.
     asked_for = args.legacy_target or args.destination
+    # `--lossless` is a promise, not a preference, so it does not merge with a
+    # destination - the two name different rules and combining them silently
+    # would honour neither. Saying both is asked back, not resolved.
+    if args.lossless:
+        if asked_for != dest.DEFAULT and dest.resolve(asked_for) != "lossless":
+            print("--lossless and --for name different rules. "
+                  "Use one or the other.", file=sys.stderr)
+            return 2
+        asked_for = "lossless"
     if not dest.exists(asked_for):
         print(f"There's no destination called '{asked_for}'. "
               f"Choose one of: {', '.join(dest.names())}.", file=sys.stderr)

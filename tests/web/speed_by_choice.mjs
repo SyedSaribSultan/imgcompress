@@ -49,10 +49,10 @@ try {
     // No second resize: the corpus is already normalised, and a resize would
     // mean each choice was compressing different pixels.
     await pg.evaluate(() => {
-      // "whatever size they already are" is how not-resizing is spelled now;
-      // the magic 0 in the pixel box is gone.
-      const fit = document.getElementById("plan-fit");
-      fit.value = "none"; fit.dispatchEvent(new Event("change"));
+      // "never — keep every pixel" is how not-resizing is spelled now; the
+      // shrink control took it over from the old plan-fit "none".
+      const shrink = document.getElementById("shrink-mode");
+      shrink.value = "never"; shrink.dispatchEvent(new Event("change"));
     });
     await new Promise((r) => setTimeout(r, 500));
 

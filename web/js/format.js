@@ -37,11 +37,18 @@ const FORMAT_LABEL = {
 export const fmtLabel = (f) => FORMAT_LABEL[f] || (f ? f.toUpperCase() : "");
 
 /** The words the format control offers, which are phrased as instructions
- *  ("always JPEG") rather than as names. */
+ *  ("always JPEG") rather than as names. The technical residue carries its
+ *  meaning in place: "every pixel kept" is what lossless means, said plainly. */
 export const FORMAT_CHOICE_LABEL = {
-  jpeg: "JPEG", webp: "WebP", "webp-lossless": "WebP, lossless",
-  png: "PNG", png8: "PNG, palette", png8x: "PNG, exact palette", avif: "AVIF",
+  jpeg: "JPEG", webp: "WebP", "webp-lossless": "WebP — every pixel kept",
+  png: "PNG — every pixel kept", png8: "PNG — fewer colors",
+  png8x: "PNG — fewer colors, every pixel kept", avif: "AVIF",
 };
+
+/** Which formats can honour "identical — every pixel kept". Everything else is
+ *  disabled while that promise is selected, because a control that offers what
+ *  the promise forbids is a control that lies. */
+export const LOSSLESS_CAPABLE = new Set(["png", "webp-lossless", "png8x"]);
 
 const MIME_OF = {
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
@@ -87,13 +94,15 @@ export function scoreText(score, lossless) {
 }
 
 /** The words for a quality floor, for a value that arrived from somewhere other
- *  than a click - a saved setting, a destination, or a per-image override. */
+ *  than a click - a saved setting, a destination, or a per-image override. Each
+ *  rung reads strictly weaker than the one above it; the old words had 85 and 80
+ *  sounding like each other's opposites. */
 export function wordsForQuality(q) {
-  if (q >= 95) return "good enough to re-edit";
-  if (q >= 90) return "indistinguishable";
-  if (q >= 85) return "indistinguishable unless you compare";
-  if (q >= 80) return "indistinguishable side by side";
-  if (q >= 70) return "clean at thumbnail size";
+  if (q >= 95) return "perfect, even for re-editing";
+  if (q >= 90) return "exactly the same to your eye";
+  if (q >= 85) return "the same unless you zoom in and compare";
+  if (q >= 80) return "the same at a glance";
+  if (q >= 70) return "clean when shown small";
   return "visibly compressed";
 }
 

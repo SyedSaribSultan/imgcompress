@@ -12,7 +12,7 @@
  */
 
 import { $, toast } from "./dom.js";
-import { state, current, select, isReady, isBusy } from "./state.js";
+import { state, current, select, isReady, isBusy, totals } from "./state.js";
 import { scheduleRender, renderNow } from "./render.js";
 import { human, splitName } from "./format.js";
 import {
@@ -36,7 +36,10 @@ import { downloadAll, downloadOne, copyImage } from "./save.js";
 
 /* Debounced, because these are live controls: dragging a number field would
  * otherwise re-queue the whole batch on every keystroke. The plan is the
- * whole-queue control, so changing it means everything is redone to match. */
+ * whole-queue control, so changing it means everything is redone to match -
+ * but nothing on screen is blanked: finished results stay visible, marked
+ * stale, until their replacements land, and workers mid-flight are told to
+ * stop rather than left computing answers nobody will see. */
 let pushTimer;
 function pushSettings() {
   clearTimeout(pushTimer);
@@ -44,7 +47,7 @@ function pushSettings() {
     state.settings = currentSettings();
     state.settingsRev++;
     saveSettings();
-    requeue(state.items.filter((i) => i.status !== "working").map((i) => i.id));
+    requeue(state.items.map((i) => i.id), { keepResult: true });
   }, 350);
 }
 
@@ -73,6 +76,38 @@ function settleAlpha(policy) {
   $("plan-format").value = state.settings.formats?.[0] || "";
   $("alpha-ask").close();
   reflectPlan();
+}
+
+/* ---------------------------------- theme --------------------------------- */
+
+/* Three states, cycled on one button: match my device -> light -> dark. The
+ * saved choice is applied before first paint by js/theme.js (a head script);
+ * this is only the control. The button's visible word is the CURRENT state -
+ * a control that showed the next state read as already being in it. */
+const THEME_WORD = { "": "Match my device", light: "Light", dark: "Dark" };
+const THEME_NEXT = { "": "light", light: "dark", dark: "" };
+
+function reflectTheme() {
+  const cur = document.documentElement.dataset.theme || "";
+  const btn = $("theme-btn");
+  btn.textContent = `Theme: ${THEME_WORD[cur]}`;
+  btn.title = `Switch to ${THEME_WORD[THEME_NEXT[cur]]}`;
+  btn.setAttribute("aria-label",
+    `Theme: ${THEME_WORD[cur]}. Click to switch to ${THEME_WORD[THEME_NEXT[cur]]}.`);
+}
+
+function bindTheme() {
+  $("theme-btn").addEventListener("click", () => {
+    const next = THEME_NEXT[document.documentElement.dataset.theme || ""];
+    if (next) document.documentElement.dataset.theme = next;
+    else delete document.documentElement.dataset.theme;
+    try {
+      if (next) localStorage.setItem("imgc-theme", next);
+      else localStorage.removeItem("imgc-theme");
+    } catch { /* private browsing; the choice still holds for this visit */ }
+    reflectTheme();
+  });
+  reflectTheme();
 }
 
 /* -------------------------------- selection ------------------------------- */
@@ -143,6 +178,7 @@ function bindPlan() {
 
   $("plan-goal").addEventListener("change", () => { reflectPlan(); pushSettings(); });
   $("quality-preset").addEventListener("change", () => { onQualityPreset(); pushSettings(); });
+  $("shrink-mode").addEventListener("change", () => { reflectPlan(); pushSettings(); });
   $("plan-fit").addEventListener("change", () => { reflectPlan(); pushSettings(); });
 
   for (const id of ["plan-cap", "maxdim"]) {
@@ -351,6 +387,7 @@ window.state = state;
 
 loadSettings();
 state.settings = currentSettings();
+bindTheme();
 bindIntake();
 bindPlan();
 bindQueue();
@@ -359,8 +396,10 @@ bindFacts();
 bindKeys();
 
 setBatchEndHandler(() => {
-  const done = state.items.filter(isReady).length;
-  if (done) toast(`Done — ${done} image${done === 1 ? "" : "s"} ready to download`);
+  const t = totals();
+  if (!t.ready) return;
+  toast(`Done — ${t.ready} picture${t.ready === 1 ? "" : "s"} ready, `
+    + `${human(t.saved)} smaller. Drag the line to check any of them.`);
 });
 
 // Ask what this browser can encode before anything is dropped, so the format

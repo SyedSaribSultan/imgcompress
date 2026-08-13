@@ -9,7 +9,7 @@
 
 import { $, setText, toast } from "./dom.js";
 import { state, isReady, totals } from "./state.js";
-import { human, splitName } from "./format.js";
+import { human, splitName, fmtLabel, scoreText } from "./format.js";
 import { scheduleRender } from "./render.js";
 
 /** The extension the output should carry: the format's own, or the original's
@@ -95,6 +95,54 @@ export async function copyImage(it) {
   }
 }
 
+/* ------------------------------ the report ------------------------------- */
+
+/** The written record of what happened to each picture: what changed, what was
+ *  measured, and every version that was tried. It rides in the zip because the
+ *  people who need it - records, legal, archives - need it next to the files,
+ *  not on a screen they have already closed. Plain text on purpose. */
+function buildReport(done, names) {
+  const lines = [];
+  const t = totals();
+  lines.push(`imgcompress report — ${done.length} picture${done.length === 1 ? "" : "s"}`);
+  lines.push(`${human(t.before)} in, ${human(t.after)} out, ${human(t.saved)} saved.`);
+  lines.push("Everything ran in this browser. Nothing was uploaded.");
+  lines.push("");
+  lines.push("Visual match is SSIMULACRA 2, 0-100, measured against the original;");
+  lines.push('"identical" means the pixels are exactly the same, not merely close.');
+
+  done.forEach((it, i) => {
+    const resized = it.outW && (it.outW !== it.width || it.outH !== it.height);
+    lines.push("");
+    lines.push(`${i + 1}. ${it.name} → ${names[i]}`);
+    lines.push(`   kept:          ${fmtLabel(it.fmt)}`);
+    lines.push(`   size:          ${human(it.originalBytes)} → ${human(it.newBytes)}`);
+    lines.push(`   pixels:        ${it.width}×${it.height}`
+      + (resized ? ` → ${it.outW}×${it.outH} (shrunk)` : " (unchanged)"));
+    lines.push(`   visual match:  ${scoreText(it.score, it.lossless)}`);
+    lines.push(`   pixel-exact:   ${it.lossless ? "yes" : "no"}`);
+    if (it.hardCapped) {
+      lines.push("   note:          shrunk by the design-tool ceiling, which applies");
+      lines.push("                  even when no shrinking was asked for");
+    }
+    for (const w of it.warnings || []) lines.push(`   warning:       ${w}`);
+    if (it.candidates?.length) {
+      lines.push("   versions tried:");
+      const rows = [...it.candidates].sort((a, b) => a.bytes - b.bytes);
+      for (const c of rows) {
+        const win = !it.auto?.passthrough && c.format === (it.pick || it.auto?.fmt);
+        lines.push(`     ${fmtLabel(c.format).padEnd(24)}`
+          + `${human(c.bytes).padStart(10)}   ${scoreText(c.score, c.lossless)}`
+          + (win ? "   <- kept" : ""));
+      }
+      lines.push(`     ${"Original".padEnd(24)}${human(it.originalBytes).padStart(10)}`
+        + `   identical${it.auto?.passthrough ? "   <- kept" : ""}`);
+    }
+  });
+  lines.push("");
+  return lines.join("\n");
+}
+
 /* ------------------------------- the zip --------------------------------- */
 
 const ZCRC = (() => {
@@ -176,13 +224,27 @@ export async function downloadAll() {
   $("save-btn").disabled = true;
   try {
     const used = new Set();
-    const entries = done.map((it) => ({ name: outputName(it, used), blob: it.afterBlob }));
+    const names = done.map((it) => outputName(it, used));
+    const entries = done.map((it, i) => ({ name: names[i], blob: it.afterBlob }));
+    /* The written record rides along, always. It is the one artefact the
+       records/legal/archive personas asked for, and one text file in a zip
+       costs everyone else nothing. */
+    entries.push({
+      name: "imgcompress-report.txt",
+      blob: new Blob([buildReport(done, names)], { type: "text/plain" }),
+    });
     const zip = await zipStore(entries);
     downloadBlob(zip, "imgcompress.zip");
     for (const it of done) it.status = "saved";
-    toast(`Zipped ${done.length} images — ${human(totals().saved)} lighter than they arrived`);
+    /* If pixels were removed anywhere, the toast that announces the saving
+       says so - the number never travels without that fact. */
+    const shrunk = done.filter(
+      (it) => it.outW && (it.outW !== it.width || it.outH !== it.height)).length;
+    toast(`Zipped ${done.length} pictures — ${human(totals().saved)} lighter.`
+      + (shrunk ? ` ${shrunk} of them ${shrunk === 1 ? "was" : "were"} shrunk in pixels, `
+        + "not just compressed." : ""));
   } catch {
-    toast("Could not build the zip — try downloading images individually");
+    toast("Could not build the zip — try downloading pictures one at a time");
   }
   scheduleRender();
 }

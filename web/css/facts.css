@@ -43,11 +43,11 @@
   box-shadow: inset 0 0 0 1px var(--c-accent);
 }
 
-.chip > .cf { font-size: 12px; font-weight: 600; }
-.chip > .cb { font-size: 12px; color: var(--c-ink-2); }
+.chip > .cf { font-size: 14px; font-weight: 600; }
+.chip > .cb { font-size: 14px; color: var(--c-ink-2); }
 /* How this one compares to the kept file. Signed, because the sign is the
    whole message: a chip that is bigger than the winner has to look bigger. */
-.chip > .cd { font-size: 11px; color: var(--c-ink-3); }
+.chip > .cd { font-size: 13px; color: var(--c-ink-3); }
 
 /* The encode the engine kept. Marked in words as well as with a border, so the
    reason it won is readable and not just its outline. */
@@ -76,7 +76,7 @@
 /* Why this one won, in a sentence, under the chips. */
 #chip-why {
   padding-top: var(--s-3);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--c-ink-3);
 }
 
@@ -89,12 +89,12 @@
   padding-top: var(--s-3);
 }
 .stats > div > .k {
-  font-size: 11px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--c-ink-3);
 }
-.stats > div > .v { font-size: 15px; }
+.stats > div > .v { font-size: 16px; }
 
 /* Notes that only appear when they are true. Each carries its meaning in its
    words; the colour is a second signal, never the only one. */
@@ -102,12 +102,20 @@
   margin-top: var(--s-3);
   padding: var(--s-2) var(--s-3);
   border-left: 2px solid var(--c-line);
-  font-size: 13px;
+  font-size: 15px;
   color: var(--c-ink-2);
 }
 .note.good { border-color: var(--c-good); }
 .note.warn { border-color: var(--c-warn); }
 .note.bad { border-color: var(--c-bad); }
+
+/* The resize disclosure. Full-strength ink at body size, above the stat grid:
+   it must never read smaller or quieter than the number it explains. */
+.note.strong {
+  font-size: 16px;
+  color: var(--c-ink);
+  border-color: var(--c-ink-3);
+}
 
 /* ---------------------------------- redo --------------------------------- */
 

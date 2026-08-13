@@ -50,8 +50,13 @@
   --font-num: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* Three theme states, not two. The default is "match my device": nothing is
+   stamped on <html> and prefers-color-scheme decides. An explicit choice from
+   the header toggle stamps data-theme="light" or "dark", and the stamp always
+   beats the OS - which is why the media query excludes an explicit light, and
+   the dark tokens appear twice: once for a dark OS, once for a dark choice. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --c-bg: #16161a;
     --c-sunk: #1e1e23;
     --c-raised: #26262c;
@@ -70,15 +75,39 @@
   }
 }
 
+:root[data-theme="light"] { color-scheme: light; }
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --c-bg: #16161a;
+  --c-sunk: #1e1e23;
+  --c-raised: #26262c;
+  --c-line: #38383f;
+
+  --c-ink: #f2f2f4;
+  --c-ink-2: #b0b0b8;
+  --c-ink-3: #83838d;
+
+  --c-accent: #6c93f8;
+  --c-accent-ink: #10101a;
+
+  --c-good: #55c68d;
+  --c-warn: #e0aa4a;
+  --c-bad: #f08a80;
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body { height: 100%; }
 
+/* 16px base, and nothing anywhere below 13px. The old 14px base cascaded down
+   to 11px in the corners, which is reading-glasses territory on a laptop. */
 body {
   margin: 0;
   background: var(--c-bg);
   color: var(--c-ink);
-  font: 14px/1.5 var(--font-ui);
+  font: 16px/1.5 var(--font-ui);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -87,9 +116,10 @@ body {
 
 h1, h2, h3 { margin: 0; font-size: 1rem; font-weight: 600; }
 
-/* Section labels. Small and quiet: the data is the content, not its name. */
+/* Section labels. Small and quiet: the data is the content, not its name.
+   13px is the floor for uppercase micro-labels, and this is the floor. */
 h2, h3 {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -101,7 +131,7 @@ p { margin: 0; }
 img, canvas { max-width: 100%; }
 
 kbd {
-  font: 11px var(--font-num);
+  font: 13px var(--font-num);
   padding: 1px var(--s-1);
   border: 1px solid var(--c-line);
   border-radius: 3px;

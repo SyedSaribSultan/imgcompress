@@ -83,16 +83,24 @@ try {
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   ok(true, "the work completes without anything being pressed");
 
-  /* Where the settings live has changed twice; what has never changed is the claim
-     underneath it. There is exactly one of each control, in one place, and nothing
-     is behind a second disclosure once you are there. That is asserted rather than
-     DOM ancestry - the earlier version tested `#app-full > #bar-controls`, pure
-     structure of an arrangement that no longer exists. */
+  /* Where the settings live has changed three times; what has never changed is
+     the claim underneath it: exactly one of each control, in one place, and the
+     PRIMARY questions on screen without anything being opened first. Since the
+     plan folded its expert fields away, the shape of that claim is: the three
+     visible questions (destination, quality, shrink) sit outside any
+     disclosure, everything else sits inside exactly one, and that one is named
+     in words rather than being an icon to guess at. */
   const controls = await pg.evaluate(() => ({
     inPlan: !!document.querySelector("#plan-sec #plan-fields #target"),
     targets: document.querySelectorAll("#target").length,
     qualities: document.querySelectorAll("#quality").length,
-    disclosures: document.querySelectorAll("#plan-sec details, #plan-sec #adv-btn").length,
+    disclosures: document.querySelectorAll("#plan-sec details").length,
+    primariesOpen: ["target", "quality-preset", "shrink-mode"].every((id) =>
+      !document.getElementById(id).closest("details")),
+    restFolded: ["plan-goal", "plan-format", "plan-fit", "suffix-toggle"].every((id) =>
+      !!document.getElementById(id).closest("details#more-choices")),
+    summaryNamed: /more choices/i.test(
+      document.querySelector("#more-choices > summary")?.textContent || ""),
     // The plan is on screen without anything being opened first.
     planVisible: document.getElementById("plan-fields").getBoundingClientRect().height > 0,
   }));
@@ -100,8 +108,11 @@ try {
   ok(controls.planVisible, "and are on screen without anything being opened first");
   ok(controls.targets === 1 && controls.qualities === 1,
      `exactly one of each control exists (${JSON.stringify(controls)})`);
-  ok(controls.disclosures === 0,
-     "and none of them is behind a second disclosure inside it");
+  ok(controls.primariesOpen,
+     "the three primary questions are not behind any disclosure");
+  ok(controls.disclosures === 1 && controls.restFolded,
+     "everything else is inside exactly one disclosure");
+  ok(controls.summaryNamed, "and it is named in words (More choices)");
 
   // ---- frame 3: original and result legible at the same time --------------
   await pg.evaluate(() => imgc.select(state.items[0].id));

@@ -94,7 +94,7 @@
   border-radius: 3px;
   background: rgb(0 0 0 / 0.66);
   color: #fff;
-  font-size: 11px;
+  font-size: 13px;
   white-space: nowrap;
 }
 #divider > .tag.l { right: var(--s-2); }
@@ -171,11 +171,11 @@
 }
 #out-name:hover:not(:focus) { border-color: var(--c-line); }
 
-.stage-bar .size { font-size: 13px; color: var(--c-ink-2); }
-.stage-bar .saved { font-size: 13px; color: var(--c-good); }
+.stage-bar .size { font-size: 15px; color: var(--c-ink-2); }
+.stage-bar .saved { font-size: 15px; color: var(--c-good); }
 
 .zoom { display: inline-flex; align-items: center; gap: var(--s-1); }
-.zoom > .z { min-width: 5ch; text-align: center; font-size: 12px; color: var(--c-ink-2); }
+.zoom > .z { min-width: 5ch; text-align: center; font-size: 14px; color: var(--c-ink-2); }
 
 /* ------------------------------ stage empty ------------------------------ */
 
@@ -209,6 +209,6 @@
   border-radius: var(--radius);
   background: rgb(0 0 0 / 0.72);
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   z-index: 2;
 }

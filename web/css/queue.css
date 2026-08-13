@@ -7,12 +7,15 @@
  * have yet, rather than showing a placeholder where a result will later appear.
  */
 
+/* First in the sidebar now - the pictures are step one of the story - so the
+   dividing rule belongs to the plan below, not to this region's top edge. */
 #queue-sec {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
-  border-top: 1px solid var(--c-line);
 }
+
+#plan-sec { border-top: 1px solid var(--c-line); }
 
 #queue-list {
   overflow-y: auto;
@@ -67,7 +70,7 @@
 .row > .now {
   grid-column: 3;
   grid-row: 1;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--c-ink-2);
 }
 
@@ -75,7 +78,7 @@
 .row > .sub {
   grid-column: 2 / span 2;
   grid-row: 2;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--c-ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -128,7 +131,7 @@ body[data-drag="1"] #side { outline: 2px dashed var(--c-accent); outline-offset:
 #queue-foot {
   padding: var(--s-2) var(--s-4);
   border-top: 1px solid var(--c-line);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--c-ink-3);
   display: flex;
   align-items: center;

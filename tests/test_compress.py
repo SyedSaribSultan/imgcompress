@@ -134,7 +134,7 @@ class EncoderTests(unittest.TestCase):
 class DestinationTests(unittest.TestCase):
     """The table is a promise about where an image is going. Pin all of it.
 
-    These same five entries are duplicated in `web/worker.js`, `web/destinations.js` and
+    These same entries are duplicated in `web/worker.js`, `web/destinations.js` and
     the desktop UI, which cannot be checked from here - but the Python side is
     the reference, so at least it cannot drift on its own.
     """
@@ -147,6 +147,9 @@ class DestinationTests(unittest.TestCase):
         # somebody explicitly asks for more. Two numbers, two jobs.
         "documents":   (("jpeg", "png8", "png"), 2560, 4096, 90.0),
         "email":       (("jpeg", "png8", "png"), 1920, 0, 88.0),
+        # Platforms re-encode uploads, so modern formats buy nothing here.
+        # 2048 covers Instagram's 1080 display size at 2x.
+        "social":      (("jpeg", "png8", "png"), 2048, 0, 88.0),
         "thumbnail":   (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
                         512, 0, 80.0),
         "original":    (("jpeg", "png8", "png", "webp", "webp-lossless", "avif"),
@@ -169,7 +172,7 @@ class DestinationTests(unittest.TestCase):
                 self.assertEqual(d.hard_cap, cap)
                 self.assertEqual(d.ss2_target, ss2)
 
-    def test_the_five_are_the_ones_offered(self):
+    def test_the_offered_are_exactly_the_expected(self):
         self.assertEqual(dest.names(), list(self.EXPECTED))
 
     def test_the_default_is_the_web(self):
@@ -209,6 +212,12 @@ class DestinationTests(unittest.TestCase):
         self.assertNotIn("lossless", dest.names())
         for name in dest.formats_for("lossless"):
             self.assertTrue(enc.ALL[name].lossless, f"{name} is not pixel-exact")
+
+    def test_lossless_never_resizes(self):
+        """Identical means identical. Resizing changes pixels, so the set that
+        backs "identical - every pixel kept" must not carry a downscale."""
+        self.assertEqual(dest.get("lossless").max_dimension, 0)
+        self.assertEqual(dest.get("lossless").hard_cap, 0)
 
 
 class CompressTests(unittest.TestCase):

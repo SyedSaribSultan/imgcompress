@@ -70,11 +70,11 @@ try {
   ok(q80.floor === "80" && q80.target === 80,
      `picking a lower bar sets the floor to 80 (${JSON.stringify(q80)})`);
   ok(!q80.visible, "the raw floor is not a control anyone can see");
-  ok(/side by side/.test(q80.words || ""),
+  ok(/at a glance/.test(q80.words || ""),
      `and the control says so in words (${JSON.stringify(q80.words)})`);
   // The readout under the plan restates what the whole plan will now do, so the
   // words and the floor cannot drift apart unnoticed.
-  ok(/side by side/.test(q80.note || ""),
+  ok(/at a glance/.test(q80.note || ""),
      `and the plan's own summary agrees (${JSON.stringify(q80.note)})`);
 
   // A floor between the landmarks arrives from a saved setting or a

@@ -91,14 +91,24 @@ body {
   min-height: 0;
 }
 
+/* Pictures first, then the plan, then the one line for the command line. The
+   pictures take the flexible share because the list is what grows. */
 #side {
   grid-area: side;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto;
   min-height: 0;
   border-right: 1px solid var(--c-line);
   background: var(--c-sunk);
 }
+
+/* The pip-install pointer. Quiet, last, and never in the way. */
+#cli-note {
+  padding: var(--s-3) var(--s-4);
+  border-top: 1px solid var(--c-line);
+  font-size: 13px;
+}
+#cli-note a { color: var(--c-ink-2); }
 
 #stage {
   grid-area: stage;
@@ -125,12 +135,12 @@ body {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-4) var(--s-4) var(--s-3);
 }
 
 /* The plan's fields share the heading's inset, so the labels line up under it
    instead of running into the window edge. */
-#plan-fields { padding: 0 var(--s-4) var(--s-4); }
+#plan-fields { padding: 0 var(--s-4) var(--s-5); }
 
 /* Each block inside #facts is a separate concern and says so with a rule above
    it. They are laid out in columns while there is room and stack when there is
@@ -172,7 +182,7 @@ body {
   #side {
     border-right: 0;
     border-bottom: 1px solid var(--c-line);
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
   }
 
   #stage { height: 52vh; }

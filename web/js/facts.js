@@ -11,19 +11,25 @@
  */
 
 import { $, setText, show } from "./dom.js";
-import { state, current, isReady, ORIGINAL_PICK, effectiveSettings } from "./state.js";
+import { state, current, isReady, ORIGINAL_PICK, effectiveSettings, D } from "./state.js";
 import { human, duration, fmtLabel, scoreText, signedPct } from "./format.js";
 import { currentPick } from "./views.js";
 
 /* -------------------------------- versions ------------------------------- */
 
-function chipRows(it) {
-  const rows = it.candidates.map((c) => ({
+function chipRows(it, ready) {
+  /* Mid-run the chips are the live candidates - each one already a complete,
+     real file - marked "kept" only in the sense of "the one on the stage right
+     now". The done message replaces them with the authoritative ranking. */
+  const source = ready ? it.candidates : (it.liveCandidates || []);
+  const rows = source.map((c) => ({
     format: c.format,
     bytes: c.bytes,
     lossless: !!c.lossless,
     score: c.score,
-    win: !it.auto.passthrough && c.format === it.auto.fmt,
+    win: ready
+      ? (!it.auto.passthrough && c.format === it.auto.fmt)
+      : (it.livePickBytes != null && c.format === it.fmt),
   }));
   /* The encodes are ranked smallest first, so the row reads as a ranking. */
   rows.sort((a, b) => a.bytes - b.bytes);
@@ -40,18 +46,18 @@ function chipRows(it) {
     bytes: it.originalBytes,
     lossless: true,
     score: null,
-    win: !!it.auto.passthrough,
+    win: ready ? !!it.auto.passthrough : false,
   });
   return rows;
 }
 
-function renderChips(it) {
+function renderChips(it, ready) {
   const box = $("cands");
-  const pick = currentPick(it);
+  const pick = ready ? currentPick(it) : (it.fmt || "");
   const floor = effectiveSettings(it).qualityTarget;
   box.textContent = "";
 
-  for (const row of chipRows(it)) {
+  for (const row of chipRows(it, ready)) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "chip";
@@ -78,6 +84,9 @@ function renderChips(it) {
       ? "identical"
       : (row.score == null ? "" : `match ${scoreText(row.score, false)}`);
 
+    /* Mid-run the chips are informational, not yet controls: choosing among
+       candidates that are still arriving is a race the person cannot win. */
+    b.disabled = !ready;
     b.innerHTML =
       `<span class="cf">${fmtLabel(row.format)}</span>` +
       `<span class="cb num">${human(row.bytes)}</span>` +
@@ -100,7 +109,13 @@ function renderChips(it) {
  *  the encoder reports everything it tried, including formats that came in under,
  *  and claiming otherwise on the panel whose whole job is "we measured this" was
  *  the least trustworthy thing in view. */
-function whyLine(it) {
+function whyLine(it, ready) {
+  if (!ready) {
+    const tried = it.liveCandidates?.length || 0;
+    const total = it.formats || tried;
+    return `Still working: ${tried} of ${total} version${total === 1 ? "" : "s"} `
+         + `tried so far. Every one shown here is finished and real.`;
+  }
   const floor = effectiveSettings(it).qualityTarget;
   if (it.pick) {
     const chosen = it.candidates.find((c) => c.format === it.pick);
@@ -134,14 +149,27 @@ function renderMeasured(it) {
   setText($("s-time"), duration(it.elapsedMs));
 
   /* Resizing and compressing are different things, and adding their savings
-     together hides which one did the work. Said apart. */
-  const resized = it.outW && it.outW !== it.width;
+     together hides which one did the work. Said apart - and said FIRST, at
+     full strength, above the numbers it affects, because a shrink disclosed in
+     fine print under an impressive percentage is the disclosure happening
+     backwards. */
+  const resized = it.outW && (it.outW !== it.width || it.outH !== it.height);
+  const resizeLine = $("s-resize");
+  if (resized) {
+    const pct = it.originalBytes && Number.isFinite(it.newBytes)
+      ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
+    setText(resizeLine,
+      (pct > 0
+        ? `Part of the −${pct}% comes from shrinking the picture from `
+        : `The picture was shrunk from `)
+      + `${it.width}×${it.height} to ${it.outW}×${it.outH}`
+      + (pct > 0 ? ` — not just from compressing it` : "")
+      + `. The visual match below was measured on the compression alone.`);
+  }
+  show(resizeLine, !!resized);
+
   const notes = [];
   if (it.note) notes.push(it.note);
-  if (resized) {
-    notes.push(`Part of this saving is the resize to ${it.outW}×${it.outH}. ` +
-               `The visual match above was measured on the compression alone.`);
-  }
   if (it.lossless && !it.passthrough) {
     notes.push("This one is lossless — the pixels are identical, not merely close.");
   }
@@ -149,12 +177,19 @@ function renderMeasured(it) {
   show(note, notes.length > 0);
   setText(note, notes.join(" "));
 
-  /* A size cap that could not be met without wrecking the image. The engine ships
-     the smallest file still worth looking at and says so. */
+  /* Warning-level, not note-level: things the person asked for that could not
+     be honoured. A size cap that could not be met without wrecking the image,
+     or a "never shrink" the destination's own ceiling overrode. */
   const warns = [...(it.warnings || [])];
   if (it.missedSize && it.sizeTarget) {
     warns.unshift(`Could not get under ${human(it.sizeTarget)} without visible damage. ` +
                   `This is the smallest version still worth keeping.`);
+  }
+  if (it.hardCapped && !effectiveSettings(it).maxDimension) {
+    const cap = D.DOCUMENTS_MAX_DIMENSION;
+    warns.unshift(`You asked for no shrinking, but design tools damage anything over ` +
+                  `${cap} px when you import it — so this was shrunk to ${cap} px first. ` +
+                  `Pick a different “Going to” if you need every pixel.`);
   }
   const warn = $("s-warn");
   show(warn, warns.length > 0);
@@ -180,20 +215,20 @@ function renderRedo(it) {
 
 export function renderFacts() {
   const it = current();
-  const ready = it && isReady(it) && it.auto;
+  const ready = !!(it && isReady(it) && it.auto);
+  /* Live evidence: the bake-off has finished candidates but not the whole run.
+     They are real files with real measurements, so they are shown. */
+  const live = !!(it && !ready && it.liveCandidates?.length);
 
-  // Every block keeps its heading and goes quiet, rather than the region
-  // collapsing and moving everything below it.
-  for (const id of ["versions", "measured", "redo"]) {
-    $(id).style.opacity = ready ? "1" : "0.45";
-  }
+  /* The evidence appears when there is evidence. Before any exists this region
+     used to sit as dimmed scaffolding - three headings, em-dashes, and
+     "Nothing measured yet" - which is clutter explaining its own absence. */
+  show($("facts"), ready || live);
 
-  if (!ready) {
+  if (!ready && !live) {
     $("cands").textContent = "";
-    setText($("chip-why"), it
-      ? "Nothing measured yet for this image."
-      : "Add an image to see every version that was tried.");
     for (const id of ["s-format", "s-score", "s-dims", "s-time"]) setText($(id), "—");
+    show($("s-resize"), false);
     show($("s-note"), false);
     show($("s-warn"), false);
     $("ov-apply").disabled = true;
@@ -201,10 +236,11 @@ export function renderFacts() {
     return;
   }
 
-  $("ov-apply").disabled = false;
+  // The override re-runs an image; mid-run that is a race, so it waits.
+  $("ov-apply").disabled = !ready;
   $("remove-btn").disabled = false;
-  renderChips(it);
-  setText($("chip-why"), whyLine(it));
+  renderChips(it, ready);
+  setText($("chip-why"), whyLine(it, ready));
   renderMeasured(it);
   renderRedo(it);
 }

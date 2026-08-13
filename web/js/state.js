@@ -37,6 +37,9 @@ export const state = {
        control for both and not two. */
     sizeTarget: 0,
     formats: null,
+    /* "identical - every pixel kept". While true the engine keeps only
+       pixel-exact candidates and never resizes. */
+    lossless: false,
     alphaPolicy: "png",
   },
 
@@ -57,7 +60,9 @@ export const state = {
 };
 
 export const DEFAULT_DIMENSION = D.DESTINATION_NUMBERS[D.DEFAULT_DESTINATION].maxDimension;
-export const DIMENSION_MODES = ["longest", "width", "height", "none"];
+/* "none" is no longer a mode: "never shrink" became its own control, carried as
+   maxDimension 0. A saved "none" from before simply falls back to "longest". */
+export const DIMENSION_MODES = ["longest", "width", "height"];
 /* Underscore-prefixed on purpose: this is a sentinel meaning "keep the file as
    it arrived", and it shares a namespace with the encoder format keys. A bare
    "original" would collide the day any encoder is called that. */

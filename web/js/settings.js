@@ -21,10 +21,14 @@ import {
   state, D, DEFAULT_DIMENSION, DIMENSION_MODES,
 } from "./state.js";
 import {
-  human, parseSize, wordsForQuality, FORMAT_CHOICE_LABEL, fmtLabel,
+  human, parseSize, wordsForQuality, FORMAT_CHOICE_LABEL, LOSSLESS_CAPABLE,
+  fmtLabel,
 } from "./format.js";
 
 const QUALITY_PRESETS = [95, 90, 85, 80, 70];
+
+/** Is the plan currently promising "identical — every pixel kept"? */
+export const isLosslessPlan = () => $("quality-preset").value === "identical";
 
 /* ---------------------------- building the lists -------------------------- */
 
@@ -56,14 +60,18 @@ export function renderFormatOptions() {
 
   const auto = document.createElement("option");
   auto.value = "";
-  auto.textContent = "whichever format wins";
+  auto.dataset.label = "automatic — keep whichever comes out best";
+  auto.textContent = auto.dataset.label;
   auto.title = "Writes the image every allowed way and keeps the best one";
   sel.appendChild(auto);
 
   for (const name of allowed) {
     const opt = document.createElement("option");
     opt.value = name;
-    opt.textContent = `always ${FORMAT_CHOICE_LABEL[name] || name}`;
+    // The plain label is kept aside so availability suffixes can be rebuilt
+    // rather than appended forever.
+    opt.dataset.label = `always ${FORMAT_CHOICE_LABEL[name] || name}`;
+    opt.textContent = opt.dataset.label;
     sel.appendChild(opt);
   }
 
@@ -74,29 +82,53 @@ export function renderFormatOptions() {
   reflectFormatAvailability();
 }
 
+/* Keys the worker's capability reports use, mapped to the format each one is
+ * actually about. `engineFlags()` also reports engines with graceful fallbacks
+ * (mozjpeg, oxipng) - those never make a format unwritable, so they are not in
+ * this table, and an unknown key stays out of the sentence instead of being
+ * shouted raw ("WEBPLOSSLESS"). */
+const CAPS_FORMAT = {
+  webp: "webp", png8: "png8", avif: "avif", webpLossless: "webp-lossless",
+};
+const CAPS_NOTE_LABEL = {
+  webp: "WebP", png8: "PNG-8", avif: "AVIF", "webp-lossless": "lossless WebP",
+};
+
 /* What this browser cannot encode, said once, next to the actions rather than in
- * the middle of the plan. The probe answers after the first worker starts, so
- * this can run before the answer is known - and `null` means unknown, which is
- * why the test is `=== false` and not falsy. */
+ * the middle of the plan - plus, while "identical" is promised, which pins would
+ * break that promise. The probe answers after the first worker starts, so this
+ * can run before the answer is known - and `null` means unknown, which is why
+ * the test is `=== false` and not falsy. */
 export function reflectFormatAvailability() {
   const sel = $("plan-format");
+  const identical = isLosslessPlan();
   const missing = [];
-  for (const [fmt, ok] of Object.entries(state.caps)) {
-    if (ok === false) missing.push(fmt);
+  for (const [key, ok] of Object.entries(state.caps)) {
+    const fmt = CAPS_FORMAT[key];
+    if (fmt && ok === false) missing.push(fmt);
   }
   for (const opt of sel ? sel.options : []) {
     const base = opt.value.replace("-lossless", "");
-    const dead = base && state.caps[base] === false;
-    opt.disabled = dead;
-    if (dead && !opt.textContent.endsWith("(unavailable here)")) {
-      opt.textContent = `${opt.textContent} (unavailable here)`;
-    }
+    const capsDead = base && state.caps[base] === false;
+    const pixelDead = identical && opt.value && !LOSSLESS_CAPABLE.has(opt.value);
+    opt.disabled = capsDead || pixelDead;
+    const label = opt.dataset.label || opt.textContent;
+    opt.textContent = capsDead ? `${label} (unavailable here)`
+      : pixelDead ? `${label} (changes pixels)`
+      : label;
+  }
+  /* A pin the current promise forbids falls back to automatic rather than
+     staying selected on a control the engine would refuse to honour. */
+  if (sel && sel.value && sel.selectedOptions[0]?.disabled) {
+    sel.value = "";
+    state.settings.formats = null;
   }
   const note = $("caps-note");
   if (!note) return;
   show(note, missing.length > 0);
   setText(note, missing.length
-    ? `This browser cannot write ${missing.map(fmtLabel).join(" or ")}`
+    ? `This browser can't save ${missing.map((f) => CAPS_NOTE_LABEL[f] || f).join(" or ")}`
+      + " — everything else still works."
     : "");
 }
 
@@ -105,17 +137,21 @@ export function reflectFormatAvailability() {
 /** What the controls currently say, in the shape the engine takes. */
 export function currentSettings() {
   const pinned = $("plan-format").value;
-  const fit = $("plan-fit").value;
+  const lossless = isLosslessPlan();
+  /* "no resizing" is carried as a zero limit, which is what the engine has
+     always meant by it. Nobody types the zero: it is what "never — keep every
+     pixel" says, and what "identical" forces, since resizing changes pixels. */
+  const shrinking = !lossless && $("shrink-mode").value === "cap";
   return {
     target: D.destinationOf($("target").value),
     formats: pinned ? [pinned] : null,
+    /* The promise, not a preference: the engine keeps only pixel-exact
+       candidates while this is set. */
+    lossless,
     metric: "ss2",
     qualityTarget: Number($("quality").value),
-    /* "no resizing" is carried as a zero limit, which is what the engine has
-       always meant by it. The difference is that nobody has to type the zero, or
-       know that it means that. */
-    maxDimension: fit === "none" ? 0 : Number($("maxdim").value) || 0,
-    dimensionMode: fit,
+    maxDimension: shrinking ? Number($("maxdim").value) || 0 : 0,
+    dimensionMode: $("plan-fit").value,
     sizeTarget: $("plan-goal").value === "cap" ? parseSize($("plan-cap").value) : 0,
     alphaPolicy: state.settings.alphaPolicy,
   };
@@ -128,18 +164,53 @@ export function currentSettings() {
 export function reflectPlan() {
   const capping = $("plan-goal").value === "cap";
   show($("plan-cap"), capping);
-  /* The whole row goes, label and unit with it. Hiding only the input left "No
-     wider than px" sitting there as a question with no answer. */
-  show($("maxdim-field"), $("plan-fit").value !== "none");
+
+  /* "identical" is a promise, and resizing changes pixels, so while it is
+     chosen the shrink control is not merely set to never - it is off, and says
+     why. The number and its unit go together; "to at most  px" with no number
+     is a question with no answer. */
+  const identical = isLosslessPlan();
+  const shrink = $("shrink-mode");
+  if (identical && shrink.value !== "never") shrink.value = "never";
+  shrink.disabled = identical;
+  const shrinking = !identical && shrink.value === "cap";
+  show($("maxdim"), shrinking);
+  show($("maxdim-unit"), shrinking);
+  show($("fit-field"), shrinking);
+
+  /* Design tools damage anything over their ceiling on import, so when the
+     ceiling will override what the person asked for, the plan says so BEFORE
+     it happens - never only in the result's fine print. */
+  const documents = D.destinationOf($("target").value) === "documents";
+  const lines = [];
+  if (identical) {
+    lines.push("Shrinking changes pixels, so it's off while “identical” is chosen.");
+  }
+  if (documents && !shrinking) {
+    lines.push(`Design tools are the exception: pictures over ${D.DOCUMENTS_MAX_DIMENSION} px `
+      + `will still be shrunk to ${D.DOCUMENTS_MAX_DIMENSION}, because those tools crush `
+      + `anything bigger on their own.`);
+  }
+  const note = $("shrink-note");
+  show(note, lines.length > 0);
+  setText(note, lines.join(" "));
+
+  reflectFormatAvailability();
   reflectQualityWords();
 }
 
 /** The floor and its words, kept in agreement in both directions: a click on the
  *  words writes the number, and a number that arrived from a destination or a
- *  saved setting picks the words back out. */
+ *  saved setting picks the words back out. "identical" is not a floor - it is a
+ *  different promise entirely, and its sentence says exactly what it costs. */
 export function reflectQualityWords() {
-  const q = Number($("quality").value);
   const sel = $("quality-preset");
+  if (sel.value === "identical") {
+    setText($("quality-note"),
+      "Every pixel stays exactly as it is. Files come out larger this way.");
+    return;
+  }
+  const q = Number($("quality").value);
   const exact = QUALITY_PRESETS.find((p) => p === Math.round(q));
   sel.value = exact != null ? String(exact) : "custom";
   if (exact == null) sel.querySelector('option[value="custom"]').hidden = false;
@@ -153,12 +224,16 @@ export function reflectQualityWords() {
 
 /** A click on the words. "custom" is not a choice a person can make - it only
  *  exists to describe a number that came from somewhere else - so selecting it
- *  is treated as no change. */
+ *  is treated as no change. "identical" is not a number at all: the hidden
+ *  floor keeps its last value, unused while the promise holds, waiting for the
+ *  person to step back off it. */
 export function onQualityPreset() {
   const v = $("quality-preset").value;
   if (v === "custom") return;
-  $("quality").value = String(Number(v));
-  reflectQualityWords();
+  if (v !== "identical") $("quality").value = String(Number(v));
+  // The promise touches more than the words: the shrink row turns off and
+  // pixel-changing format pins go dark, so the whole plan is reflected.
+  reflectPlan();
 }
 
 /* Choosing a destination chooses its whole starting point: the frame, the floor,
@@ -172,8 +247,13 @@ export function onDestination() {
   const d = D.DESTINATION_NUMBERS[$("target").value];
   if (d) {
     $("maxdim").value = d.maxDimension || DEFAULT_DIMENSION;
-    $("plan-fit").value = d.maxDimension ? "longest" : "none";
+    $("shrink-mode").value = d.maxDimension ? "cap" : "never";
+    $("plan-fit").value = "longest";
     $("quality").value = String(d.qualityTarget);
+    /* "identical" survives a destination change on purpose: the destination
+       moves the starting point, but the promise was made explicitly and a
+       change of address is not a reason to break it. Stepping off "identical"
+       is done on the control that made it. */
   }
   renderFormatOptions();
   reflectPlan();
@@ -210,9 +290,13 @@ export function loadSettings() {
     if (Number.isFinite(saved.sizeTarget) && saved.sizeTarget >= 0) {
       state.settings.sizeTarget = saved.sizeTarget;
     }
+    /* "none" was a dimension mode before "never shrink" became its own control;
+       a saved "none" already carries maxDimension 0, so the mode itself just
+       falls back to the default edge. */
     if (DIMENSION_MODES.includes(saved.dimensionMode)) {
       state.settings.dimensionMode = saved.dimensionMode;
     }
+    if (saved.lossless === true) state.settings.lossless = true;
     state.suffix = !!saved.suffix;
   } catch { /* unreadable storage is the same as none */ }
 
@@ -235,9 +319,13 @@ export function loadSettings() {
      this line. */
   $("quality").value = String(Math.round(state.settings.qualityTarget));
   $("maxdim").value = String(state.settings.maxDimension || DEFAULT_DIMENSION);
-  $("plan-fit").value = state.settings.maxDimension ? state.settings.dimensionMode : "none";
+  $("shrink-mode").value =
+    state.settings.maxDimension && !state.settings.lossless ? "cap" : "never";
+  $("plan-fit").value = DIMENSION_MODES.includes(state.settings.dimensionMode)
+    ? state.settings.dimensionMode : "longest";
   $("plan-goal").value = state.settings.sizeTarget ? "cap" : "small";
   if (state.settings.sizeTarget) $("plan-cap").value = human(state.settings.sizeTarget);
+  if (state.settings.lossless) $("quality-preset").value = "identical";
   $("suffix-toggle").checked = state.suffix;
 
   reflectPlan();

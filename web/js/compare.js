@@ -226,14 +226,18 @@ export function renderStage() {
   const it = current();
   const ready = it && isReady(it);
   const working = it && it.status === "working";
+  /* There is something real to show: a finished result, a live preview the
+     bake-off has already produced, or the previous result held on screen while
+     its replacement is computed. All three carry honest numbers. */
+  const hasResult = !!(it && it.afterURL && it.fmt);
 
   show($("stage-empty"), !it);
   show($("view"), !!it);
   show($("split"), !!it && mode === "split");
-  show($("stage-work"), !!working);
-  // The bottom bar is about a finished result, so it goes away rather than
-  // showing dashes where numbers will later be.
-  show(document.querySelector(".stage-bar.bottom"), !!ready);
+  show($("stage-work"), !!(working || (it && it.stale)));
+  // The bottom bar is about a result, so it goes away rather than showing
+  // dashes where numbers will later be.
+  show(document.querySelector(".stage-bar.bottom"), hasResult);
   show(document.querySelector(".stage-bar.top"), !!it);
 
   if (!it) {
@@ -260,14 +264,18 @@ export function renderStage() {
   if (it.beforeURL && $("img-before").getAttribute("src") !== it.beforeURL) {
     $("img-before").src = it.beforeURL;
   }
-  if (ready && it.afterURL && $("img-after").getAttribute("src") !== it.afterURL) {
+  if (hasResult && $("img-after").getAttribute("src") !== it.afterURL) {
     $("img-after").src = it.afterURL;
     diffFor = null;
   }
 
-  if (working) setText($("work-say"), it.progress || "working…");
+  if (working || it.stale) {
+    setText($("work-say"), it.stale
+      ? "Updating to your new settings…"
+      : (it.progress || "working…"));
+  }
 
-  if (ready) {
+  if (hasResult) {
     const { base } = splitName(it.name);
     const nameField = $("out-name");
     // Never write over what is being typed.
@@ -276,12 +284,18 @@ export function renderStage() {
     setText($("s-size"), human(it.newBytes));
     /* A saving of zero is reported as no saving, not as "−0%". Rounding a result
        that got no smaller into a percentage claims a win of nothing, which is worse
-       than saying plainly that nothing was gained. */
+       than saying plainly that nothing was gained.
+
+       And if pixels were removed, the line that says the % says so - at the
+       same size, in the same breath. A headline number that quietly includes a
+       resize is the least trustworthy number on the page. */
     const pct = it.originalBytes
       ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
-    setText($("s-saved"), pct > 0
+    const shrunk = it.outW && (it.outW !== it.width || it.outH !== it.height)
+      ? ` · shrunk to ${it.outW}×${it.outH}` : "";
+    setText($("s-saved"), (pct > 0
       ? `−${pct}% · ${fmtLabel(it.fmt)}`
-      : `no saving · ${fmtLabel(it.fmt)}`);
+      : `no saving · ${fmtLabel(it.fmt)}`) + shrunk);
   }
 
   if (mode === "diff") ensureDiff();

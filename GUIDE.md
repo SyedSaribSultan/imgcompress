@@ -17,11 +17,14 @@ lossless PNG. So the tool doesn't pick — it tries them all and keeps the winne
 
 ### `imgcompress/destinations.py` — "where is this going?"
 
-Five entries — `web` (the default), `documents`, `email`, `thumbnail`,
-`original` — each naming the formats it may write, how large the frame may be,
-and how close the result has to look. It is deliberately the smallest file here
-and imports nothing from the rest of the package, because three other engines
-mirror it and a table with logic in it is a table that cannot be mirrored.
+Six offered entries — `web` (the default), `documents`, `email`, `social`,
+`thumbnail`, `original` — each naming the formats it may write, how large the
+frame may be, and how close the result has to look; plus one hidden entry,
+`lossless`, which backs the "identical — every pixel kept" choice in the UIs
+and `--lossless` on the CLI (pixel-exact formats only, never resized). It is
+deliberately the smallest file here and imports nothing from the rest of the
+package, because three other engines mirror it and a table with logic in it is
+a table that cannot be mirrored.
 
 A destination is the one question a person can answer without knowing anything
 about compression. Before 2.7 there were two overlapping ideas — `--preset` set
@@ -122,7 +125,7 @@ actually installed. Worth running first on any new machine.
 | Change what formats a destination gets | `destinations.py` → `DESTINATIONS` |
 | Add a format (JPEG XL) | Subclass `Encoder`, add to `ALL` and to a destination |
 | Change quality or size defaults | `destinations.py` → `DESTINATIONS` |
-| Add or rename a destination | `destinations.py`, then mirror it in `worker.js`, `app.js`, `app.html` |
+| Add or rename a destination | `destinations.py`, then `python tools/gen_destinations.py` (the browser and desktop UIs read the result; nothing is mirrored by hand) |
 | Change how quality is judged | `quality.py` → `Metric` |
 | Change the search strategy | `core.py` → `_search_one` |
 | Change resize / metadata behaviour | `core.py` → `_normalise` |
@@ -132,7 +135,7 @@ actually installed. Worth running first on any new machine.
 ```bash
 python compress.py --check                # which engines are live
 python compress.py input/ -o output/ -v   # -v shows every candidate, not just the winner
-python -m unittest discover -s tests      # 20 tests, ~20 seconds
+python -m unittest discover -s tests      # 110 tests, ~2.5 minutes
 
 python tests/make_fixtures.py             # build the benchmark corpus
 python tests/bench_formats.py             # reproduce the format table (~4 min)
@@ -158,6 +161,8 @@ learn:
   destination does, which is the half that used to be untested when the cap
   applied to the default and therefore to everybody
 * the older names (`figma`, `archive`) still resolve
+* the hidden `lossless` destination offers only pixel-exact formats and never
+  resizes — identical means identical
 * the bake-off winner is the smallest passing candidate, not just any candidate
 
 If you change behaviour and one of these fails, read the README section it maps
@@ -270,11 +275,13 @@ and `destinations.js` (generated from `destinations.py`).
 
 **The interface**, one page and nothing else. `index.html` is the dashboard;
 `web/css/` holds six stylesheets, one per concern, with every colour and space
-defined once in `base.css`; `web/js/` holds thirteen ES modules with a strict
+defined once in `base.css`; `web/js/` holds the ES modules with a strict
 dependency direction — `format` and `dom` depend on nothing, `state` holds the
 store, `engine` owns the worker pool and the message contract, `queue`/`compare`/
 `facts` only render, `render` schedules them, and `main` is the only module that
-binds an event listener.
+binds an event listener. The one classic script is `js/theme.js`, loaded from
+`<head>` so a saved Light/Dark choice is true before first paint; the cycling
+control itself is bound in `main.js` like everything else.
 
 The interface deliberately does **not** read the `--oz-*` token layer. That layer
 now serves the desktop app alone; the browser app was reset to a baseline of
@@ -282,9 +289,12 @@ system faces and a six-name palette of its own. See *One design system* below fo
 what is still shared and what is not.
 
 There is one page. The marketing sections, the `/compare` and `/download` pages,
-the theme switch, the synthetic demo, the lifetime savings counter and the
-CSV/JSON report export were removed: none of them was part of compressing an
-image.
+the synthetic demo, the lifetime savings counter and the CSV/JSON report export
+were removed: none of them was part of compressing an image. Two of those ideas
+later came back in different, smaller shapes because real users asked: a
+three-state theme control (Light / Dark / Match my device, one cycling button),
+and a written record — `imgcompress-report.txt` rides in every zip with each
+picture's before/after, measured match, and the full versions-tried table.
 
 ### The first five seconds after a drop
 
@@ -306,12 +316,23 @@ thing someone will later be tempted to collapse.
 2. **What is being tried is named, not spun.** `#stage-work` reports the format
    being measured right now. Never a bare spinner: the wait should be legible
    rather than merely long.
-3. **The result appears beside the original.** `mode` starts at `"split"`, and
-   both layers live in one `#frame` at natural size so a single transform moves
-   them together. The original never leaves the stage.
-4. **The evidence is on screen, not behind a disclosure.** The chips, the
-   measurements and the per-image override are three blocks in `#facts`, always
-   present. There is no drawer to find.
+3. **The result appears the moment the first format clears the floor.** The
+   worker posts each candidate as it finishes (`candidate` messages); the stage
+   adopts the smallest passing one — "Here's the JPEG — still trying 3 more
+   ways in the background" — and the chips fill in live, disabled until the run
+   settles. The `done` message stays the authority: a later pass (the lossless
+   recompressor, the chroma check) may still improve on what the preview
+   showed. `mode` starts at `"split"`, and both layers live in one `#frame` at
+   natural size so a single transform moves them together. The original never
+   leaves the stage.
+4. **The evidence appears when there is evidence.** The chips, the measurements
+   and the per-image override are three blocks in `#facts`; before any result
+   exists the region is hidden rather than sitting as dimmed scaffolding, and
+   from the first live candidate onward it is on screen with no drawer to find.
+5. **A settings change never blanks a finished result.** The old picture stays
+   up, marked "updating to your new settings…", until its replacement lands;
+   workers mid-flight get an `abort` message and decline the next probe instead
+   of completing an answer nobody will see.
 
 ### Candidates: the chips are the format control
 
@@ -340,9 +361,10 @@ object URL rather than another run of the whole bake-off.
   "run this image again forcing that format", which is a different act from
   showing an encode the run already produced. Making it echo a chip would
   claim a re-run that never happened.
-* `countLifetime()` applies the *difference* when a pick changes. Counting the
-  image twice, or leaving the total describing a file the person no longer
-  has, are both wrong.
+* During a run the same chips render from `item.liveCandidates` — real files,
+  streamed in as `candidate` messages with their bytes — but as information,
+  not controls: choosing among candidates that are still arriving is a race
+  the person cannot win, so they enable when the run settles.
 
 ### Zoom
 
@@ -358,27 +380,41 @@ Two rules, both learned the hard way:
   allows movement only as far as the frame overhangs the stage, so an axis that
   still fits stays centred and the image can never be dragged into empty space.
 
-### The two controls, and why they are shaped that way
+### The plan's controls, and why they are shaped that way
 
-The toolbar asks for two decisions and defaults both to delegation.
+Three questions are visible; everything else folds into one named disclosure
+("More choices" — a native `<details>`, no script). The first-run flow requires
+zero decisions: the defaults compress on drop.
 
-* **Going to** is one `<select>` spanning the five destinations (`web`,
-  `documents`, `email`, `thumbnail`, `original`) and `one-jpeg` / `one-webp` /
-  `one-png` / `one-avif`. The `one-` prefix is parsed in `parseFormatChoice`.
-  Picking a destination applies all three of its numbers — formats, size cap
-  and minimum visual match — because otherwise "Thumbnail or avatar" would mean
-  nothing but a shorter format list and the person would have to know to open
-  Advanced and change two more things. A single-format pick sets
-  `settings.formats` and *keeps* the destination, so someone who chose "Email
-  or chat" and then "JPEG only" still gets something that fits in an email.
-  Pre-2.7 stored names are mapped by `destinationOf`.
-* **Quality** is `#quality-preset` (words) sitting on top of `#quality` (the
-  60–99 floor, in Advanced). *One setting, two views* — the words write the
-  number and `reflectQualityHint` writes back, showing a hidden `custom`
-  option when the floor lands between the landmarks. **Never make the words
-  the source of truth:** the engine reads the floor from the DOM, and a
-  control that displays one thing while the engine runs another is exactly
-  the shape of the floor-99 bug.
+* **Going to** is one `<select>` over the offered destinations. Picking one
+  applies all three of its numbers — formats, size cap and minimum visual
+  match — because otherwise "Thumbnail or avatar" would mean nothing but a
+  shorter format list. Pre-2.7 stored names are mapped by `destinationOf`.
+  Format is its own control now ("File type", under More choices); a pinned
+  format *keeps* the destination, so someone who chose "Email or chat" and
+  then "always JPEG" still gets something that fits in an email.
+* **Must still look** is `#quality-preset` (words) sitting on top of
+  `#quality` (the hidden 60–99 floor). *One setting, two views* — the words
+  write the number and `reflectQualityWords` writes back, showing a hidden
+  `custom` option when the floor lands between the landmarks. **Never make the
+  words the source of truth:** the engine reads the floor from the DOM, and a
+  control that displays one thing while the engine runs another is exactly the
+  shape of the floor-99 bug. Its top rung, **"identical — every pixel kept"**,
+  is not a floor but a different promise: the bake-off restricts to the
+  pixel-exact set (`DESTINATION_FORMATS.lossless`, intersected with what the
+  destination can store as-given), shrinking turns off and says why, and
+  pixel-changing format pins go dark. The `90` option carries an explicit
+  `selected` attribute — a select's initial value is otherwise its FIRST
+  option, and a fresh profile must not boot into the lossless promise by
+  accident of option order (this shipped as a bug for about an hour and the
+  E2E's fresh-profile assertions caught it).
+* **Shrink big photos** merges the old pixel-limit and edge-mode pair into one
+  row: "to at most [2560] px" or "never — keep every pixel". Which edge the
+  number counts is expert nuance and lives under More choices. When the
+  `documents` ceiling will override a "never" — design tools crush anything
+  over 4096px on import — the plan says so under the control BEFORE it
+  happens, and the result carries a warning stated by the worker's own
+  `hardCapped` flag, never inferred from the numbers.
 * **JPEG cannot store alpha**, so choosing it with transparent artwork queued
   opens `#alpha-ask` rather than resolving it silently in either direction.
   *Invariants:* `item.alpha` is measured from decoded pixels in the worker and
@@ -389,7 +425,12 @@ The toolbar asks for two decisions and defaults both to delegation.
   flattened original rather than transparency the output could never carry.
   A chosen format that gets filtered out — no alpha channel, or no codec in
   this browser — falls back to the automatic set with a warning rather than
-  failing the image.
+  failing the image (and under "identical", the fallback is the pixel-exact
+  set, never the lossy one).
+* **If pixels were removed, the same line that shows the % says so** — stage
+  bar, queue row, zip toast, and the full-strength `.note.strong` line above
+  the measured stats. A headline number that quietly includes a resize is the
+  least trustworthy number on the page; this rule is why it can't happen.
 
 ### The metric is SSIMULACRA 2 itself
 
@@ -551,6 +592,31 @@ must hold if anyone touches this code:
   `worker.js`). *Invariants:* at most two extra encodes; an alternate that
   is not smaller is discarded before verification; a best-effort failure is
   never "improved", only a passing result.
+
+A second round of speed work targets the *perceived* cost — the waits a person
+actually sits through — and each piece carries its own invariant:
+
+* **Probe scores are memoised per (format, rung)** on the cached decode
+  (`job.scoreMemo`), so a floor nudge re-reads measurements instead of paying
+  for five encodes and comparisons per format. *Invariant:* the memo lives on
+  the decode-cache entry and dies with it — same pixels, same scores, and a
+  frame change (new `frameKey`) starts clean.
+* **Stale jobs are aborted, not discarded on arrival.** A settings change sends
+  `abort`; the worker checks a flag between probes and between formats and
+  declines the next unit of work. A wasm encode cannot be interrupted
+  mid-flight, so "stop" means "within one probe". *Invariant:* an abort is
+  never a format failure — it rethrows past the per-encoder catch, or a stopped
+  run would ship a warnings list full of lies.
+* **Codec loads are single-flight** (`CODEC_LOADS` caches the promise, not just
+  the result). The idle prefetch and the first job both ask; a second
+  `importScripts` of the same glue re-declares its top-level bindings, throws,
+  and used to mark the codec unavailable — silently dropping its format from
+  every bake-off on that worker. The E2E's format-completeness guard is what
+  catches that class of failure.
+* **Weak devices (≤3 cores or ≤4GB) drop AVIF from the automatic set** and the
+  result says so, with "always AVIF" as the way to insist. *Invariant:* an
+  explicit pin or the lossless promise is never overridden — the trim applies
+  to delegation only.
 
 `tests/web/bench.mjs` measures all of it and doubles as the regression gate:
 it writes a snapshot of every fixture's winner, level, bytes and score, and

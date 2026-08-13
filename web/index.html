@@ -15,6 +15,10 @@
 <!-- Six stylesheets, one per concern, loaded in dependency order: tokens, then
      the shell that positions the regions, then the regions themselves. Nothing
      below base.css invents a colour or a spacing value of its own. -->
+<!-- Applies a saved light/dark choice before first paint - a classic script,
+     because a deferred module would let the wrong theme flash first. -->
+<script src="/js/theme.js"></script>
+
 <link rel="stylesheet" href="/css/base.css">
 <link rel="stylesheet" href="/css/layout.css">
 <link rel="stylesheet" href="/css/controls.css">
@@ -24,7 +28,7 @@
 </head>
 <body>
 
-<a class="skip" href="#queue-list">Skip to the images</a>
+<a class="skip" href="#queue-list">Skip to the pictures</a>
 
 <!-- ============================== THE BAR ==============================
      Intake and output. These two actions apply to everything in the run, which
@@ -46,7 +50,12 @@
        plan is offering. Silent otherwise. -->
   <span class="muted" id="caps-note" hidden></span>
 
-  <button class="btn" id="add-btn">Add images</button>
+  <!-- Three states, cycled: Match my device (nothing stamped), Light, Dark.
+       The visible word is always the CURRENT state; the title says what a
+       click moves to. -->
+  <button class="btn quiet" id="theme-btn">Theme</button>
+
+  <button class="btn" id="add-btn">Add pictures</button>
   <button class="btn" id="clear-btn" hidden>Clear</button>
   <!-- The one primary action on the page. Hidden rather than disabled while
        there is nothing to download: a greyed-out button is a dead thing taking
@@ -64,106 +73,23 @@
 <main id="dash">
 
   <!-- ============================== THE SIDE =============================
-       The plan, and the queue it applies to. They share a column because they
-       are one thought: these settings, those images.
+       The pictures, then the plan that applies to them. The pictures come
+       first because that is the order a person acts in: add pictures, answer
+       one question, see the result.
        =================================================================== -->
   <aside id="side">
 
-    <section id="plan-sec" aria-labelledby="plan-h">
-      <div class="region-head">
-        <h2 id="plan-h">Plan</h2>
-        <span class="spacer"></span>
-        <span class="muted">every image</span>
-      </div>
-
-      <div id="plan-fields">
-        <!-- Options are built by settings.js from destinations.js, which is
-             generated from imgcompress/destinations.py. No destination's name,
-             frame size or quality floor is written out here. -->
-        <div class="field">
-          <label for="target">Going to</label>
-          <select id="target"></select>
-        </div>
-
-        <div class="field">
-          <label for="plan-goal">Aim for</label>
-          <div class="pair">
-            <select id="plan-goal">
-              <option value="small">the smallest file</option>
-              <option value="cap">a size limit</option>
-            </select>
-            <input type="text" id="plan-cap" inputmode="decimal" value="200 KB"
-                   size="7" aria-label="Size limit" hidden>
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="quality-preset">Never below</label>
-          <select id="quality-preset">
-            <option value="95">good enough to re-edit</option>
-            <option value="90">indistinguishable</option>
-            <option value="85">indistinguishable unless you compare</option>
-            <option value="80">indistinguishable side by side</option>
-            <option value="70">clean at thumbnail size</option>
-            <option value="custom" hidden>as close as you asked for</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="plan-format">Write as</label>
-          <select id="plan-format"></select>
-        </div>
-
-        <!-- The limit and the edge it applies to are two rows, not one. As a
-             single row the select was narrower than its own shortest option and
-             rendered as "px, longest e…", which is a control whose current value
-             cannot be read. -->
-        <div class="field" id="maxdim-field">
-          <label for="maxdim">No wider than</label>
-          <div class="pair">
-            <input type="number" id="maxdim" min="16" step="64" value="2560"
-                   aria-label="Pixel limit">
-            <span class="unit">px</span>
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="plan-fit">Measured on</label>
-          <select id="plan-fit">
-            <option value="longest">the longest edge</option>
-            <option value="width">the width</option>
-            <option value="height">the height</option>
-            <option value="none">nothing — keep original size</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <!-- The words are wrapped in one span on purpose: bare text inside a
-               flex container becomes several anonymous flex items, so "Add",
-               "-min" and "to filenames" were each getting the row's gap. -->
-          <label class="check"><input type="checkbox" id="suffix-toggle">
-            <span>Add <code>-min</code> to filenames</span></label>
-        </div>
-
-        <!-- The floor the engine actually runs on, driven entirely by the words
-             above and never typed by a person. It is a fact about the machine,
-             not a question for anyone. -->
-        <input type="hidden" id="quality" value="90">
-        <p class="plan-why" id="quality-note"></p>
-      </div>
-    </section>
-
     <section id="queue-sec" aria-labelledby="queue-h">
       <div class="region-head">
-        <h2 id="queue-h">Images</h2>
+        <h2 id="queue-h">Pictures</h2>
         <span class="num muted" id="queue-count">0</span>
         <span class="spacer"></span>
       </div>
 
       <div id="queue-empty">
-        <button class="btn primary" id="empty-add">Choose images</button>
+        <button class="btn primary" id="empty-add">Choose pictures</button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
-        <p class="muted">Everything runs in this browser. Nothing is uploaded.</p>
+        <p class="muted">Your pictures never leave your computer.</p>
       </div>
 
       <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
@@ -178,6 +104,113 @@
         <span class="num" id="t-saved"></span>
       </div>
     </section>
+
+    <section id="plan-sec" aria-labelledby="plan-h">
+      <div class="region-head">
+        <h2 id="plan-h">Plan</h2>
+        <span class="spacer"></span>
+        <span class="muted">every picture</span>
+      </div>
+
+      <div id="plan-fields">
+        <!-- Options are built by settings.js from destinations.js, which is
+             generated from imgcompress/destinations.py. No destination's name,
+             frame size or quality floor is written out here. -->
+        <div class="field">
+          <label for="target">Going to</label>
+          <select id="target"></select>
+        </div>
+
+        <div class="field">
+          <label for="quality-preset">Must still look</label>
+          <!-- 90 carries `selected` deliberately: a select's initial value is
+               otherwise its FIRST option, which is "identical" - and a fresh
+               profile must not boot into the lossless promise by accident of
+               option order. reflectQualityWords treats "identical" as a choice
+               and never overwrites it, which is correct everywhere except an
+               unstamped first paint; this attribute is what makes the first
+               paint already-stamped. -->
+          <select id="quality-preset">
+            <option value="identical">identical — every pixel kept</option>
+            <option value="95">perfect, even for re-editing</option>
+            <option value="90" selected>exactly the same to your eye</option>
+            <option value="85">the same unless you zoom in and compare</option>
+            <option value="80">the same at a glance</option>
+            <option value="70">clean when shown small</option>
+            <option value="custom" hidden>as close as you asked for</option>
+          </select>
+        </div>
+
+        <!-- One row for the one thing a person decides about size: shrink big
+             photos, or never touch a pixel count. Which edge the number caps is
+             expert nuance and lives under "More choices". -->
+        <div class="field" id="shrink-field">
+          <label for="shrink-mode">Shrink big photos</label>
+          <div class="pair">
+            <select id="shrink-mode">
+              <option value="cap">to at most</option>
+              <option value="never">never — keep every pixel</option>
+            </select>
+            <input type="number" id="maxdim" min="16" step="64" value="2560"
+                   aria-label="Pixel limit">
+            <span class="unit" id="maxdim-unit">px</span>
+          </div>
+        </div>
+        <p class="plan-why" id="shrink-note" hidden></p>
+
+        <!-- The floor the engine actually runs on, driven entirely by the words
+             above and never typed by a person. It is a fact about the machine,
+             not a question for anyone. -->
+        <input type="hidden" id="quality" value="90">
+        <p class="plan-why" id="quality-note"></p>
+
+        <details id="more-choices">
+          <summary>More choices</summary>
+
+          <div class="field">
+            <label for="plan-goal">Size limit</label>
+            <div class="pair">
+              <select id="plan-goal">
+                <option value="small">none — just make it small</option>
+                <option value="cap">at most</option>
+              </select>
+              <input type="text" id="plan-cap" inputmode="decimal" value="200 KB"
+                     size="7" aria-label="Size limit" hidden>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="plan-format">File type</label>
+            <select id="plan-format"></select>
+          </div>
+
+          <div class="field" id="fit-field">
+            <label for="plan-fit">Count the shrink limit on</label>
+            <select id="plan-fit">
+              <option value="longest">the longest side</option>
+              <option value="width">the width</option>
+              <option value="height">the height</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <!-- The words are wrapped in one span on purpose: bare text inside a
+                 flex container becomes several anonymous flex items, so "Add",
+                 "-min" and "to filenames" were each getting the row's gap. -->
+            <label class="check"><input type="checkbox" id="suffix-toggle">
+              <span>Add <code>-min</code> to filenames</span></label>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- The one line for the people whose job is folders and scripts. The web
+         page and the pip package are the same engine; this is where the page
+         finally says so. -->
+    <p id="cli-note" class="muted">Also a command line — the same engine, for
+      folders and scripts:
+      <a href="https://github.com/SyedSaribSultan/imgcompress" target="_blank"
+         rel="noopener"><code>pip install imgcompress</code></a></p>
   </aside>
 
   <!-- ============================= THE STAGE =============================
@@ -251,12 +284,16 @@
       <section id="versions" aria-labelledby="versions-h">
         <h3 id="versions-h">Versions tried</h3>
         <div class="chips" id="cands" role="group" aria-labelledby="versions-h"></div>
-        <p id="chip-why">Every version is already encoded — tapping one swaps the
-           preview instantly.</p>
+        <p id="chip-why">Every version here is real and ready. Tap one to keep
+           it instead.</p>
       </section>
 
       <section id="measured" aria-labelledby="measured-h">
         <h3 id="measured-h">How this was measured</h3>
+        <!-- The resize, when there was one, comes BEFORE the numbers it
+             affects, at full strength. A shrink disclosed in fine print under
+             an impressive percentage is the disclosure happening backwards. -->
+        <p class="note strong" id="s-resize" hidden></p>
         <div class="stats">
           <div><div class="k">Format</div><div class="v" id="s-format">—</div></div>
           <div><div class="k">Visual match</div><div class="v num" id="s-score">—</div></div>
@@ -274,8 +311,8 @@
           <select id="ov-format">
             <option value="">follow the plan</option>
             <option value="jpeg">JPEG</option>
-            <option value="png8">PNG, palette</option>
-            <option value="png">PNG, lossless</option>
+            <option value="png8">PNG — fewer colors</option>
+            <option value="png">PNG — every pixel kept</option>
             <option value="webp">WebP</option>
             <option value="avif">AVIF</option>
           </select>

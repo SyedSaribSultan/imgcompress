@@ -20,9 +20,12 @@ const rows = new Map();   // id -> the element showing it
 function subLine(it) {
   switch (it.status) {
     case "queued":
-      return { text: "waiting", tone: "" };
+      return { text: it.stale ? "updating to your new settings…" : "waiting", tone: "" };
     case "working":
-      return { text: it.progress || "working…", tone: "" };
+      return {
+        text: it.stale ? "updating to your new settings…" : (it.progress || "working…"),
+        tone: "",
+      };
     case "failed":
       return { text: it.error || "failed", tone: "bad" };
     case "cancelled":
@@ -31,9 +34,12 @@ function subLine(it) {
       const pct = it.originalBytes
         ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
       const saved = pct > 0 ? `−${pct}%` : "no smaller";
+      /* Pixels removed is said on the same line as the %, always. */
+      const shrunk = it.outW && (it.outW !== it.width || it.outH !== it.height)
+        ? " · shrunk" : "";
       const kept = it.status === "saved" ? " · downloaded" : "";
       return {
-        text: `${human(it.originalBytes)} → ${fmtLabel(it.fmt)}${kept ? "" : ""} · ${saved}${kept}`,
+        text: `${human(it.originalBytes)} → ${fmtLabel(it.fmt)} · ${saved}${shrunk}${kept}`,
         tone: pct > 0 ? "good" : "",
       };
     }

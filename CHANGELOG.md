@@ -3,6 +3,57 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **"identical — every pixel kept"** as the top rung of the quality control,
+  web and CLI (`--lossless`, or `--for lossless`). Only pixel-exact candidates
+  enter the bake-off and shrinking turns off visibly, because resizing changes
+  pixels. The hidden `lossless` destination stopped carrying the everyday 2560px
+  downscale, which quietly contradicted its own name.
+- **A `social` destination** ("Social media post"): JPEG/PNG only, 2048px,
+  match 88 — sized and saved so the platforms don't re-shrink uploads themselves.
+- **A written record in every zip.** `imgcompress-report.txt`: per picture, what
+  was kept, what changed in bytes and pixels, the measured match, whether it is
+  pixel-exact, and the full versions-tried table.
+- **A theme control.** Light / Dark / Match my device, cycled in the header,
+  applied before first paint. The default remains following the device.
+- **The web page finally mentions the CLI** — one line in the sidebar. Same
+  engine, for folders and scripts.
+
+### Changed
+- **Resize disclosure moved to the same line as the saving, everywhere.** The
+  stage bar, the queue row, the zip toast and the measured panel all say
+  "shrunk" beside the percentage; the explanation sits above the stat grid at
+  full strength, not under it in fine print. The documents destination's 4096px
+  ceiling overriding an explicit "never shrink" is now a warning, stated in the
+  plan before it happens and on the result when it did — carried by an explicit
+  flag from the worker, never inferred from numbers.
+- **Results appear the moment the first format clears the floor.** Each encode
+  is posted as it finishes; the stage adopts the best-so-far ("Here's the JPEG —
+  still trying 3 more ways in the background") and the chips fill in live. The
+  final message remains the authority.
+- **A settings change no longer blanks the screen or wastes the work.** Finished
+  results stay up, marked "updating to your new settings…", until replacements
+  land; workers mid-flight are told to stop instead of completing answers nobody
+  will see; probe scores are remembered per rung, so a floor nudge re-reads them
+  instead of re-encoding five rungs per format.
+- **Codec WASMs load together, and early.** The four downloads run in parallel
+  instead of one after another, and are warmed at page idle - the first drop
+  starts encoding instead of downloading. Weak devices (≤3 cores or ≤4GB) skip
+  AVIF in the automatic set, say so, and keep "always AVIF" as the way to insist.
+- **The plan reads as one story in plain words.** Pictures first, then three
+  visible questions — Going to / Must still look / Shrink big photos — with
+  everything else under "More choices". The quality words reorder so each rung
+  reads strictly weaker than the one above; base type moved to 16px with nothing
+  below 13px anywhere; the evidence panels appear when there is evidence instead
+  of sitting as dimmed scaffolding.
+
+### Fixed
+- The capability note no longer shouts raw engine keys ("WEBPLOSSLESS") — it
+  says "This browser can't save AVIF or lossless WebP — everything else still
+  works."
+
 ## [2.7.0] - 2026-08-08
 
 ### Changed

@@ -130,8 +130,13 @@ to look.
 | `web` | **Default.** Anything that loads in a browser | all, incl. WebP + AVIF | 2560px | 90 |
 | `documents` | Design tools, office suites, docs | JPEG / PNG only | 2560px, hard ceiling 4096px | 90 |
 | `email` | Attachments and chat | JPEG / PNG only | 1920px | 88 |
+| `social` | Instagram, X, Facebook posts | JPEG / PNG only | 2048px | 88 |
 | `thumbnail` | Avatars, list icons, previews | all | 512px | 80 |
 | `original` | Print, masters, archives | all | never resized | 95 |
+
+There is also `--lossless` (the same thing as `--for lossless`): never change a
+pixel — only pixel-exact formats, never resized. Files come out larger this
+way; it exists for archives, scans and records where "close enough" isn't.
 
 `--preset` is accepted as a synonym, and the older names (`figma`, `archive`)
 still resolve, so existing scripts keep working.
@@ -248,7 +253,7 @@ survives in most hand-rolled compressors.
 ```bash
 git clone https://github.com/SyedSaribSultan/imgcompress && cd imgcompress
 pip install -e ".[full,app,dev]"
-python -m unittest discover -s tests     # 33 tests, ~40s
+python -m unittest discover -s tests     # 110 tests, ~2.5 min
 python tests/make_fixtures.py            # build the benchmark corpus
 python tests/bench_formats.py            # the format table above
 python tests/bench_versions.py           # matched-quality comparison vs v1

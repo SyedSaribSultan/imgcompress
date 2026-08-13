@@ -36,7 +36,7 @@
 }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
 
-.btn.sm { padding: var(--s-1) var(--s-2); font-size: 13px; }
+.btn.sm { padding: var(--s-1) var(--s-2); font-size: 14px; }
 
 /* No border, no fill - for actions that sit inside something already framed. */
 .btn.quiet {
@@ -115,9 +115,28 @@ input[type="number"] { width: 7ch; }
    it. It is a readout and never a control, so it is never focusable. */
 .plan-why {
   color: var(--c-ink-3);
-  font-size: 13px;
+  font-size: 14px;
   padding-top: var(--s-2);
 }
+
+/* ----------------------------- more choices ------------------------------ */
+
+/* The rest of the plan, folded away. The three fields above answer the whole
+   question for almost everyone; these answer it more precisely for the people
+   who ask. Native <details>, so it costs no script and the state is the
+   browser's own. */
+#more-choices {
+  margin-top: var(--s-3);
+  border-top: 1px solid var(--c-line);
+  padding-top: var(--s-2);
+}
+#more-choices > summary {
+  cursor: pointer;
+  color: var(--c-ink-2);
+  padding: var(--s-2) 0;
+  user-select: none;
+}
+#more-choices > summary:hover { color: var(--c-ink); }
 
 /* ------------------------------- segmented ------------------------------- */
 

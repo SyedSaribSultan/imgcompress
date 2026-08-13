@@ -164,6 +164,8 @@ export function cancelAll() {
     pool[slot.index] = makeWorker(slot.index);
   }
   for (const item of stopping) {
+    // Nothing stale or half-shown survives a stop as though it were a result.
+    if (item.stale || item.liveCandidates) clearResult(item);
     item.status = item.candidates?.length ? "failed" : "cancelled";
     item.error = "stopped";
     item.frac = 0;
@@ -198,10 +200,57 @@ function onWorkerMessage(slot, msg) {
     item.frac = msg.frac ?? item.frac ?? 0;
     item.stage = msg.stage;
     item.formats = msg.total || item.formats;
-    const fn = STAGE_TEXT[msg.stage];
-    item.progress = fn ? fn(msg.detail, Math.round((item.frac || 0) * 100)) : "working…";
+    /* Once a live preview has been adopted, its sentence owns the line -
+       "Testing AVIF · 40%" would replace "Here's the JPEG…" and hide the one
+       fact that matters: there is already something to look at. */
+    if (item.livePickBytes == null) {
+      const fn = STAGE_TEXT[msg.stage];
+      item.progress = fn ? fn(msg.detail, Math.round((item.frac || 0) * 100)) : "working…";
+    }
     scheduleRender("queue");
     if (state.selected === item.id) scheduleRender("stage");
+    return;
+  }
+
+  /* One finished encode, posted the moment it exists. The first one that
+     clears the floor goes straight on the stage - the person gets a real
+     result in seconds while the rest of the bake-off runs behind it. The done
+     message remains the authority and replaces all of this. */
+  if (msg.type === "candidate") {
+    if (msg.rev !== state.settingsRev && !item.override) return;   // stale preview
+    const c = msg.candidate;
+    if (msg.first) { item.liveCandidates = []; item.livePickBytes = null; }
+    item.formats = msg.total || item.formats;
+    item.liveCandidates = item.liveCandidates || [];
+    item.liveCandidates.push({
+      format: c.format, bytes: c.bytes, score: c.score, lossless: c.lossless,
+      level: c.level, ext: c.ext, mime: c.mime,
+    });
+    if (!(item.candBlobs instanceof Map)) item.candBlobs = new Map();
+    const blob = new Blob([msg.data], { type: c.mime || "" });
+    item.candBlobs.set(c.format, blob);
+    if (msg.dims) {
+      item.width = msg.dims.width; item.height = msg.dims.height;
+      item.outW = msg.dims.outW; item.outH = msg.dims.outH;
+      item.hardCapped = !!msg.dims.hardCapped;
+    }
+    /* Adopt the smallest passing candidate so far - and never one bigger than
+       the original, because "here's your result" must not be a worse file. */
+    if (c.passing && c.bytes < item.originalBytes
+        && (item.livePickBytes == null || c.bytes < item.livePickBytes)) {
+      item.livePickBytes = c.bytes;
+      applyView(item, {
+        fmt: c.format, ext: c.ext, blob, newBytes: c.bytes,
+        level: c.level, score: c.score, lossless: c.lossless,
+        note: "", passthrough: false,
+      });
+      item.stale = false;
+      const left = msg.total - msg.done - 1;
+      item.progress = left > 0
+        ? `Here's the ${fmtLabel(c.format)} — still trying ${left} more way${left === 1 ? "" : "s"} in the background.`
+        : `Here's the ${fmtLabel(c.format)} — finishing up.`;
+    }
+    scheduleRender();
     return;
   }
 
@@ -210,6 +259,17 @@ function onWorkerMessage(slot, msg) {
   if (msg.engines) {
     state.caps = { ...state.caps, ...msg.engines };
     reflectFormatAvailability();
+  }
+
+  if (msg.type === "aborted") {
+    /* It was told to stop because the plan moved. Straight back to the queue,
+       to be redone under the settings that are actually current. Whatever it
+       was showing stays up, still marked stale. */
+    item.status = "queued";
+    item.startedAt = null;
+    item.frac = 0;
+    scheduleRender(); dispatch();
+    return;
   }
 
   if (msg.rev !== state.settingsRev && !item.override) {
@@ -224,6 +284,10 @@ function onWorkerMessage(slot, msg) {
   if (item.startedAt != null) item.elapsedMs = performance.now() - item.startedAt;
 
   if (msg.type === "failed") {
+    /* A stale result or a half-adopted preview must not sit under a "failed"
+       banner looking finished - numbers from settings that no longer exist are
+       worse than no numbers. */
+    if (item.stale || item.liveCandidates) clearResult(item);
     item.status = "failed";
     item.error = msg.error || "failed";
     item.warnings = msg.warnings || [];
@@ -252,6 +316,13 @@ function onWorkerMessage(slot, msg) {
     if (r.width) { item.width = r.width; item.height = r.height; }
     item.outW = r.outW || item.width;
     item.outH = r.outH || item.height;
+    /* The destination's ceiling fired, stated by the worker rather than
+       inferred from the numbers. The facts panel warns on it. */
+    item.hardCapped = !!r.hardCapped;
+    // The authority has arrived; the live preview's scaffolding goes.
+    item.stale = false;
+    item.liveCandidates = null;
+    item.livePickBytes = null;
   }
 
   // The first result of a run gets the stage, so a batch is not silent until it
@@ -272,23 +343,59 @@ function maybeFinish() {
 
 /* ---------------------------- queue maintenance --------------------------- */
 
-/** Send items back to the start. A re-run replaces the whole bake-off, so the
- *  encodes it produced and any choice made among them go with it. */
-export function requeue(ids) {
+/** Drop everything a result ever hung on an item, object URLs included. Used
+ *  when a stale result must stop being shown - a failure, a stop - because a
+ *  finished-looking picture with numbers from the old settings is a lie. */
+function clearResult(item) {
+  if (item.afterURL) URL.revokeObjectURL(item.afterURL);
+  item.afterURL = null;
+  item.afterBlob = null;
+  item.fmt = "";
+  item.ext = null;
+  item.newBytes = null;
+  item.score = null;
+  item.candidates = [];
+  item.candBlobs = null;
+  item.auto = null;
+  item.pick = null;
+  item.liveCandidates = null;
+  item.diffURL = null;
+  item.stale = false;
+}
+
+/** Send items back to the start.
+ *
+ *  Plain requeue clears the slate. With `keepResult` the previous result stays
+ *  on screen - marked stale, swapped only when its replacement lands - because
+ *  a settings nudge that blanks six finished pictures reads as losing six
+ *  finished pictures. Items mid-flight are told to stop; the worker's aborted
+ *  reply is what re-queues them, so one item is never two jobs at once. */
+export function requeue(ids, opts = {}) {
+  const keep = !!opts.keepResult;
   let any = false;
   for (const id of ids) {
     const item = state.byId.get(id);
-    if (!item || item.status === "working") continue;
+    if (!item) continue;
+    if (item.status === "working") {
+      const slot = pool[item.slot];
+      if (keep && slot && slot.itemId === item.id) {
+        slot.w.postMessage({ type: "abort", id: item.id });
+        item.stale = true;
+        any = true;
+      }
+      continue;
+    }
     item.status = "queued";
     item.error = "";
     item.warnings = [];
-    item.note = "";
-    item.candidates = [];
-    item.candBlobs = null;
-    item.auto = null;
-    item.pick = null;
     item.frac = 0;
     item.diffURL = null;
+    if (keep && item.afterURL) {
+      item.stale = true;      // the old picture stays up until the new one lands
+    } else {
+      clearResult(item);
+      item.note = "";
+    }
     any = true;
   }
   if (any) beginBatch();

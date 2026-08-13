@@ -88,6 +88,15 @@ function flattenOntoWhite(rgba) {
 let CAN_WEBP = null;
 let CAN_DEFLATE = typeof CompressionStream !== "undefined";
 
+/* The standard low-end signals. Nothing here is a guess about the person -
+ * it is what the machine reports about itself, and it only ever trims the
+ * automatic format set, never an explicit choice. Memory is the primary
+ * signal: budget phones ship many slow cores, so a core count only catches
+ * the genuinely starved (<=3), while 4GB or less is the line that actually
+ * separates "can afford a 3.5MB encoder running for a minute" from "cannot". */
+const WEAK_DEVICE = (self.navigator?.hardwareConcurrency || 8) <= 3
+  || (self.navigator?.deviceMemory || 8) <= 4;
+
 async function probeWebp() {
   if (CAN_WEBP !== null) return CAN_WEBP;
   try {
@@ -145,20 +154,33 @@ async function timedAsync(bucket, fn) {
 
 let onCodecStatus = null;   // set per job so the UI can narrate the first load
 
-async function loadCodec(name, script, globalName, wasmFile) {
-  if (CODECS[name] !== null) return CODECS[name];
-  try {
-    if (onCodecStatus) onCodecStatus(name);
-    importScripts(`vendor/${script}`);
-    const bytes = await (await fetch(`vendor/${wasmFile}`)).arrayBuffer();
-    const module = await WebAssembly.compile(bytes);
-    await self[globalName].init(module);
-    CODECS[name] = self[globalName];
-  } catch (e) {
-    console.warn(`codec ${name} unavailable:`, e && e.message ? e.message : e);
-    CODECS[name] = false;
+/* One load per codec, however many callers ask. The loads are started by the
+ * idle prefetch AND by the first job, concurrently - and a second importScripts
+ * of the same glue re-declares its top-level bindings, which throws, which
+ * marked the codec unavailable and silently dropped its format from every
+ * bake-off on that worker. Caching the promise, not just the result, is what
+ * makes the second caller wait for the first instead of colliding with it. */
+const CODEC_LOADS = {};
+
+function loadCodec(name, script, globalName, wasmFile) {
+  if (CODECS[name] !== null) return Promise.resolve(CODECS[name]);
+  if (!CODEC_LOADS[name]) {
+    CODEC_LOADS[name] = (async () => {
+      try {
+        if (onCodecStatus) onCodecStatus(name);
+        importScripts(`vendor/${script}`);
+        const bytes = await (await fetch(`vendor/${wasmFile}`)).arrayBuffer();
+        const module = await WebAssembly.compile(bytes);
+        await self[globalName].init(module);
+        CODECS[name] = self[globalName];
+      } catch (e) {
+        console.warn(`codec ${name} unavailable:`, e && e.message ? e.message : e);
+        CODECS[name] = false;
+      }
+      return CODECS[name];
+    })();
   }
-  return CODECS[name];
+  return CODEC_LOADS[name];
 }
 const loadMozjpeg = () => loadCodec("mozjpeg", "mozjpeg.js", "__mozjpeg", "mozjpeg_enc.wasm");
 const loadOxipng = () => loadCodec("oxipng", "oxipng.js", "__oxipng", "squoosh_oxipng_bg.wasm");
@@ -1000,20 +1022,39 @@ async function searchOne(job, encoder, target, report) {
 
   let probes = 0;
   const probe = async (index) => {
+    checkAborted();
     report(++probes);
+    /* A score measured once is a score known forever for these pixels. A
+       floor nudge re-runs the search, and every rung it already measured
+       answers from memory instead of paying for an encode and a comparison. */
+    const memoKey = `${encoder.name}|${levels[index]}`;
+    const remembered = job.scoreMemo ? job.scoreMemo.get(memoKey) : undefined;
+    if (remembered !== undefined) return { score: remembered };
     if (PERF) PERF.probes++;
     const data = await encodeAt(index, true);
-    if (data._exact) return { data, score: metric.perfect }; // pixel-identical by construction
+    if (data._exact) {                             // pixel-identical by construction
+      job.scoreMemo?.set(memoKey, metric.perfect);
+      return { data, score: metric.perfect };
+    }
     const cand = await timedAsync("back", () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
-    return { data, score: timed("ssimTiled", () => sampledScore(metric.full, rgba, cand, width, height)) };
+    const score = timed("ssimTiled", () => sampledScore(metric.full, rgba, cand, width, height));
+    job.scoreMemo?.set(memoKey, score);
+    return { data, score };
   };
 
   /* Verification on the level the search landed on: full-frame within the
-     memory budget, a dense native-resolution tile grid beyond it. */
-  const finalScore = async (data) => {
+     memory budget, a dense native-resolution tile grid beyond it. Remembered
+     per rung like the probes; alternates pass no index because their bytes
+     differ at the same rung, so their scores are not the rung's score. */
+  const finalScore = async (data, index) => {
     if (data._exact) return { score: metric.perfect };
+    const memoKey = index != null ? `${encoder.name}|${levels[index]}|final` : null;
+    const remembered = memoKey && job.scoreMemo ? job.scoreMemo.get(memoKey) : undefined;
+    if (remembered !== undefined) return { score: remembered };
     const cand = await timedAsync("back", () => decodeToRgba(data, encoder.mime, width, height, job.scratch));
-    return { score: timed("ssimFull", () => metric.verify(rgba, cand, width, height)) };
+    const score = timed("ssimFull", () => metric.verify(rgba, cand, width, height));
+    if (memoKey) job.scoreMemo?.set(memoKey, score);
+    return { score };
   };
 
   /* Straight bisection over the whole ladder. The old version probed the top
@@ -1036,16 +1077,17 @@ async function searchOne(job, encoder, target, report) {
   // a memo hit rather than a second pass over the pixels.
   if (PERF) PERF.encodes++;
   let data = await encodeAt(chosen, false);
-  let { score } = await finalScore(data);
+  let { score } = await finalScore(data, chosen);
 
   // The sampled search can be marginally optimistic. If the honest full-frame
   // check misses, step up until it clears rather than shipping something that
   // fails the promise we just made.
   while (score < target && chosen < top) {
+    checkAborted();
     report(++probes);
     chosen++;
     data = await encodeAt(chosen, false);
-    ({ score } = await finalScore(data));
+    ({ score } = await finalScore(data, chosen));
   }
 
   /* Alternate encodes compete at the finish line: the chosen rung and the one
@@ -1169,8 +1211,15 @@ async function decodeNormalised(blob, settings) {
   }
   const w0 = bmp.width, h0 = bmp.height;
 
-  const frame = frameFor(w0, h0, settings.dimensionMode || "longest",
-                         settings.maxDimension || 0, hardCapFor(settings));
+  const mode = settings.dimensionMode || "longest";
+  const limit = settings.maxDimension || 0;
+  const frame = frameFor(w0, h0, mode, limit, hardCapFor(settings));
+  /* Whether the destination's own ceiling - not the person's limit - is what
+     forced this frame. The UI warns on this explicitly, and it must be a fact
+     the worker states rather than something a renderer infers from numbers. */
+  const wanted = frameFor(w0, h0, mode, limit, 0);
+  const hardCapped = !!frame
+    && (!wanted || frame[0] < wanted[0] || frame[1] < wanted[1]);
   const W = frame ? frame[0] : w0;
   const H = frame ? frame[1] : h0;
 
@@ -1199,6 +1248,7 @@ async function decodeNormalised(blob, settings) {
   return {
     width: W, height: H, originalW: w0, originalH: h0,
     resized: W !== w0 || H !== h0,
+    hardCapped,
     rgba, refCanvas: canvas,
   };
 }
@@ -1212,8 +1262,27 @@ const EXT_OF = { jpeg: ".jpg", png8: ".png", png: ".png", webp: ".webp" };
 /* One-slot decode cache. When only the quality floor changes, re-running an
  * item skips the read-decode-resize phase entirely - which is what makes
  * playing with the slider feel instant. The UI routes an item back to the
- * worker that last handled it, so one slot per worker is enough. */
+ * worker that last handled it, so one slot per worker is enough.
+ *
+ * The cached job also carries `scoreMemo`: every probe's measured score, keyed
+ * by format and rung. Scores are deterministic for the same pixels, so a
+ * re-run over the same frame - a floor nudge - re-reads them instead of
+ * re-encoding and re-measuring five rungs per format. */
 let DCACHE = null;
+
+/* The job this worker is on, and whether the main thread has asked it to stop
+ * bothering. Checked between probes and between formats - a wasm encode cannot
+ * be interrupted mid-flight, but the next one can be declined, which turns
+ * "finish minutes of stale work and throw it away" into "stop within one
+ * probe". */
+let CURRENT = null;
+function checkAborted() {
+  if (CURRENT && CURRENT.aborted) {
+    const e = new Error("aborted");
+    e._aborted = true;
+    throw e;
+  }
+}
 
 /* A destination's own ceiling on the long edge. Resolved through
    destinationOf() rather than compared against a raw string, because the
@@ -1263,6 +1332,7 @@ function sameContainer(ext, name) {
 
 async function runJob(msg) {
   const { id, name, buffer, mime, settings } = msg;
+  CURRENT = { id, aborted: false };
   const originalBytes = buffer.byteLength;
   const post = (extra, transfer) => postMessage({ id, rev: msg.rev, ...extra }, transfer || []);
   const warnings = [];
@@ -1309,6 +1379,7 @@ async function runJob(msg) {
     })();
     DCACHE = { key: cacheKey, job };
   }
+  if (!job.scoreMemo) job.scoreMemo = new Map();
 
   let alpha = hasAlphaPixels(job.rgba);
   /* Reported to the UI, which uses it to know whether choosing JPEG needs to
@@ -1341,16 +1412,54 @@ async function runJob(msg) {
   }
 
   const encoders = makeEncoders(job);
-  let names = settings.formats && settings.formats.length
-    ? settings.formats
-    : DESTINATION_FORMATS[destinationOf(settings.target)];
+  let names;
+  if (settings.lossless) {
+    /* "identical - every pixel kept". Only pixel-exact candidates enter the
+       bake-off, drawn from the lossless set but never offering a container the
+       destination cannot store as-given (a lossless WebP handed to a design
+       tool still comes back as a re-encoded PNG). png8x rides on PNG's
+       container, so it is admitted wherever any PNG is. */
+    const destFmts = DESTINATION_FORMATS[destinationOf(settings.target)];
+    const base = DESTINATION_FORMATS.lossless.filter((n) =>
+      destFmts.includes(n)
+      || (n === "png8x" && (destFmts.includes("png") || destFmts.includes("png8")))
+      || (n === "webp-lossless" && destFmts.includes("webp")));
+    /* A pin narrows the promise, never breaks it: a pinned lossy format is
+       ignored rather than honoured. */
+    const pinned = settings.formats && settings.formats.length
+      ? settings.formats.filter((n) => base.includes(n)) : null;
+    names = pinned && pinned.length ? pinned : base;
+  } else {
+    names = settings.formats && settings.formats.length
+      ? settings.formats
+      : DESTINATION_FORMATS[destinationOf(settings.target)];
+  }
+  /* Thoroughness has a battery bill, and it lands hardest on the machines
+     least able to pay it. On a weak device the automatic set drops AVIF - the
+     slowest encoder behind the largest download - and the result says so, with
+     the way to insist ("always AVIF") already sitting under More choices. An
+     explicit pin or the lossless promise is never overridden. */
+  let deviceNote = "";
+  if (WEAK_DEVICE && !settings.lossless && !(settings.formats && settings.formats.length)
+      && names.includes("avif")) {
+    names = names.filter((n) => n !== "avif");
+    deviceNote = "AVIF was skipped to save time and battery on this device. "
+      + "Pick “always AVIF” under More choices to try it anyway.";
+  }
+
   // Codecs load lazily, but availability gating needs them resolved first.
-  // The first job of a session pays for the download; say so out loud.
+  // The first job of a session pays for the download; say so out loud - and
+  // the downloads run together, not one after another: the wait is the largest
+  // of them, never the sum.
   onCodecStatus = (codec) => post({ type: "progress", stage: "codec", detail: codec, frac: 0 });
-  if (names.includes("avif")) await loadAvif();
-  if (names.includes("jpeg")) await loadMozjpeg();
-  if (names.includes("webp-lossless")) await loadWebp();
-  if (names.includes("png") || names.includes("png8") || names.includes("png8x")) await loadOxipng();
+  const codecLoads = [];
+  if (names.includes("avif")) codecLoads.push(loadAvif());
+  if (names.includes("jpeg")) codecLoads.push(loadMozjpeg());
+  if (names.includes("webp-lossless")) codecLoads.push(loadWebp());
+  if (names.includes("png") || names.includes("png8") || names.includes("png8x")) {
+    codecLoads.push(loadOxipng());
+  }
+  await Promise.all(codecLoads);
   onCodecStatus = null;
   names = names.filter((n) => {
     const e = encoders[n];
@@ -1366,7 +1475,12 @@ async function runJob(msg) {
      saying why it is not the format they picked. Silence is the one option
      that is never right here. */
   if (!names.length && chosen) {
-    names = DESTINATION_FORMATS[destinationOf(settings.target)].filter((n) => {
+    /* The fallback honours the same promise the pin did: under "identical" it
+       falls back to the pixel-exact set, never to the destination's lossy one. */
+    const fallbackSet = settings.lossless
+      ? DESTINATION_FORMATS.lossless
+      : DESTINATION_FORMATS[destinationOf(settings.target)];
+    names = fallbackSet.filter((n) => {
       const e = encoders[n];
       return e && !(alpha && !e.supportsAlpha) && !(e.available && !e.available());
     });
@@ -1415,6 +1529,7 @@ async function runJob(msg) {
     done = 0;
 
     for (const nameKey of names) {
+      checkAborted();
       const encoder = encoders[nameKey];
       // ~log2(ladder) probes plus the final verify; close enough for a live bar.
       const expected = Math.ceil(Math.log2(encoder.levels.length || 2)) + 3;
@@ -1440,6 +1555,29 @@ async function runJob(msg) {
           level: exact ? null : level, ext: encoder.ext, mime: encoder.mime,
         });
         candidateData.set(encoder.name, data);
+        /* Said the moment it exists, bytes and all, so the person has a real
+           result to look at seconds in - the first format is usually a
+           shippable answer - while the rest of the bake-off runs behind it.
+           The final done message stays the authority: a later pass (the
+           lossless recompressor, the chroma check) may still improve on what
+           this preview showed. */
+        {
+          const copy = new Uint8Array(data);
+          post({
+            type: "candidate",
+            first: candidates.length === 1,
+            done, total: names.length,
+            dims: { width: job.originalW, height: job.originalH,
+                    outW: job.width, outH: job.height,
+                    hardCapped: !!job.hardCapped },
+            candidate: {
+              format: encoder.name, bytes: data.length, score, lossless: exact,
+              level: exact ? null : level, ext: encoder.ext, mime: encoder.mime,
+              passing: exact || score >= target,
+            },
+            data: copy.buffer,
+          }, [copy.buffer]);
+        }
         const entry = { ...found, encoder };
         if (underCap) {
           /* Everything that got here already fits, so size has stopped being
@@ -1456,6 +1594,7 @@ async function runJob(msg) {
           bestFailing = entry;
         }
       } catch (exc) {
+        if (exc && exc._aborted) throw exc;   // a stop is not a format failure
         warnings.push(`${encoder.name} failed: ${exc && exc.message ? exc.message : exc}`);
       }
       done++;
@@ -1632,7 +1771,7 @@ async function runJob(msg) {
     engines: engineFlags(),
     perf: PERF,
     result: {
-      passthrough: false, skipped: false, note: "",
+      passthrough: false, skipped: false, note: deviceNote,
       fmt: best.encoder.name, ext: best.encoder.ext, mime: best.encoder.mime,
       bytes: payload.buffer, originalBytes, newBytes: payload.length,
       level: isLossless ? null : best.level,
@@ -1640,6 +1779,7 @@ async function runJob(msg) {
       lossless: isLossless, metric: metric.name,
       width: job.originalW, height: job.originalH,
       outW: job.width, outH: job.height,
+      hardCapped: !!job.hardCapped,
       candidates, warnings, alpha: sourceAlpha,
       sizeTarget: cap, missedSize,
     },
@@ -1673,11 +1813,30 @@ onmessage = (e) => {
   const msg = e.data;
   if (msg.type === "job") {
     runJob(msg).catch((exc) => {
+      if (exc && exc._aborted) {
+        postMessage({ id: msg.id, rev: msg.rev, type: "aborted" });
+        return;
+      }
       postMessage({ id: msg.id, rev: msg.rev, type: "failed", error: String(exc && exc.message || exc) });
     });
+  } else if (msg.type === "abort") {
+    /* The main thread has moved on from this job - the plan changed under it.
+       The flag is read between probes; nothing already computed is lost, the
+       next unit of stale work simply never starts. */
+    if (CURRENT && CURRENT.id === msg.id) CURRENT.aborted = true;
   } else if (msg.type === "probe") {
     probeWebp().then(() => {
       postMessage({ type: "caps", caps: { webp: !!CAN_WEBP, png8: CAN_DEFLATE } });
     });
+    /* Warm the codecs while the page is idle, so the first drop starts
+       encoding instead of downloading. The wasm binaries land in the HTTP
+       cache, which every later worker instantiates from. A weak device skips
+       warming AVIF - the one download heavy enough to matter there. */
+    setTimeout(() => {
+      loadMozjpeg().catch(() => {});
+      loadOxipng().catch(() => {});
+      loadWebp().catch(() => {});
+      if (!WEAK_DEVICE) loadAvif().catch(() => {});
+    }, 250);
   }
 };

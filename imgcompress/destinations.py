@@ -104,6 +104,21 @@ DESTINATIONS = {
             help="Small enough to attach, and opens everywhere.",
         ),
         Destination(
+            name="social",
+            label="Social media post",
+            # JPEG/PNG only, on purpose: every major platform re-encodes
+            # uploads on arrival, so WebP/AVIF buy nothing past the upload
+            # form - and some upload paths reject them outright. 2048 covers
+            # Instagram's 1080 display size at 2x with headroom; the platform
+            # will not shrink it again itself.
+            formats=STORED_AS_GIVEN,
+            max_dimension=2048,
+            ss2_target=88.0,
+            ssim_target=0.965,
+            help="Sized and saved so Instagram, X and Facebook "
+                 "won't shrink it again themselves.",
+        ),
+        Destination(
             name="thumbnail",
             label="Thumbnail or avatar",
             formats=EVERY_FORMAT,
@@ -134,11 +149,16 @@ DESTINATIONS = {
         Destination(
             name="lossless",
             label="Pixel-perfect only",
+            # This set backs the "identical - every pixel kept" choice in the
+            # UIs as well as `--for lossless`. Identical means identical:
+            # resizing changes pixels, so this destination never resizes.
+            # (It used to carry the everyday 2560 downscale, which quietly
+            # contradicted its own name.)
             formats=("png", "webp-lossless"),
-            max_dimension=2560,
+            max_dimension=0,
             ss2_target=90.0,
             ssim_target=0.97,
-            help="Nothing but pixel-exact output.",
+            help="Nothing but pixel-exact output. Never resized.",
             hidden=True,
         ),
     )

@@ -76,9 +76,9 @@ try {
   // No resizing: a cap is about bytes, and letting the frame move too would
   // make it impossible to say which lever produced the result.
   await pg.evaluate(() => {
-    const fit = document.getElementById("plan-fit");
-    fit.value = "none";
-    fit.dispatchEvent(new Event("change"));
+    const shrink = document.getElementById("shrink-mode");
+    shrink.value = "never";
+    shrink.dispatchEvent(new Event("change"));
   });
 
   /* chromanoise, not photo. photo.png compresses losslessly to well under half
