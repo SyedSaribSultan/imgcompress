@@ -49,7 +49,30 @@ This project follows [Semantic Versioning](https://semver.org/).
   below 13px anywhere; the evidence panels appear when there is evidence instead
   of sitting as dimmed scaffolding.
 
+- **The browser app reads the HeyOz token layer again**, through one
+  indirection: `base.css` aliases the app's six-name vocabulary onto `--oz-*`
+  values (brand accent, surfaces, ink ramp, spacing steps, radius, Geist /
+  Geist Mono via the self-hosted faces), so both interfaces draw from one
+  design system. The theme control drives the token layer's own `data-theme`
+  mechanism; `js/theme.js` stamps a resolved theme before first paint and
+  re-stamps live when the OS preference changes.
+
 ### Fixed
+- **The sidebar no longer collapses or clips at any width.** Two structural
+  bugs, found by a new width-sweep probe (`tests/web/probe_widths.mjs`,
+  320–1920px × two heights × empty/populated): on one-column layouts the
+  height-constrained grid squashed the pictures section to 0px and its content
+  painted on top of the plan (body now flows at its content's height on
+  phones); and the empty state's grid demanded max-content width, pushing
+  every sidebar region under the stage — clipped text on desktop, sideways
+  scroll at 320px (the sidebar is a flex column now, and breathes between
+  300–384px instead of a fixed 320px).
+- **Every control clears the 44px touch floor** wherever the pointer is coarse
+  or the layout is one-column — selects, buttons, the disclosure, the checkbox
+  row and the CLI link were 13–42px.
+- An empty queue no longer hogs the sidebar's flexible share on tall screens:
+  the plan follows the drop zone immediately, and spare space falls after the
+  CLI note.
 - The capability note no longer shouts raw engine keys ("WEBPLOSSLESS") — it
   says "This browser can't save AVIF or lossless WebP — everything else still
   works."

@@ -283,10 +283,14 @@ binds an event listener. The one classic script is `js/theme.js`, loaded from
 `<head>` so a saved Light/Dark choice is true before first paint; the cycling
 control itself is bound in `main.js` like everything else.
 
-The interface deliberately does **not** read the `--oz-*` token layer. That layer
-now serves the desktop app alone; the browser app was reset to a baseline of
-system faces and a six-name palette of its own. See *One design system* below for
-what is still shared and what is not.
+The interface reads the `--oz-*` token layer again — through one indirection.
+`web/css/base.css` aliases the app's six-name vocabulary (`--c-*`, `--s-*`,
+`--radius`, `--font-*`, `--s-target`) onto HeyOz tokens, and every other sheet
+consumes only those aliases; `tests/test_design_system.py` holds them to it.
+Theme flips are the token layer's own `data-theme` mechanism: `js/theme.js`
+always stamps a RESOLVED theme before first paint (the saved choice, or the
+OS's answer for "match my device", re-stamped live when the OS changes),
+because the token layer knows nothing about `prefers-color-scheme`.
 
 There is one page. The marketing sections, the `/compare` and `/download` pages,
 the synthetic demo, the lifetime savings counter and the CSV/JSON report export
@@ -486,11 +490,13 @@ here is silently overwritten on the next sync. To change a value, change it
 upstream, rebuild, and re-copy.
 
 `imgcompress/webui/app.html` consumes those tokens and hand-types nothing: no
-hex, no `rgb()`, no `cubic-bezier`. **The browser app no longer consumes them at
-all** — it was reset to its own baseline in `web/css/base.css`, where the same
-guarantee (values defined once, consumed by name everywhere else) is enforced by
-`TheBrowserAppHasOnePlaceForValues` in `tests/test_design_system.py`. Four of the
-system's rules are load-bearing for the desktop app:
+hex, no `rgb()`, no `cubic-bezier`. **The browser app consumes them through
+`web/css/base.css`**, which aliases its six-name vocabulary onto `--oz-*`
+values; the one-place guarantee (values defined once, consumed by name
+everywhere else) is enforced by `TheBrowserAppHasOnePlaceForValues` in
+`tests/test_design_system.py`, and every other browser sheet may only use the
+alias names base.css defines. Four of the system's rules are load-bearing for
+the desktop app:
 
 * **Adjacent regions never share a surface rung.** Separation is a surface step
   or space, never a border — `background` → `surface-primary` (toolbar, queue,

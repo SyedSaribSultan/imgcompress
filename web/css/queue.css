@@ -113,16 +113,23 @@
 /* What to do, and nothing else. No headline, no pitch, no format badges - the
    one sentence that tells a first-time visitor which action starts the work.
    It is also the drop target, which is why it fills its region rather than
-   sitting centred in a box of its own. */
+   sitting centred in a box of its own.
+
+   A flex column, not a grid: a grid's auto column is sized by max-content, so
+   the unwrapped width of one sentence propagated up through the sidebar's own
+   column and pushed every region under the stage. Flex children get exactly
+   the region's width and the sentences wrap inside it. */
 #queue-empty {
-  display: grid;
-  place-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: var(--s-3);
-  justify-items: center;
   padding: var(--s-6) var(--s-4);
   text-align: center;
   color: var(--c-ink-3);
 }
+#queue-empty > * { max-width: 100%; }
 
 /* The whole window accepts a drop. Saying so only while something is being
    dragged keeps the affordance out of the way the rest of the time. */

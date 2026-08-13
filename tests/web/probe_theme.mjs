@@ -152,9 +152,14 @@ try {
      `the page ground changes (${seen.light.body.bg} -> ${seen.dark.body.bg})`);
   ok(seen.light.body.fg !== seen.dark.body.fg,
      `and so does the ink (${seen.light.body.fg} -> ${seen.dark.body.fg})`);
-  const same = seen.light.surfaces.filter((c) => seen.dark.surfaces.includes(c));
+  /* The HeyOz brand fill is the same value in both modes on purpose - its
+     contrast is gated (APCA) in the token layer, and the system's own README
+     says not to "fix" it. Everything that is not the brand must move. */
+  const BRAND_FILL = "rgb(255, 61, 1)";
+  const same = seen.light.surfaces.filter(
+    (c) => seen.dark.surfaces.includes(c) && c !== BRAND_FILL);
   ok(same.length === 0,
-     `every painted surface moved with the scheme (${same.join(", ") || "all moved"})`);
+     `every non-brand surface moved with the scheme (${same.join(", ") || "all moved"})`);
 } finally {
   await b.close();
   server.kill();

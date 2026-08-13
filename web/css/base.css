@@ -1,100 +1,61 @@
-/* Reset, tokens, and element defaults.
+/* Reset, aliases, and element defaults.
  *
- * This is a deliberate baseline, not a design system. There are no brand faces,
- * no shadow scale, no motion vocabulary and no component classes here - just
- * enough for semantic HTML to be legible. Every value below is defined once and
- * consumed by name; if a colour or a space is needed twice, it becomes a token
- * rather than a second literal.
+ * The values come from the HeyOz token layer (heyoz-tokens.css, loaded before
+ * this file): every colour, space and face below is an alias onto an --oz-*
+ * token, so both interfaces draw from one design system again. The aliases are
+ * kept - rather than using --oz-* names downstream - because the rest of the
+ * stylesheets consume a six-name vocabulary sized to this app, and because the
+ * one-place-for-values gate (tests/test_design_system.py) holds every other
+ * sheet to names defined HERE.
  *
- * The palette is greyscale plus one accent, and it is derived rather than
- * listed: light and dark redefine the same six names, so nothing downstream
- * needs to know which mode it is in.
+ * Theme: the token layer flips on data-theme="dark" / "light" and knows
+ * nothing about prefers-color-scheme, so js/theme.js always stamps a RESOLVED
+ * theme before first paint - the saved choice when there is one, the OS's
+ * answer otherwise - and re-stamps when the OS changes. There is no
+ * unstamped state to style.
  */
 
 :root {
-  color-scheme: light dark;
-
   /* Surfaces, back to front. */
-  --c-bg: #ffffff;
-  --c-sunk: #f4f4f5;
-  --c-raised: #ffffff;
-  --c-line: #d8d8dc;
+  --c-bg: var(--oz-color-background);
+  --c-sunk: var(--oz-color-surface-primary);
+  --c-raised: var(--oz-color-surface-elevated);
+  --c-line: var(--oz-color-border-primary);
 
   /* Ink, loudest to quietest. */
-  --c-ink: #17171a;
-  --c-ink-2: #55555e;
-  --c-ink-3: #83838d;
+  --c-ink: var(--oz-color-content-primary);
+  --c-ink-2: var(--oz-color-content-secondary);
+  --c-ink-3: var(--oz-color-content-tertiary);
 
-  /* One accent, used for the primary action and nothing decorative. */
-  --c-accent: #1d4ed8;
-  --c-accent-ink: #ffffff;
+  /* One accent, used for the primary action and nothing decorative - and the
+     focus ring, which the system gates for contrast separately. */
+  --c-accent: var(--oz-color-fill-brand);
+  --c-accent-ink: var(--oz-color-content-on-brand);
+  --c-focus: var(--oz-color-border-focus);
 
   /* Verdicts. Never the only carrier of meaning - each is paired with words. */
-  --c-good: #157347;
-  --c-warn: #8a5300;
-  --c-bad: #b42318;
+  --c-good: var(--oz-color-content-success);
+  --c-warn: var(--oz-color-content-warning);
+  --c-bad: var(--oz-color-content-critical);
 
-  /* Space. A 4px base, named by step so a layout reads as a ratio. */
-  --s-1: 4px;
-  --s-2: 8px;
-  --s-3: 12px;
-  --s-4: 16px;
-  --s-5: 24px;
-  --s-6: 32px;
+  /* Space. Six steps of the system scale (4/8/12/16/24/32). */
+  --s-1: var(--oz-space-1);
+  --s-2: var(--oz-space-3);
+  --s-3: var(--oz-space-4);
+  --s-4: var(--oz-space-5);
+  --s-5: var(--oz-space-7);
+  --s-6: var(--oz-space-9);
 
-  --radius: 6px;
+  --radius: var(--oz-radius-3);
 
-  /* Two stacks: the UI face is the reader's own, and figures get tabular
+  /* The floor a finger can actually hit. Applied to every control wherever
+     the pointer is coarse or the layout is one-handed. */
+  --s-target: var(--oz-target-min);
+
+  /* Two stacks: Geist for the interface, Geist Mono for figures - tabular
      digits so a column of sizes lines up and stops jittering as it counts. */
-  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-num: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-}
-
-/* Three theme states, not two. The default is "match my device": nothing is
-   stamped on <html> and prefers-color-scheme decides. An explicit choice from
-   the header toggle stamps data-theme="light" or "dark", and the stamp always
-   beats the OS - which is why the media query excludes an explicit light, and
-   the dark tokens appear twice: once for a dark OS, once for a dark choice. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --c-bg: #16161a;
-    --c-sunk: #1e1e23;
-    --c-raised: #26262c;
-    --c-line: #38383f;
-
-    --c-ink: #f2f2f4;
-    --c-ink-2: #b0b0b8;
-    --c-ink-3: #83838d;
-
-    --c-accent: #6c93f8;
-    --c-accent-ink: #10101a;
-
-    --c-good: #55c68d;
-    --c-warn: #e0aa4a;
-    --c-bad: #f08a80;
-  }
-}
-
-:root[data-theme="light"] { color-scheme: light; }
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-
-  --c-bg: #16161a;
-  --c-sunk: #1e1e23;
-  --c-raised: #26262c;
-  --c-line: #38383f;
-
-  --c-ink: #f2f2f4;
-  --c-ink-2: #b0b0b8;
-  --c-ink-3: #83838d;
-
-  --c-accent: #6c93f8;
-  --c-accent-ink: #10101a;
-
-  --c-good: #55c68d;
-  --c-warn: #e0aa4a;
-  --c-bad: #f08a80;
+  --font-ui: var(--oz-font-body);
+  --font-num: var(--oz-font-mono);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -115,6 +76,11 @@ body {
 .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 
 h1, h2, h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+
+/* The faces are cut to wght 400..600 and nothing in this interface renders
+   heavier. The user agent styles these at `bold` (700), which would synthesise
+   a weight the face does not carry. */
+b, strong, th { font-weight: 600; }
 
 /* Section labels. Small and quiet: the data is the content, not its name.
    13px is the floor for uppercase micro-labels, and this is the floor. */
@@ -138,9 +104,11 @@ kbd {
   color: var(--c-ink-3);
 }
 
-/* One focus treatment for everything, and it is never removed. */
+/* One focus treatment for everything, and it is never removed. The ring
+   colour is the system's own focus token, gated for contrast on both
+   grounds - the accent is a fill colour and is not. */
 :focus-visible {
-  outline: 2px solid var(--c-accent);
+  outline: 2px solid var(--c-focus);
   outline-offset: 2px;
 }
 

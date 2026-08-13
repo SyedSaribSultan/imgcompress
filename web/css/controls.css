@@ -71,7 +71,7 @@ input[type="number"] { width: 7ch; }
   padding: var(--s-1) 0;
 }
 .field > label {
-  flex: 0 0 92px;
+  flex: 0 0 112px;
   color: var(--c-ink-2);
 }
 /* min-width: 0 is load-bearing, not defensive. A <select>'s intrinsic minimum is
@@ -137,6 +137,29 @@ input[type="number"] { width: 7ch; }
   user-select: none;
 }
 #more-choices > summary:hover { color: var(--c-ink); }
+
+/* ------------------------------ touch floor ------------------------------ */
+
+/* Wherever a finger is the pointer - and on any one-column layout, where it
+   probably is - every control clears the system's minimum target. Desktop
+   with a mouse keeps its compact heights. */
+@media (max-width: 860px), (pointer: coarse) {
+  button,
+  select,
+  input[type="text"],
+  input[type="number"],
+  summary,
+  .skip {
+    min-height: var(--s-target);
+  }
+  /* A checkbox's target is its label - the whole row toggles it - so the row
+     clears the floor and the box itself just gets big enough to read. */
+  label.check { min-height: var(--s-target); }
+  .check input { width: 20px; height: 20px; }
+  /* An inline link is as tall as its line; a tappable one is as tall as a
+     fingertip. */
+  #cli-note a { display: inline-flex; align-items: center; min-height: var(--s-target); }
+}
 
 /* ------------------------------- segmented ------------------------------- */
 

@@ -217,14 +217,12 @@ def _web_css(name: str) -> str:
 
 
 class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
-    """The browser app was reset to a baseline of its own: system faces, a six
-    name palette, no brand layer. That is a deliberate break from the token
-    layer, which now serves only the desktop app.
-
-    A baseline still needs the property the token layer was bought for - values
-    defined once - so it is enforced here directly. base.css defines; every other
-    sheet consumes. Without this the reset would drift back into scattered
-    literals within a few edits, which is the state it was reset out of.
+    """base.css aliases the app's six-name vocabulary onto the HeyOz token
+    layer (--c-bg is --oz-color-background, and so on), and every other sheet
+    consumes only those aliases. One indirection, enforced here: base.css
+    defines; the rest consume. Without this the sheets would drift back into
+    scattered literals within a few edits, which is the state this rule was
+    written out of.
     """
 
     def test_every_sheet_exists(self):

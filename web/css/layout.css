@@ -81,9 +81,12 @@ body {
 
 /* ------------------------------ the regions ------------------------------ */
 
+/* The sidebar breathes with the window: never below 300px, never past 384px,
+   and the stage keeps the rest. The old fixed 320px was too tight for 16px
+   type - labels wrapped three deep and the plan read as a ransom note. */
 #dash {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: clamp(300px, 26vw, 384px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
     "side stage"
@@ -91,22 +94,54 @@ body {
   min-height: 0;
 }
 
-/* Pictures first, then the plan, then the one line for the command line. The
-   pictures take the flexible share because the list is what grows. */
+/* Pictures first, then the plan, then the one line for the command line.
+ *
+ * A flex column, deliberately, for two reasons a grid got wrong:
+ *
+ *   Width - a grid's implicit column is sized by max-content, so one
+ *   unwrappable child (the empty state's sentence) silently widened EVERY
+ *   region past the sidebar's own track and the stage painted over the
+ *   overhang: text sliced mid-word at the panel edge, and a sideways scroll
+ *   on phones. Flex cross-axis stretch is exact - children get the sidebar's
+ *   width and wrap inside it.
+ *
+ *   Height - min-height: 0 rows in a height-constrained grid SQUASH instead
+ *   of scrolling, and the queue section collapsed to zero with its centred
+ *   content spilling over the plan. Here the queue is the one flexible child;
+ *   when it cannot fit, the sidebar itself scrolls rather than stacking
+ *   regions on top of each other.
+ */
 #side {
   grid-area: side;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
   border-right: 1px solid var(--c-line);
   background: var(--c-sunk);
 }
+#side > * { min-width: 0; flex: 0 0 auto; }
+/* The queue grows into whatever is spare, shrinks to a floor a few rows tall
+   (its list scrolls inside), and past that the sidebar scrolls. A floor of 0
+   would let flex squash it out of existence on a short window - the exact
+   collapse this layout exists to prevent. */
+#queue-sec { flex: 1 1 auto; min-height: 200px; }
+/* An empty queue is a button and two sentences, not a region-sized void: it
+   sits compact, the plan follows immediately, and the leftover space falls
+   after the command-line note instead of between the two things a first-time
+   visitor has to read in sequence. */
+#side:has(#queue-list[hidden]) #queue-sec { flex: 0 0 auto; }
+#side:has(#queue-list[hidden]) #cli-note { margin-top: auto; }
 
-/* The pip-install pointer. Quiet, last, and never in the way. */
+/* The pip-install pointer. Quiet, last, and never in the way. The install
+   command has no spaces to break on, so it is allowed to break anywhere
+   rather than prop the sidebar open. */
 #cli-note {
   padding: var(--s-3) var(--s-4);
   border-top: 1px solid var(--c-line);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 #cli-note a { color: var(--c-ink-2); }
 
@@ -168,10 +203,17 @@ body {
 /* ------------------------------- narrow ---------------------------------- */
 
 /* One column, in the order the work happens: what you are doing, then the
-   picture, then the detail. The stage keeps a fixed share of the viewport so it
-   never collapses to a sliver on a phone. */
+   picture, then the detail. The stage keeps a fixed share of the viewport so
+   it never collapses to a sliver on a phone.
+
+   body loses its fixed height here, and that line is the fix for the worst
+   bug this file has shipped: with height: 100dvh kept, #dash stayed
+   height-CONSTRAINED, min-height: 0 regions were squashed to fit instead of
+   the page scrolling, the queue section collapsed to 0px, and its centred
+   content painted on top of the plan. A one-column phone layout is a
+   document, and a document's height is its content's. */
 @media (max-width: 860px) {
-  body { overflow: auto; }
+  body { overflow: auto; height: auto; min-height: 100dvh; }
 
   #dash {
     grid-template-columns: minmax(0, 1fr);
@@ -182,8 +224,11 @@ body {
   #side {
     border-right: 0;
     border-bottom: 1px solid var(--c-line);
-    grid-template-rows: auto auto auto;
+    overflow-y: visible;    /* the page scrolls; a nested scroll would fight it */
   }
+  /* The queue list alone stays internally scrollable, capped so twenty rows
+     do not push the picture below the fold. */
+  #queue-list { max-height: 40vh; }
 
   #stage { height: 52vh; }
   #facts { max-height: none; overflow: visible; }

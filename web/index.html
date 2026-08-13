@@ -15,9 +15,17 @@
 <!-- Six stylesheets, one per concern, loaded in dependency order: tokens, then
      the shell that positions the regions, then the regions themselves. Nothing
      below base.css invents a colour or a spacing value of its own. -->
-<!-- Applies a saved light/dark choice before first paint - a classic script,
-     because a deferred module would let the wrong theme flash first. -->
+<!-- Applies the resolved theme before first paint - a classic script, because
+     a deferred module would let the wrong theme flash first. The token layer
+     below flips on data-theme and knows nothing about the OS preference, so
+     the script always stamps an answer; there is no unstamped state. -->
 <script src="/js/theme.js"></script>
+
+<!-- The HeyOz token layer and its self-hosted faces, loaded before base.css,
+     which aliases this app's six-name vocabulary onto them. heyoz-tokens.css
+     is a vendored copy - see GUIDE.md; edit it upstream, never here. -->
+<link rel="stylesheet" href="/heyoz-tokens.css">
+<link rel="stylesheet" href="/fonts.css">
 
 <link rel="stylesheet" href="/css/base.css">
 <link rel="stylesheet" href="/css/layout.css">

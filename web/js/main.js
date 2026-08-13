@@ -80,15 +80,29 @@ function settleAlpha(policy) {
 
 /* ---------------------------------- theme --------------------------------- */
 
-/* Three states, cycled on one button: match my device -> light -> dark. The
- * saved choice is applied before first paint by js/theme.js (a head script);
- * this is only the control. The button's visible word is the CURRENT state -
- * a control that showed the next state read as already being in it. */
+/* Three MODES, cycled on one button: match my device -> light -> dark. The
+ * mode is the person's choice and lives in localStorage; the stamp on <html>
+ * is always the RESOLVED theme (js/theme.js resolves "match my device" to the
+ * OS's answer, live). This control therefore reads and writes the mode, never
+ * the stamp - the stamp is derived. The button's visible word is the CURRENT
+ * mode: a control that showed the next state read as already being in it. */
 const THEME_WORD = { "": "Match my device", light: "Light", dark: "Dark" };
 const THEME_NEXT = { "": "light", light: "dark", dark: "" };
 
+function themeMode() {
+  if (typeof window.__themeMode === "string") {
+    return window.__themeMode === "light" || window.__themeMode === "dark"
+      ? window.__themeMode : "";
+  }
+  try {
+    const saved = localStorage.getItem("imgc-theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch { /* private browsing reads as "match my device" */ }
+  return "";
+}
+
 function reflectTheme() {
-  const cur = document.documentElement.dataset.theme || "";
+  const cur = themeMode();
   const btn = $("theme-btn");
   btn.textContent = `Theme: ${THEME_WORD[cur]}`;
   btn.title = `Switch to ${THEME_WORD[THEME_NEXT[cur]]}`;
@@ -98,13 +112,13 @@ function reflectTheme() {
 
 function bindTheme() {
   $("theme-btn").addEventListener("click", () => {
-    const next = THEME_NEXT[document.documentElement.dataset.theme || ""];
-    if (next) document.documentElement.dataset.theme = next;
-    else delete document.documentElement.dataset.theme;
+    const next = THEME_NEXT[themeMode()];
+    window.__themeMode = next;          // holds for the visit even without storage
     try {
       if (next) localStorage.setItem("imgc-theme", next);
       else localStorage.removeItem("imgc-theme");
-    } catch { /* private browsing; the choice still holds for this visit */ }
+    } catch { /* private browsing; the in-memory mode above still applies */ }
+    if (window.__applyTheme) window.__applyTheme();
     reflectTheme();
   });
   reflectTheme();

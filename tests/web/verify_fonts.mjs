@@ -38,25 +38,32 @@ try {
   ok(loaded.every((f) => f.endsWith("loaded") || f.endsWith("unloaded")),
      "no face failed to parse");
 
-  // Are the brand faces the ones actually painting?
+  /* Are the brand faces the ones actually painting? The compressor page sets
+     the interface in Geist and its figures in Geist Mono (via the base.css
+     aliases onto the token layer); Bricolage is registered by fonts.css but
+     this page has no display type to spend it on. */
   const paints = await pg.evaluate(async () => {
     await document.fonts.ready;
+    /* Bricolage is declared and shipped but this page never paints with it,
+       and browsers only fetch a face on first use - so it is loaded here
+       explicitly, which is exactly the claim worth checking: the file is
+       there and parses when asked for. */
+    await document.fonts.load('600 48px "Bricolage Grotesque"').catch(() => {});
     const check = (family, weight, size) => document.fonts.check(`${weight} ${size}px "${family}"`);
     return {
       bricolage600: check("Bricolage Grotesque", 600, 48),
-      geist400: check("Geist", 400, 14),
-      geistMono: check("Geist Mono", 500, 12),
-      h1Family: getComputedStyle(document.querySelector(".empty h1")).fontFamily,
-      h1Weight: getComputedStyle(document.querySelector(".empty h1")).fontWeight,
+      geist400: check("Geist", 400, 16),
+      geistMono: check("Geist Mono", 500, 14),
       bodyFamily: getComputedStyle(document.body).fontFamily,
+      numFamily: getComputedStyle(document.getElementById("queue-count")).fontFamily,
     };
   });
   console.log("  paints:", JSON.stringify(paints));
   ok(paints.bricolage600, "Bricolage Grotesque 600 is available");
   ok(paints.geist400, "Geist 400 is available");
   ok(paints.geistMono, "Geist Mono is available");
-  ok(/Bricolage Grotesque/.test(paints.h1Family), "h1 resolves to Bricolage first");
   ok(/Geist/.test(paints.bodyFamily), "body resolves to Geist first");
+  ok(/Geist Mono/.test(paints.numFamily), "figures resolve to Geist Mono first");
 
   // The ceiling, measured on every rendered element rather than in source.
   const heavy = await pg.evaluate(() => {
@@ -75,10 +82,11 @@ try {
 
   // Compress something so the whole UI (queue, stats, verdict, buttons) exists,
   // then re-measure: most of the app does not exist on the empty state.
-  await pg.evaluate(() => addSamples());
-  await pg.waitForFunction(
-    () => state.items.length === 2 && state.items.every((i) => ["done", "saved"].includes(i.status)),
-    { timeout: 180000 });
+  const { uploadAndFinish } = await import("./drive.mjs");
+  await uploadAndFinish(pg, [
+    path.join(here, "fixtures", "ui.png"),
+    path.join(here, "fixtures", "logo.png"),
+  ], 900_000);
   const heavy2 = await pg.evaluate(() => {
     const out = [];
     for (const el of document.querySelectorAll("*")) {
