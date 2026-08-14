@@ -263,6 +263,11 @@ function bindPlan() {
      should not have to reopen it every visit. */
   const more = $("more-choices");
   try { more.open = localStorage.getItem("imgc-more") === "1"; } catch { /* fine */ }
+  /* A use-case page that presets a field living under More choices opens the
+     disclosure, whatever was remembered: a preset the person cannot see would
+     be the resize-disclosure rule broken one level up. */
+  const preset = document.documentElement.dataset;
+  if (preset.presetSize || preset.presetFormat) more.open = true;
   more.addEventListener("toggle", () => {
     try { localStorage.setItem("imgc-more", more.open ? "1" : "0"); } catch { /* fine */ }
   });

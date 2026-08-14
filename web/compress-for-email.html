@@ -1,29 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-preset-target="email">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pocketsize — free, private image compression in your browser</title>
-<meta name="description" content="Compress PNG, JPEG, WebP and AVIF free, entirely in your browser. Every image is encoded several ways, measured, and the smallest one that still looks right is kept. Nothing is uploaded — after one visit it even works offline.">
+<title>Compress images for email — Pocketsize</title>
+<meta name="description" content="Make photos email-sized in one step: the email plan picks sensible dimensions and quality, measures the result, and zips a batch with a written report. Free and private.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070605">
-<link rel="canonical" href="https://pocketsize.vercel.app/">
+<link rel="canonical" href="https://pocketsize.vercel.app/compress-for-email">
 
 <!-- The social card. og.png is the one asset with words baked in; the alt
      carries the same words for everyone who cannot see it. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pocketsize">
-<meta property="og:title" content="Pocketsize — compress images in your browser">
-<meta property="og:description" content="Free, private image compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
-<meta property="og:url" content="https://pocketsize.vercel.app/">
+<meta property="og:title" content="Compress images for email — Pocketsize">
+<meta property="og:description" content="Make photos email-sized in one step: the email plan picks sensible dimensions and quality, measures the result, and zips a batch with a written report. Free and private.">
+<meta property="og:url" content="https://pocketsize.vercel.app/compress-for-email">
 <meta property="og:image" content="https://pocketsize.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Pocketsize — compression that proves it didn't ruin your image. Nothing is uploaded.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Pocketsize — compress images in your browser">
-<meta name="twitter:description" content="Free, private image compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
+<meta name="twitter:title" content="Compress images for email — Pocketsize">
+<meta name="twitter:description" content="Make photos email-sized in one step: the email plan picks sensible dimensions and quality, measures the result, and zips a batch with a written report. Free and private.">
 <meta name="twitter:image" content="https://pocketsize.vercel.app/og.png">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -92,6 +92,38 @@
 <link rel="stylesheet" href="/css/queue.css">
 <link rel="stylesheet" href="/css/compare.css">
 <link rel="stylesheet" href="/css/facts.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What size should photos be for email?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The email plan's answer is on screen in the plan panel — a pixel cap that reads well everywhere without carrying camera resolution nobody will see. You can change it before or after compressing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "My mail provider caps attachments at 25 MB — will this help?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Dramatically, in most cases: full-resolution photos are usually a few hundred kilobytes after compression. You can also set an exact per-file size cap under More choices."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I send the originals' quality proof along?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — the zip's written report lists every file's before and after size and its measured visual-match score."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -492,41 +524,17 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Pocketsize — compress images in your browser, free and private</h1>
-    <p>Pocketsize makes pictures smaller. Add PNG, JPEG, WebP, GIF, BMP or TIFF
-       files and it saves each one several ways — as JPEG, PNG, WebP and AVIF —
-       measures every version against your original, and keeps the smallest one
-       that still looks right. You never have to take its word for it: the
-       original and the result sit side by side with a slider, a difference
-       view, and a measured visual-match score for every file.</p>
-    <p>Your pictures never leave your computer. There is no upload, no server
-       and no account — the compression runs on your own device, inside your
-       browser. That is not a promise to take on trust:
-       <a href="/nothing-is-uploaded">here is how to check it yourself, in
-       about a minute</a>. It is also why the whole app keeps working with no
-       internet after your first visit, and why you can install it like an app
-       and open images with it straight from your file manager.</p>
-    <p>It can shrink big photos to a pixel limit you choose, or work to a size
-       cap — "keep this under 200 KB". And if you choose
-       "identical — every pixel kept", that is exactly what happens: the same
-       pixels, never resized, just stored smaller.</p>
-    <p>If you came with one job in mind, these pages open with the plan
-       already set for it:
-       <a href="/compress-to-200kb">compress to 200 KB</a> ·
-       <a href="/compress-to-100kb">100 KB</a> ·
-       <a href="/compress-to-50kb">50 KB</a> ·
-       <a href="/compress-to-1mb">1 MB</a> ·
-       <a href="/compress-jpeg">compress JPEG</a> ·
-       <a href="/compress-png">compress PNG</a> ·
-       <a href="/compress-webp">compress WebP</a> ·
-       <a href="/png-to-avif">PNG to AVIF</a> ·
-       <a href="/compress-for-email">for email</a> ·
-       <a href="/bulk-image-compressor">a whole folder at once</a>.</p>
-    <p>Pocketsize is free and open source. The same engine is also a command
-       line, for folders and scripts:
-       <code>pip install pocketsize</code> ·
-       <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank"
-          rel="noopener">source &amp; licence</a></p>
+    <h1 id="about-h">Compress images for email</h1>
+    <p>This page opens Pocketsize with the destination set to “email” — a plan sized for what email actually needs: pictures big enough to look right on any screen the message is read on, small enough that a few of them do not bounce off an attachment limit.</p>
+    <p>Drop the photos, and each one is compressed to that plan and measured against its original. Several at once become a zip, and the zip carries a written report of what happened to every file — sizes in and out, the measured score, and whether pixels were removed — which is worth keeping when the pictures matter.</p>
+    <p>Your pictures never leave your computer: the compression runs in your browser, on your own device, and <a href="/nothing-is-uploaded">you can verify that yourself in about a minute</a>. After one visit it even works with no internet at all.</p>
+    <p>This page is <a href="/">Pocketsize</a> with the plan pre-set for one job. Nothing is locked — change any control once it is open.</p>
+    <h2>What size should photos be for email?</h2>
+    <p>The email plan's answer is on screen in the plan panel — a pixel cap that reads well everywhere without carrying camera resolution nobody will see. You can change it before or after compressing.</p>
+    <h2>My mail provider caps attachments at 25 MB — will this help?</h2>
+    <p>Dramatically, in most cases: full-resolution photos are usually a few hundred kilobytes after compression. You can also set an exact per-file size cap under More choices.</p>
+    <h2>Can I send the originals' quality proof along?</h2>
+    <p>Yes — the zip's written report lists every file's before and after size and its measured visual-match score.</p>
   </div>
 </section>
 

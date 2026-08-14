@@ -1,29 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-preset-size="100 KB">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pocketsize — free, private image compression in your browser</title>
-<meta name="description" content="Compress PNG, JPEG, WebP and AVIF free, entirely in your browser. Every image is encoded several ways, measured, and the smallest one that still looks right is kept. Nothing is uploaded — after one visit it even works offline.">
+<title>Compress an image to 100 KB in your browser — Pocketsize</title>
+<meta name="description" content="Get an image under 100 KB without guessing: formats and quality levels are tried and measured until the best-looking file fits. Free, private, works offline.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070605">
-<link rel="canonical" href="https://pocketsize.vercel.app/">
+<link rel="canonical" href="https://pocketsize.vercel.app/compress-to-100kb">
 
 <!-- The social card. og.png is the one asset with words baked in; the alt
      carries the same words for everyone who cannot see it. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pocketsize">
-<meta property="og:title" content="Pocketsize — compress images in your browser">
-<meta property="og:description" content="Free, private image compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
-<meta property="og:url" content="https://pocketsize.vercel.app/">
+<meta property="og:title" content="Compress an image to 100 KB in your browser — Pocketsize">
+<meta property="og:description" content="Get an image under 100 KB without guessing: formats and quality levels are tried and measured until the best-looking file fits. Free, private, works offline.">
+<meta property="og:url" content="https://pocketsize.vercel.app/compress-to-100kb">
 <meta property="og:image" content="https://pocketsize.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Pocketsize — compression that proves it didn't ruin your image. Nothing is uploaded.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Pocketsize — compress images in your browser">
-<meta name="twitter:description" content="Free, private image compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
+<meta name="twitter:title" content="Compress an image to 100 KB in your browser — Pocketsize">
+<meta name="twitter:description" content="Get an image under 100 KB without guessing: formats and quality levels are tried and measured until the best-looking file fits. Free, private, works offline.">
 <meta name="twitter:image" content="https://pocketsize.vercel.app/og.png">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -92,6 +92,38 @@
 <link rel="stylesheet" href="/css/queue.css">
 <link rel="stylesheet" href="/css/compare.css">
 <link rel="stylesheet" href="/css/facts.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "My portal says “max 100 KB” — will the result pass?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes: the limit is applied to the real bytes of the finished file, not an estimate. What downloads is what was measured."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I also make it a specific width and height?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — the “Shrink big photos” control caps the pixel size, and under More choices you can pick which edge the cap counts. Both work together with the 100 KB limit."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need an account or a payment for this?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Pocketsize is free, has no accounts, and runs entirely on your own device."
+      }
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -492,41 +524,17 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Pocketsize — compress images in your browser, free and private</h1>
-    <p>Pocketsize makes pictures smaller. Add PNG, JPEG, WebP, GIF, BMP or TIFF
-       files and it saves each one several ways — as JPEG, PNG, WebP and AVIF —
-       measures every version against your original, and keeps the smallest one
-       that still looks right. You never have to take its word for it: the
-       original and the result sit side by side with a slider, a difference
-       view, and a measured visual-match score for every file.</p>
-    <p>Your pictures never leave your computer. There is no upload, no server
-       and no account — the compression runs on your own device, inside your
-       browser. That is not a promise to take on trust:
-       <a href="/nothing-is-uploaded">here is how to check it yourself, in
-       about a minute</a>. It is also why the whole app keeps working with no
-       internet after your first visit, and why you can install it like an app
-       and open images with it straight from your file manager.</p>
-    <p>It can shrink big photos to a pixel limit you choose, or work to a size
-       cap — "keep this under 200 KB". And if you choose
-       "identical — every pixel kept", that is exactly what happens: the same
-       pixels, never resized, just stored smaller.</p>
-    <p>If you came with one job in mind, these pages open with the plan
-       already set for it:
-       <a href="/compress-to-200kb">compress to 200 KB</a> ·
-       <a href="/compress-to-100kb">100 KB</a> ·
-       <a href="/compress-to-50kb">50 KB</a> ·
-       <a href="/compress-to-1mb">1 MB</a> ·
-       <a href="/compress-jpeg">compress JPEG</a> ·
-       <a href="/compress-png">compress PNG</a> ·
-       <a href="/compress-webp">compress WebP</a> ·
-       <a href="/png-to-avif">PNG to AVIF</a> ·
-       <a href="/compress-for-email">for email</a> ·
-       <a href="/bulk-image-compressor">a whole folder at once</a>.</p>
-    <p>Pocketsize is free and open source. The same engine is also a command
-       line, for folders and scripts:
-       <code>pip install pocketsize</code> ·
-       <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank"
-          rel="noopener">source &amp; licence</a></p>
+    <h1 id="about-h">Compress an image to 100 KB</h1>
+    <p>This page opens Pocketsize with the size limit already set to 100 KB — the ceiling that profile photos, avatars and a lot of application portals ask for. Add your picture and the engine tries several formats and quality levels, measures each attempt against the original, and keeps the smallest one under the limit that still looks right.</p>
+    <p>100 KB is tight for a big photograph, so honesty matters more here, not less: every kept file carries a measured visual-match score, you can flick between before and after to judge it with your own eyes, and if the limit simply cannot be met without ruining the image, Pocketsize says exactly that.</p>
+    <p>Your pictures never leave your computer: the compression runs in your browser, on your own device, and <a href="/nothing-is-uploaded">you can verify that yourself in about a minute</a>. After one visit it even works with no internet at all.</p>
+    <p>This page is <a href="/">Pocketsize</a> with the plan pre-set for one job. Nothing is locked — change any control once it is open.</p>
+    <h2>My portal says “max 100 KB” — will the result pass?</h2>
+    <p>Yes: the limit is applied to the real bytes of the finished file, not an estimate. What downloads is what was measured.</p>
+    <h2>Can I also make it a specific width and height?</h2>
+    <p>Yes — the “Shrink big photos” control caps the pixel size, and under More choices you can pick which edge the cap counts. Both work together with the 100 KB limit.</p>
+    <h2>Do I need an account or a payment for this?</h2>
+    <p>No. Pocketsize is free, has no accounts, and runs entirely on your own device.</p>
   </div>
 </section>
 

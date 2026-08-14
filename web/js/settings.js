@@ -355,6 +355,27 @@ export function loadSettings() {
     state.suffix = !!saved.suffix;
   } catch { /* unreadable storage is the same as none */ }
 
+  /* A use-case page's own promise. /compress-to-200kb must open with the size
+     limit set to 200 KB - that is what its address says it does - so the
+     fields a page names override what was stored, on that page, every visit.
+     The attributes are written by tools/gen_seo_pages.py onto <html>; the
+     front page carries none and is untouched. Nothing is locked: every
+     control stays changeable once the page is open, and the page's prose says
+     so in as many words. */
+  const preset = document.documentElement.dataset;
+  if (preset.presetTarget && D.destinationOf(preset.presetTarget)) {
+    state.settings.target = preset.presetTarget;
+  }
+  if (preset.presetSize) {
+    const bytes = parseSize(preset.presetSize);
+    if (bytes > 0) state.settings.sizeTarget = bytes;
+  }
+  if (preset.presetFormat) {
+    // renderFormatOptions() below drops a pin the destination's list refuses,
+    // exactly as it does for a stored one.
+    state.settings.formats = [preset.presetFormat];
+  }
+
   renderDestinationOptions();
   $("target").value = D.destinationOf(state.settings.target);
   if (!$("target").value) {
@@ -362,11 +383,16 @@ export function loadSettings() {
     $("target").value = D.DEFAULT_DESTINATION;
   }
 
-  // Built after the destination is settled, so a stored pin outside its list is
-  // dropped rather than shown on a control the engine would refuse to honour.
+  /* Built after the destination is settled, so a pin outside its list is
+     dropped rather than shown on a control the engine would refuse to honour.
+     The pin is captured FIRST: renderFormatOptions restores the select's own
+     previous value - empty at boot - and clears state.settings.formats when
+     the select ends up empty, so reading the pin after calling it always read
+     null. A stored pin (and a page preset) silently died on every load. */
+  const pin = state.settings.formats?.[0] || "";
   renderFormatOptions();
-  $("plan-format").value = state.settings.formats?.[0] || "";
-  if (!$("plan-format").value) state.settings.formats = null;
+  $("plan-format").value = pin;
+  state.settings.formats = pin && $("plan-format").value === pin ? [pin] : null;
 
   /* qualityTarget is ALREADY on the 0-100 scale. An earlier version scaled it
      here as if it were a fraction, which turned a floor of 90 into 99 and ran

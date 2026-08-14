@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Pocketsize proves nothing is uploaded</title>
+<meta name="description" content="Don't take a privacy claim on trust. Watch the network panel stay silent, read the security policy that makes uploads impossible, and unplug the internet — the compressor keeps working.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070605">
+<link rel="canonical" href="https://pocketsize.vercel.app/nothing-is-uploaded">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Pocketsize">
+<meta property="og:title" content="How Pocketsize proves nothing is uploaded">
+<meta property="og:description" content="Watch the network panel stay silent, read the security policy that makes uploads impossible, then unplug the internet — it keeps working.">
+<meta property="og:url" content="https://pocketsize.vercel.app/nothing-is-uploaded">
+<meta property="og:image" content="https://pocketsize.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Pocketsize — compression that proves it didn't ruin your image. Nothing is uploaded.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How Pocketsize proves nothing is uploaded">
+<meta name="twitter:description" content="Watch the network panel stay silent, read the security policy that makes uploads impossible, then unplug the internet — it keeps working.">
+<meta name="twitter:image" content="https://pocketsize.vercel.app/og.png">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/heyoz-tokens.css">
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/layout.css">
+</head>
+<body>
+
+<!-- The proof page: prose only, built from the same sheets and classes as the
+     app's about strip. No app here - the app is one link away; this page
+     exists so the privacy claim never has to be taken on trust. -->
+<section id="about" aria-labelledby="about-h">
+  <div class="about-inner">
+    <p class="muted"><a href="/">&larr; Pocketsize — compress images in your browser</a></p>
+
+    <h1 id="about-h">"Nothing is uploaded" — and how to check that yourself</h1>
+
+    <p>Every image tool says it cares about your privacy. Almost all of them
+       still send your picture to a server to do the work. Pocketsize does
+       not — the compression runs inside your browser, on your own computer —
+       and because that claim is worthless as words alone, this page shows
+       you three ways to verify it, each in about a minute, none requiring
+       any technical background beyond pressing a key.</p>
+
+    <h2>1. Watch the network stay silent</h2>
+    <p>Open <a href="/">Pocketsize</a>, then press <code>F12</code> (or
+       right-click the page and choose "Inspect") and click the
+       <strong>Network</strong> tab — this panel shows every single thing a
+       page sends or receives, and it cannot be fooled. Now drop a photo in
+       and compress it. What you will see: the page downloading its own
+       machinery (files ending in <code>.js</code>, <code>.css</code>,
+       <code>.wasm</code>) — and your photo appearing nowhere. No POST, no
+       upload, no request carrying your file. The panel stays silent because
+       there is nothing to send: the encoders themselves were downloaded to
+       your machine, and your picture never leaves it.</p>
+
+    <h2>2. Read the rule that makes uploading impossible</h2>
+    <p>Not uploading is a choice; being <em>unable</em> to upload is a
+       guarantee, and Pocketsize ships with the guarantee. Every page is
+       delivered with a security header called a Content Security Policy
+       that your browser itself enforces. Ours says, among other things:</p>
+    <p><code>default-src 'none'; connect-src 'self'; form-action 'none'</code></p>
+    <p>In plain words: this page may talk to its own address to fetch its own
+       files, and to nowhere else, ever. If the code tried to send your
+       picture anywhere — because of a bug, a compromise, or a change of
+       heart — <strong>the browser would block the attempt</strong>. You can
+       read this header yourself in the same Network panel: click the first
+       request, look under "Response Headers" for
+       <code>content-security-policy</code>.</p>
+
+    <h2>3. Unplug the internet</h2>
+    <p>The simplest proof of all. Visit Pocketsize once, then turn on
+       airplane mode or pull the network cable — and keep compressing. The
+       whole compressor, encoders included, keeps working with no connection
+       at all, because after your first visit it lives on your device. A tool
+       that uploaded your pictures could not do this.</p>
+
+    <h2>What the server does see</h2>
+    <p>Honesty cuts both ways, so here is the whole picture: like any
+       website, the server that hands you the app sees the ordinary request
+       for the app itself — the visit. It never sees your pictures, their
+       names, their sizes, or anything about them, because no request
+       carrying them is ever made. There are no analytics scripts and no
+       third-party requests of any kind; the security policy above forbids
+       those too.</p>
+
+    <h2>The code is open</h2>
+    <p>Everything this page claims can be checked a fourth way: by reading
+       the code. Pocketsize is open source —
+       <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank"
+          rel="noopener">source &amp; licence on GitHub</a> — and the same
+       engine ships as a command line for folders and scripts:
+       <code>pip install pocketsize</code>.</p>
+  </div>
+</section>
+
+</body>
+</html>
