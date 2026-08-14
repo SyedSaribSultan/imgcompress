@@ -3,7 +3,7 @@
 This explains why the build is shaped the way it is. For the commands, see
 [packaging/README.md](../packaging/README.md).
 
-The pip path is unchanged and stays unchanged. `pip install "imgcompress[full,app]"`
+The pip path is unchanged and stays unchanged. `pip install "pocketsize[full,app]"`
 is the developer's install, the thing CI tests on three operating systems and two
 Python versions, and the only supported way to work on the code. What is added
 here is a second, parallel way to *ship* it, for the person the README is written
@@ -14,7 +14,7 @@ for: a designer on Windows who does not have Python and should not have to care.
 ## The one fact that shapes everything else
 
 Every optional engine is imported like this
-(`imgcompress/encoders.py`, `imgcompress/quality.py`):
+(`pocketsize/encoders.py`, `pocketsize/quality.py`):
 
 ```python
 try:
@@ -25,7 +25,7 @@ except Exception:
 ```
 
 That guard is correct and should stay. It is what lets a plain
-`pip install imgcompress` work on a machine with no wheels for anything, and
+`pip install pocketsize` work on a machine with no wheels for anything, and
 [CONTRIBUTING.md](../CONTRIBUTING.md) requires it of any new engine.
 
 But it means a frozen build that cannot load an extension module **does not
@@ -41,8 +41,8 @@ that is quietly worse than the one that was tested.
 
 ## So `--check` is a release gate, not a diagnostic
 
-`imgcompress --check` prints one line per engine and then `return 0`
-(`imgcompress/cli.py`). The zero is right for a diagnostic — a machine without
+`pocketsize --check` prints one line per engine and then `return 0`
+(`pocketsize/cli.py`). The zero is right for a diagnostic — a machine without
 zopfli is not in an error state — and useless for a release, so
 `.github/workflows/release.yml` runs the frozen binary, captures the output, and
 parses it. Any `[ ]` fails the build.
@@ -69,7 +69,7 @@ CONTRIBUTING.md, and a `[ ]` scan over an empty string finds no problems.
 A second gate compresses `tests/bench_corpus` with the frozen binary. `--check`
 only proves four modules imported; this proves the application works, and it is
 the only step that starts a process pool. The comment in
-`imgcompress/__init__.py` explains why that matters: a frozen build without
+`pocketsize/__init__.py` explains why that matters: a frozen build without
 `multiprocessing.freeze_support()` re-launches itself once per worker, and no
 single-image test can show it, because `compress_tree` takes a single-process
 path when there is one job.
@@ -153,12 +153,12 @@ every single time, for nothing. It is also the known-bad shape for macOS
 notarisation, because what Apple signs and what actually executes are different
 files.
 
-The application is already onedir-safe: `imgcompress/server.py` resolves its
+The application is already onedir-safe: `pocketsize/server.py` resolves its
 assets as `Path(__file__).resolve().parent / "webui"`, which lands inside
-`_internal/imgcompress/` in a onedir bundle, exactly where `collect_data_files`
+`_internal/pocketsize/` in a onedir bundle, exactly where `collect_data_files`
 puts them. Nothing in the application needed changing to be freezable, which is a
 credit to it and not an accident — the `freeze_support()` call in
-`imgcompress/__init__.py` was already there, with a comment about the fork bomb
+`pocketsize/__init__.py` was already there, with a comment about the fork bomb
 it prevents.
 
 ## Three builds, and why not fewer
@@ -240,7 +240,7 @@ for more than it does.
   gate cannot see it. A release that silently loses the AVIF encoder would be
   green. Every destination that offers AVIF also offers WebP and JPEG, so the
   consequence is a lost format rather than a failure — but it is unmeasured.
-- **The window.** Nothing in CI opens `imgcompress-gui`. The gate exercises the
+- **The window.** Nothing in CI opens `pocketsize-gui`. The gate exercises the
   console command, which shares all of the compression code but none of the
   pywebview path. A build where the window fails to open falls back to the
   browser, prints a line saying so, and would pass every check here.

@@ -1,15 +1,17 @@
 {
-  "name": "imgcompress",
-  "short_name": "imgcompress",
+  "name": "Pocketsize",
+  "short_name": "Pocketsize",
   "id": "/",
   "description": "Image compression that proves it didn't ruin your image. Runs entirely on your device — nothing is uploaded.",
   "start_url": "/",
   "display": "standalone",
+  "categories": ["photo", "utilities"],
   "background_color": "#070605",
   "theme_color": "#070605",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "file_handlers": [
     {

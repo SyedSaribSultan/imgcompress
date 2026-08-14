@@ -1,7 +1,7 @@
-# imgcompress
+# Pocketsize
 
-[![CI](https://github.com/SyedSaribSultan/imgcompress/actions/workflows/ci.yml/badge.svg)](https://github.com/SyedSaribSultan/imgcompress/actions/workflows/ci.yml)
-[![Try it in the browser](https://img.shields.io/badge/try_it-in_the_browser-d29a5e)](https://imgcompress-app.vercel.app)
+[![CI](https://github.com/SyedSaribSultan/pocketsize/actions/workflows/ci.yml/badge.svg)](https://github.com/SyedSaribSultan/pocketsize/actions/workflows/ci.yml)
+[![Try it in the browser](https://img.shields.io/badge/try_it-in_the_browser-d29a5e)](https://pocketsize.vercel.app)
 
 **Image compression that proves it didn't ruin your image.**
 
@@ -20,19 +20,19 @@ visually-lossless quality level.
 ![The app, dark theme](docs/screenshot-dark.webp)
 
 ```bash
-pip install "imgcompress[full,app]"
-imgcompress-gui            # the app
-imgcompress photos/        # or the command line
+pip install "pocketsize[full,app]"
+pocketsize-gui            # the app
+pocketsize photos/        # or the command line
 ```
 
-Or skip the install: **[imgcompress-app.vercel.app](https://imgcompress-app.vercel.app)**
+Or skip the install: **[pocketsize.vercel.app](https://pocketsize.vercel.app)**
 runs the same comparison entirely in your browser — including SSIMULACRA 2
 itself, ported to JavaScript and validated against the reference
 implementation. Nothing is uploaded; images never leave your device.
 
 [tests/BENCHMARK.md](tests/BENCHMARK.md) holds a reproducible head-to-head
 against single-format pipelines and fixed-quality defaults, every strategy
-searched to the same visual match of 90 or better. On that corpus imgcompress is
+searched to the same visual match of 90 or better. On that corpus Pocketsize is
 the smallest or tied-smallest passing file on every image; on the 12 MP
 photograph the browser version ships 362 KB where searched single-format
 JPEG needs 517–544 KB — and every fixed-quality default misses the target
@@ -108,14 +108,14 @@ browser otherwise. Both are the same full application.
 ## Command line
 
 ```bash
-imgcompress                            # ./input -> ./output
-imgcompress photos/ -o small/          # any folder
-imgcompress hero.png                   # a single file
-imgcompress input/ --for documents     # safe to import into a design tool
-imgcompress input/ --for email         # small enough to attach
-imgcompress input/ -q 95               # hold a higher visual match
-imgcompress input/ --fast              # quicker, a few percent bigger
-imgcompress --check                    # which engines are active
+pocketsize                            # ./input -> ./output
+pocketsize photos/ -o small/          # any folder
+pocketsize hero.png                   # a single file
+pocketsize input/ --for documents     # safe to import into a design tool
+pocketsize input/ --for email         # small enough to attach
+pocketsize input/ -q 95               # hold a higher visual match
+pocketsize input/ --fast              # quicker, a few percent bigger
+pocketsize --check                    # which engines are active
 ```
 
 ### Where is it going?
@@ -204,8 +204,8 @@ default: the restriction is a fact about design tools, not about images.
 ## Install
 
 ```bash
-pip install "imgcompress[full,app]"     # everything
-pip install imgcompress                 # core only, weaker fallbacks
+pip install "pocketsize[full,app]"     # everything
+pip install pocketsize                 # core only, weaker fallbacks
 ```
 
 Or from a checkout — on Windows, double-click **`run.bat`** for the app or
@@ -222,7 +222,7 @@ there is nothing to compile and no binaries to install:
 | `zopflipy` | zopflipng-grade deflate | ~10% off any PNG, lossless |
 | `mozjpeg-lossless-optimization` | mozjpeg's lossless pass | ~1%, free |
 
-`imgcompress --check` reports what's active. Without them the tool still runs,
+`pocketsize --check` reports what's active. Without them the tool still runs,
 with weaker built-ins.
 
 ---
@@ -251,7 +251,7 @@ survives in most hand-rolled compressors.
 ## Development
 
 ```bash
-git clone https://github.com/SyedSaribSultan/imgcompress && cd imgcompress
+git clone https://github.com/SyedSaribSultan/pocketsize && cd pocketsize
 pip install -e ".[full,app,dev]"
 python -m unittest discover -s tests     # 110 tests, ~2.5 min
 python tests/make_fixtures.py            # build the benchmark corpus

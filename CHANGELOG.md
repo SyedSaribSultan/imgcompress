@@ -39,7 +39,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   downscale, which quietly contradicted its own name.
 - **A `social` destination** ("Social media post"): JPEG/PNG only, 2048px,
   match 88 — sized and saved so the platforms don't re-shrink uploads themselves.
-- **A written record in every zip.** `imgcompress-report.txt`: per picture, what
+- **A written record in every zip.** `pocketsize-report.txt`: per picture, what
   was kept, what changed in bytes and pixels, the measured match, whether it is
   pixel-exact, and the full versions-tried table.
 - **A theme control.** Light / Dark / Match my device, cycled in the header,
@@ -48,6 +48,10 @@ This project follows [Semantic Versioning](https://semver.org/).
   engine, for folders and scripts.
 
 ### Changed
+- **The project is renamed from imgcompress to Pocketsize.** The package, the
+  `pocketsize` and `pocketsize-gui` commands, the installers and the repository
+  slug all carry the new name, and the web app now lives at
+  [pocketsize.vercel.app](https://pocketsize.vercel.app).
 - **Resize disclosure moved to the same line as the saving, everywhere.** The
   stage bar, the queue row, the zip toast and the measured panel all say
   "shrunk" beside the percentage; the explanation sits above the stat grid at
@@ -79,7 +83,7 @@ This project follows [Semantic Versioning](https://semver.org/).
   service worker precaches the whole compressor - codecs included - so after
   one visit it runs with no network at all, which is the "nothing is uploaded"
   promise made physical. The manifest registers image file handlers: installed,
-  "Open with imgcompress" appears in the file manager and dropped launches land
+  "Open with Pocketsize" appears in the file manager and dropped launches land
   straight in the queue.
 - **The panels are the person's own.** The sidebar's edge and the evidence
   panel's top edge drag (or arrow-key, focused) between sane bounds, remember

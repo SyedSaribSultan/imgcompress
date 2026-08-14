@@ -20,9 +20,9 @@
 
 "use strict";
 
-const VERSION = "v1";
-const SHELL = `imgc-shell-${VERSION}`;
-const HEAVY = `imgc-heavy-${VERSION}`;
+const VERSION = "v2";
+const SHELL = `pocketsize-shell-${VERSION}`;
+const HEAVY = `pocketsize-heavy-${VERSION}`;
 
 /* Everything the page needs to boot cold, warmed on install so "visited once"
  * means "works offline", not "works offline for the parts you happened to
@@ -43,6 +43,8 @@ const PRECACHE = [
   "/icon-192.png", "/icon-512.png",
 ];
 
+const PRECACHE_SET = new Set(PRECACHE);
+
 const HEAVY_PRECACHE = [
   "/vendor/mozjpeg.js", "/vendor/mozjpeg_enc.wasm",
   "/vendor/oxipng.js", "/vendor/squoosh_oxipng_bg.wasm",
@@ -58,7 +60,17 @@ self.addEventListener("install", (e) => {
     const [shell, heavy] = await Promise.all([caches.open(SHELL), caches.open(HEAVY)]);
     // addAll is atomic per cache; a 404 anywhere fails the install loudly
     // rather than shipping an offline mode with a hole in it.
-    await Promise.all([shell.addAll(PRECACHE), heavy.addAll(HEAVY_PRECACHE)]);
+    //
+    // The shell set is fetched with cache: "reload" - straight from the
+    // network, never the HTTP cache - because css/js are HTTP-cacheable for an
+    // hour, and an install right after a deploy could otherwise atomically
+    // precache brand-new HTML next to hour-old CSS. The heavy set keeps the
+    // default mode on purpose: those files change under new filenames or not
+    // at all, so an HTTP-cached copy is always the right copy.
+    await Promise.all([
+      shell.addAll(PRECACHE.map((u) => new Request(u, { cache: "reload" }))),
+      heavy.addAll(HEAVY_PRECACHE),
+    ]);
     await self.skipWaiting();
   })());
 });
@@ -92,12 +104,36 @@ self.addEventListener("fetch", (e) => {
 
   // Network-first: deploys arrive on the next visit, offline gets the last one.
   e.respondWith((async () => {
+    const hit = await caches.match(e.request, { ignoreSearch: url.pathname === "/" });
     try {
-      const fresh = await fetch(e.request);
-      if (fresh.ok) (await caches.open(SHELL)).put(e.request, fresh.clone());
+      /* When an offline copy exists, the network gets a few seconds and no
+         more. A hanging connection (connected, but nothing moving) used to
+         hold a fully-cached returning visitor on a blank page until the
+         network stack gave up - the exact failure the offline layer exists to
+         prevent. With no cached copy there is nothing to fall back to, so the
+         fetch gets all the time it needs. */
+      let fresh;
+      if (hit) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 3500);
+        try {
+          fresh = await fetch(e.request, { signal: ctrl.signal });
+        } finally {
+          clearTimeout(timer);
+        }
+      } else {
+        fresh = await fetch(e.request);
+      }
+      /* Only the shell's own files are written back. Caching every ok same-
+         origin GET let any query-string variant of any URL grow the cache
+         without bound; the offline set is the precache list, exactly. The
+         entry is keyed by pathname so "/?anything" refreshes "/" instead of
+         multiplying. */
+      if (fresh.ok && PRECACHE_SET.has(url.pathname)) {
+        (await caches.open(SHELL)).put(url.pathname, fresh.clone());
+      }
       return fresh;
     } catch {
-      const hit = await caches.match(e.request, { ignoreSearch: url.pathname === "/" });
       if (hit) return hit;
       // A navigation with no cache entry still deserves the app, not a
       // browser error page - "/" is always precached.

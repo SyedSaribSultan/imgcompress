@@ -11,11 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 
-from imgcompress import Settings, compress_file, compress_tree  # noqa: E402
-from imgcompress import destinations as dest  # noqa: E402
-from imgcompress import encoders as enc  # noqa: E402
-from imgcompress.core import frame_for  # noqa: E402
-from imgcompress.quality import (  # noqa: E402
+from pocketsize import Settings, compress_file, compress_tree  # noqa: E402
+from pocketsize import destinations as dest  # noqa: E402
+from pocketsize import encoders as enc  # noqa: E402
+from pocketsize.core import frame_for  # noqa: E402
+from pocketsize.quality import (  # noqa: E402
     HAVE_SSIMULACRA2,
     flatten,
     get_metric,
@@ -293,7 +293,7 @@ class CompressTests(unittest.TestCase):
         and the engine cannot disagree - which they did: the header advertised
         `up to 8000px` for a run that produced 4096.
         """
-        from imgcompress import destinations as d
+        from pocketsize import destinations as d
         self.assertEqual(d.effective_limit("documents", 8000), 4096)
         self.assertEqual(d.effective_limit("documents", 800), 800)
         self.assertEqual(d.effective_limit("documents", 0), 4096)
@@ -302,7 +302,7 @@ class CompressTests(unittest.TestCase):
         self.assertEqual(d.effective_limit("original", 0), 0)
 
     def test_the_engine_uses_the_same_rule_the_cli_prints(self):
-        from imgcompress import destinations as d
+        from pocketsize import destinations as d
         path = self.src / "huge.png"
         sample((5000, 1200)).save(path)
         for name, asked in (("documents", 8000), ("documents", 800), ("web", 3000)):
@@ -580,7 +580,7 @@ class FrozenBundleSafety(unittest.TestCase):
     always on Windows, the default on macOS - each worker re-executes the
     program to import the module it needs. Frozen, there is no python to
     re-execute: the child runs the app's own executable again, starts a whole
-    new imgcompress, and opens a pool of its own. A folder of images becomes a
+    new Pocketsize, and opens a pool of its own. A folder of images becomes a
     fork bomb.
 
     It hid because `compress_tree` takes a single-process path when there is one
@@ -590,7 +590,7 @@ class FrozenBundleSafety(unittest.TestCase):
 
     def test_freeze_support_is_called_at_import(self):
         source = (Path(__file__).resolve().parent.parent
-                  / "imgcompress" / "__init__.py").read_text(encoding="utf-8")
+                  / "pocketsize" / "__init__.py").read_text(encoding="utf-8")
         self.assertIn("freeze_support()", source,
                       "multiprocessing.freeze_support() is gone from the package "
                       "__init__; a frozen build will fork-bomb on a folder")

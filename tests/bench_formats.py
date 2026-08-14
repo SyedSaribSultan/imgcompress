@@ -18,9 +18,9 @@ import warnings  # noqa: E402
 
 from PIL import Image  # noqa: E402
 
-from imgcompress import encoders as enc  # noqa: E402
-from imgcompress.core import _decode  # noqa: E402
-from imgcompress.quality import HAVE_SSIMULACRA2, get_metric  # noqa: E402
+from pocketsize import encoders as enc  # noqa: E402
+from pocketsize.core import _decode  # noqa: E402
+from pocketsize.quality import HAVE_SSIMULACRA2, get_metric  # noqa: E402
 
 warnings.simplefilter("ignore", UserWarning)
 

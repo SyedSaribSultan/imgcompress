@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 from tools import sync_webui_assets as sync  # noqa: E402
 
 WEB = ROOT / "web"
-WEBUI = ROOT / "imgcompress" / "webui"
+WEBUI = ROOT / "pocketsize" / "webui"
 DESKTOP = WEBUI / "app.html"
 
 
@@ -265,12 +265,20 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
                 self.assertEqual(sorted(used - defined), [],
                                  f"{name} uses tokens base.css does not define")
 
-    def test_the_page_carries_no_inline_script(self):
+    def test_the_page_carries_no_inline_executable_script(self):
         """The CSP forbids inline script outright rather than allow-listing a
         hash. An inline <script> here fails only in production, and only after a
-        deploy, which is the worst way to find out."""
+        deploy, which is the worst way to find out.
+
+        The one deliberate exception: <script type="application/ld+json">, the
+        page's description of itself for search engines. That is a DATA block -
+        the HTML spec says browsers never fetch or execute it, so the CSP never
+        comes into play. Anything else inline is still a failure."""
         html = _read(WEB / "index.html")
-        self.assertEqual(re.findall(r"<script(?![^>]*\bsrc=)[^>]*>", html), [])
+        inline = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>", html)
+        allowed = [t for t in inline if 'type="application/ld+json"' in t]
+        self.assertEqual(inline, allowed,
+                         "inline <script> that is not a JSON-LD data block")
 
 
 class MotionIsTokenised(unittest.TestCase):

@@ -18,12 +18,24 @@ function outExt(it) {
   return it.ext || splitName(it.name).ext;
 }
 
+/** Zip entry names are written raw into the archive headers, and the base name
+ *  comes from the file's own name or the on-stage rename field - both of which
+ *  can carry path separators ("..\evil.png" is a legal filename on Linux, and
+ *  the rename field accepts anything typed). Several extractors honour those
+ *  separators and would write the entry OUTSIDE the folder being extracted to.
+ *  So: separators and control characters become underscores, and a leading dot
+ *  is kept visible rather than hiding the file on Unix. */
+function safePart(part, isExt) {
+  const cleaned = String(part).replace(/[\\/\x00-\x1f\x7f]/g, "_");
+  return isExt ? cleaned : cleaned.replace(/^\.+/, (dots) => "_".repeat(dots.length));
+}
+
 /** The name to write, de-duplicated against everything already in this archive.
  *  Two files called logo.png from different folders must not silently become one
  *  entry - a zip with a duplicate name is a zip that loses a file. */
 export function outputName(it, used) {
-  let base = splitName(it.name).base;
-  const ext = outExt(it);
+  let base = safePart(splitName(it.name).base);
+  const ext = safePart(outExt(it), true);
   if (state.suffix) base += "-min";
   const name = base + ext;
   if (!used) return name;
@@ -104,7 +116,7 @@ export async function copyImage(it) {
 function buildReport(done, names) {
   const lines = [];
   const t = totals();
-  lines.push(`imgcompress report — ${done.length} picture${done.length === 1 ? "" : "s"}`);
+  lines.push(`Pocketsize report — ${done.length} picture${done.length === 1 ? "" : "s"}`);
   lines.push(`${human(t.before)} in, ${human(t.after)} out, ${human(t.saved)} saved.`);
   lines.push("Everything ran in this browser. Nothing was uploaded.");
   lines.push("");
@@ -230,11 +242,11 @@ export async function downloadAll() {
        records/legal/archive personas asked for, and one text file in a zip
        costs everyone else nothing. */
     entries.push({
-      name: "imgcompress-report.txt",
+      name: "pocketsize-report.txt",
       blob: new Blob([buildReport(done, names)], { type: "text/plain" }),
     });
     const zip = await zipStore(entries);
-    downloadBlob(zip, "imgcompress.zip");
+    downloadBlob(zip, "pocketsize.zip");
     for (const it of done) it.status = "saved";
     /* If pixels were removed anywhere, the toast that announces the saving
        says so - the number never travels without that fact. And the written

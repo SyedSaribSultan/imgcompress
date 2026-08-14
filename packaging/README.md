@@ -8,7 +8,7 @@ results a developer gets.
 It changes nothing about the developer path. `pip install -e ".[full,app]"` is
 still the way to work on this, still the thing CI tests, and still what
 [CONTRIBUTING.md](../CONTRIBUTING.md) describes. Nothing in here is imported by
-`imgcompress` and nothing in `imgcompress` knows it exists.
+`pocketsize` and nothing in `pocketsize` knows it exists.
 
 For *why* it is built this way — the arch matrix, onedir, the engines that fail
 silently — read [docs/PACKAGING.md](../docs/PACKAGING.md). This file is the
@@ -18,14 +18,14 @@ instructions.
 
 | Platform | Artifact | Contains |
 | --- | --- | --- |
-| Windows x64 | `imgcompress-<version>-windows-x64[-unsigned]-setup.exe` | per-user installer, Start-menu entry, optional desktop shortcut |
-| macOS arm64 | `imgcompress-<version>-macos-arm64[-unsigned].dmg` | `Image Compressor.app`, drag to Applications |
-| macOS x86_64 | `imgcompress-<version>-macos-x86_64[-unsigned].dmg` | the same, for Intel Macs |
+| Windows x64 | `pocketsize-<version>-windows-x64[-unsigned]-setup.exe` | per-user installer, Start-menu entry, optional desktop shortcut |
+| macOS arm64 | `pocketsize-<version>-macos-arm64[-unsigned].dmg` | `Pocketsize.app`, drag to Applications |
+| macOS x86_64 | `pocketsize-<version>-macos-x86_64[-unsigned].dmg` | the same, for Intel Macs |
 
-Every artifact holds two programs. `imgcompress-gui` is the window; `imgcompress`
+Every artifact holds two programs. `pocketsize-gui` is the window; `pocketsize`
 is the console command, and it is the one CI interrogates. On Windows both sit in
 the install directory. On macOS the console command is inside the bundle at
-`Image Compressor.app/Contents/MacOS/imgcompress`.
+`Pocketsize.app/Contents/MacOS/pocketsize`.
 
 Until signing is sorted out (see below) `-unsigned` appears in every filename.
 That is deliberate and it is load-bearing: an unsigned installer should not be
@@ -40,7 +40,7 @@ all four engines and the version the release builds with.
 
 ```bash
 python -m pip install ".[full,app]" pyinstaller
-pyinstaller --clean --noconfirm packaging/imgcompress.spec
+pyinstaller --clean --noconfirm packaging/pocketsize.spec
 ```
 
 Note the missing `-e`. The spec builds from the installed distribution rather
@@ -52,12 +52,12 @@ Then check the result the same way CI does:
 
 ```bash
 # Windows
-dist/imgcompress/imgcompress.exe --check
-dist/imgcompress/imgcompress.exe tests/bench_corpus -o /tmp/out
+dist/pocketsize/pocketsize.exe --check
+dist/pocketsize/pocketsize.exe tests/bench_corpus -o /tmp/out
 
 # macOS
-"dist/Image Compressor.app/Contents/MacOS/imgcompress" --check
-"dist/Image Compressor.app/Contents/MacOS/imgcompress" tests/bench_corpus -o /tmp/out
+"dist/Pocketsize.app/Contents/MacOS/pocketsize" --check
+"dist/Pocketsize.app/Contents/MacOS/pocketsize" tests/bench_corpus -o /tmp/out
 ```
 
 `--check` must print `[x]` on all four lines. Anything else means an engine did
@@ -69,7 +69,7 @@ photograph.
 ## What the release workflow does
 
 `.github/workflows/release.yml` runs on a `v*` tag and, per platform: installs,
-builds, then **gates**. It reads the output of `imgcompress --check` from the
+builds, then **gates**. It reads the output of `pocketsize --check` from the
 frozen binary and fails the release if any engine is inactive; compresses the
 benchmark corpus with the frozen binary and fails if the file count is wrong;
 and confirms the architecture is the one the filename claims. Only then does it
@@ -135,7 +135,7 @@ build into signed mode.
 Expect to debug the first notarisation. A PyInstaller bundle is hundreds of
 individual Mach-O files and Apple checks all of them. If the rejection mentions
 executable memory or JIT, write an entitlements plist and point the build at it
-with `IMGCOMPRESS_ENTITLEMENTS` — the spec already reads that variable and
+with `POCKETSIZE_ENTITLEMENTS` — the spec already reads that variable and
 passes it through — rather than dropping the hardened runtime, which would make
 notarisation impossible instead of merely annoying.
 
@@ -148,7 +148,7 @@ notarisation impossible instead of merely annoying.
 - **`--check` reports one engine missing.** Nothing about the application is
   broken; one shared library did not get collected. `docs/PACKAGING.md` has the
   known causes, one per engine.
-- **The build is enormous.** `dist/imgcompress` measured 154 MB on Windows x64 in
+- **The build is enormous.** `dist/pocketsize` measured 154 MB on Windows x64 in
   an environment holding only the declared dependencies; the installer that wraps
   it is compressed and smaller again. The same spec, built from a general-purpose
   Python install that also had torch, transformers and a few machine-learning

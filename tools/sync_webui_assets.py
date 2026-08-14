@@ -5,7 +5,7 @@ carry its own palette, its own radii, its own two transition shorthands and its
 own system-font stack - a second visual identity for the same product, and the
 half of it that no gate could see.
 
-The desktop app is served by `imgcompress/server.py` out of `imgcompress/webui/`
+The desktop app is served by `pocketsize/server.py` out of `pocketsize/webui/`
 and has to work from a pip install with no network, so it needs its own copy of
 the files on disk. That copy is produced here and committed, exactly like
 `web/destinations.js`: no build step at runtime, and CI re-runs this with
@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
-WEBUI = ROOT / "imgcompress" / "webui"
+WEBUI = ROOT / "pocketsize" / "webui"
 
 BANNER = (
     "/* COPIED from web/{name} by tools/sync_webui_assets.py - DO NOT EDIT.\n"

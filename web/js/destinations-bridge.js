@@ -1,6 +1,6 @@
 /* Hands destinations.js over to the module graph.
  *
- * destinations.js is generated from imgcompress/destinations.py and has to stay a
+ * destinations.js is generated from pocketsize/destinations.py and has to stay a
  * classic script, because worker.js pulls in the very same file with
  * importScripts and that cannot take a module. Its top-level `const` bindings do
  * technically reach module code through the global lexical scope, but relying on

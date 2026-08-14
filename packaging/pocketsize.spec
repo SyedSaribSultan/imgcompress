@@ -1,8 +1,8 @@
 # -*- mode: python -*-
 """PyInstaller spec for the desktop build.
 
-One onedir bundle, two executables: `imgcompress`, the console command, and
-`imgcompress-gui`, the windowed app that the installer puts in the Start menu or
+One onedir bundle, two executables: `pocketsize`, the console command, and
+`pocketsize-gui`, the windowed app that the installer puts in the Start menu or
 in /Applications. They share one copy of Python, Pillow, numpy, scipy and the
 four optional engines, which is the entire reason they live in the same bundle -
 the payload is around 250 MB and building it twice would double every download.
@@ -10,14 +10,14 @@ the payload is around 250 MB and building it twice would double every download.
 Read docs/PACKAGING.md before changing anything here. Every collection rule
 below exists because of a specific engine that goes *quiet* rather than crashing
 when it cannot load, and a build that compresses images with weaker built-ins
-looks exactly like a working one. That is also why `imgcompress --check` is a
+looks exactly like a working one. That is also why `pocketsize --check` is a
 release gate in .github/workflows/release.yml rather than a diagnostic anyone is
 expected to read.
 
 Build it from an installed package, not from the source tree:
 
     python -m pip install ".[full,app]" pyinstaller
-    pyinstaller --clean --noconfirm packaging/imgcompress.spec
+    pyinstaller --clean --noconfirm packaging/pocketsize.spec
 """
 
 # PyInstaller execs this file with Analysis, PYZ, EXE, COLLECT, BUNDLE, SPECPATH
@@ -41,8 +41,8 @@ IS_MACOS = sys.platform == "darwin"
 
 # The name people see. gui.py already titles the window this, so the .app, the
 # Start menu entry and the window agree without anybody retyping the string.
-APP_NAME = "Image Compressor"
-BUNDLE_ID = "com.heyoz.imgcompress"
+APP_NAME = "Pocketsize"
+BUNDLE_ID = "com.heyoz.pocketsize"
 
 # One 512px source for both platforms. PyInstaller converts it to .ico or .icns
 # with Pillow, which is a build dependency anyway. The obvious-looking
@@ -54,15 +54,15 @@ ICON = REPO / "web" / "icon-512.png"
 # way on macOS; see packaging/README.md. When the identity is absent these stay
 # None and PyInstaller falls back to the ad-hoc signature that arm64 macOS
 # requires just to execute, which is not the same thing as a signed app.
-CODESIGN_IDENTITY = os.environ.get("IMGCOMPRESS_CODESIGN_IDENTITY") or None
-ENTITLEMENTS_FILE = os.environ.get("IMGCOMPRESS_ENTITLEMENTS") or None
+CODESIGN_IDENTITY = os.environ.get("POCKETSIZE_CODESIGN_IDENTITY") or None
+ENTITLEMENTS_FILE = os.environ.get("POCKETSIZE_ENTITLEMENTS") or None
 
 
 # --------------------------------------------------------------------------- #
 # entry scripts
 # --------------------------------------------------------------------------- #
 
-# Neither imgcompress/cli.py nor imgcompress/gui.py can be handed to Analysis
+# Neither pocketsize/cli.py nor pocketsize/gui.py can be handed to Analysis
 # directly: PyInstaller runs the entry script as `__main__`, and both files
 # start with relative imports (`from . import __version__`), which fail outside
 # their package. So the two three-line shims are generated into the build
@@ -70,12 +70,12 @@ ENTITLEMENTS_FILE = os.environ.get("IMGCOMPRESS_ENTITLEMENTS") or None
 # there is nothing in them to review or to keep in step with anything, and a
 # committed copy would be one more file that can drift.
 #
-# `import imgcompress` is what runs multiprocessing.freeze_support() - see the
-# comment in imgcompress/__init__.py, which describes what a frozen build does
+# `import pocketsize` is what runs multiprocessing.freeze_support() - see the
+# comment in pocketsize/__init__.py, which describes what a frozen build does
 # to a ProcessPoolExecutor without it. Both shims reach it on their first line.
 
-CLI_ENTRY_NAME = "imgcompress_cli_entry"
-GUI_ENTRY_NAME = "imgcompress_gui_entry"
+CLI_ENTRY_NAME = "pocketsize_cli_entry"
+GUI_ENTRY_NAME = "pocketsize_gui_entry"
 
 
 def _write_entry_shim(name, module):
@@ -92,8 +92,8 @@ def _write_entry_shim(name, module):
     return str(path)
 
 
-cli_entry = _write_entry_shim(CLI_ENTRY_NAME, "imgcompress.cli")
-gui_entry = _write_entry_shim(GUI_ENTRY_NAME, "imgcompress.gui")
+cli_entry = _write_entry_shim(CLI_ENTRY_NAME, "pocketsize.cli")
+gui_entry = _write_entry_shim(GUI_ENTRY_NAME, "pocketsize.gui")
 
 
 # --------------------------------------------------------------------------- #
@@ -102,11 +102,11 @@ gui_entry = _write_entry_shim(GUI_ENTRY_NAME, "imgcompress.gui")
 
 # The desktop UI: one HTML file, the design system copied from web/, and the
 # faces. server.py resolves them as Path(__file__).resolve().parent / "webui",
-# which in a onedir build lands inside _internal/imgcompress/ - exactly where
+# which in a onedir build lands inside _internal/pocketsize/ - exactly where
 # collect_data_files puts them. (This is also why onefile is not an option; see
 # docs/PACKAGING.md.) Collected wholesale rather than by extension so that
 # adding an icon or a face to webui/ never needs an edit here.
-datas = collect_data_files("imgcompress")
+datas = collect_data_files("pocketsize")
 
 binaries = []
 
@@ -152,7 +152,7 @@ hiddenimports = [
     # a working application rather than an error. Naming them here does not by
     # itself make the build fail - PyInstaller only warns about a hidden import
     # it cannot find - which is precisely why the release workflow runs
-    # `imgcompress --check` against the built binary and reads the answer.
+    # `pocketsize --check` against the built binary and reads the answer.
     "imagequant",
     "mozjpeg_lossless_optimization",
     "zopfli",
@@ -193,7 +193,7 @@ a = Analysis(
 # Analysis returns the runtime hooks and the entry scripts in one list, and each
 # executable has to be given exactly one entry script plus all of the hooks. If
 # the filter below silently matched nothing, both executables would embed both
-# entry scripts and run them in sequence: `imgcompress --check` would print the
+# entry scripts and run them in sequence: `pocketsize --check` would print the
 # engine report and then open an application window. That is a defect you find
 # by launching the artifact, not by reading a build log, so the names are
 # asserted here instead.
@@ -202,7 +202,7 @@ _analysed = {name for name, _path, _kind in a.scripts}
 _missing = sorted(ENTRY_NAMES - _analysed)
 if _missing:
     raise SystemExit(
-        "imgcompress.spec: PyInstaller did not name the entry scripts as "
+        "pocketsize.spec: PyInstaller did not name the entry scripts as "
         f"expected - {_missing} not found in {sorted(_analysed)}. The two "
         "executables are separated by matching those names, so this build "
         "would have produced two identical programs. Fix the filter, do not "
@@ -211,19 +211,19 @@ if _missing:
 
 # The application's own modules have to be in the archive, and PyInstaller only
 # *warns* when they are not: the build succeeds, and both executables die on
-# their second line with ModuleNotFoundError: No module named 'imgcompress.cli'.
+# their second line with ModuleNotFoundError: No module named 'pocketsize.cli'.
 # That is what happens when the spec is run without the package installed -
 # `collect_data_files` finds it through the working directory and copies webui/
 # in, while the module graph, which searches the spec's own directory, does not
 # find a thing. Building against the installed distribution rather than the
 # source tree is deliberate: it means a missing entry in the package-data list
 # in pyproject.toml fails a release instead of shipping an app with no interface.
-REQUIRED_MODULES = ("imgcompress", "imgcompress.cli", "imgcompress.gui", "imgcompress.server")
+REQUIRED_MODULES = ("pocketsize", "pocketsize.cli", "pocketsize.gui", "pocketsize.server")
 _collected = {name for name, _path, _kind in a.pure}
 _absent = [name for name in REQUIRED_MODULES if name not in _collected]
 if _absent:
     raise SystemExit(
-        f"imgcompress.spec: {_absent} did not make it into the archive. "
+        f"pocketsize.spec: {_absent} did not make it into the archive. "
         "Install the package into the environment you are building from:\n"
         '    python -m pip install ".[full,app]"'
     )
@@ -263,9 +263,9 @@ cli_exe = EXE(
     pyz,
     _scripts_for(CLI_ENTRY_NAME),
     [],
-    name="imgcompress",
+    name="pocketsize",
     # A console executable, and not only so people can read the output: a
-    # windowed build has no stdout on Windows, so `imgcompress --check | ...`
+    # windowed build has no stdout on Windows, so `pocketsize --check | ...`
     # would hand the release gate an empty string to parse and pass.
     console=True,
     **_exe_common,
@@ -275,7 +275,7 @@ gui_exe = EXE(
     pyz,
     _scripts_for(GUI_ENTRY_NAME),
     [],
-    name="imgcompress-gui",
+    name="pocketsize-gui",
     console=False,
     **_exe_common,
 )
@@ -294,15 +294,15 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="imgcompress",
+    name="pocketsize",
 )
 
 if IS_MACOS:
     # BUNDLE takes the app's main executable from the first EXECUTABLE entry it
     # sees, and COLLECT sorts its own contents alphabetically - so the windowed
     # executable is handed over directly rather than left to depend on how two
-    # filenames happen to sort. The console `imgcompress` still ships inside the
-    # bundle, at Contents/MacOS/imgcompress, which is what the release gate runs
+    # filenames happen to sort. The console `pocketsize` still ships inside the
+    # bundle, at Contents/MacOS/pocketsize, which is what the release gate runs
     # and what somebody can symlink onto their PATH.
     app = BUNDLE(
         gui_exe,
@@ -310,7 +310,7 @@ if IS_MACOS:
         name=f"{APP_NAME}.app",
         icon=str(ICON),
         bundle_identifier=BUNDLE_ID,
-        version=os.environ.get("IMGCOMPRESS_VERSION", "0.0.0"),
+        version=os.environ.get("POCKETSIZE_VERSION", "0.0.0"),
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": APP_NAME,

@@ -5,7 +5,7 @@
  * could silently fail, all of which end with the app quietly falling back to a
  * system typeface and default colours while every static gate stays green:
  *
- *   - the stylesheets are copied into imgcompress/webui/ by a tool, and a stale
+ *   - the stylesheets are copied into pocketsize/webui/ by a tool, and a stale
  *     or missing copy is a 404;
  *   - fonts.css points at /fonts/... at the site root and has to be rewritten
  *     to a relative path to work under /webui/;
@@ -38,7 +38,7 @@ const ok = (c, n) => { if (c) console.log(`  ok ${n}`); else { console.error(`FA
 // -u because Python buffers stdout when it is a pipe rather than a terminal,
 // so the URL would sit in the buffer until the process exited - which it never
 // does. Without it this waits 30s and reports "no output" on a healthy server.
-const server = spawn(PYTHON, ["-u", "-m", "imgcompress.gui", "--no-open", "--port", PORT],
+const server = spawn(PYTHON, ["-u", "-m", "pocketsize.gui", "--no-open", "--port", PORT],
                      { cwd: REPO, stdio: ["ignore", "pipe", "pipe"] });
 let out = "";
 const url = await new Promise((resolve, reject) => {

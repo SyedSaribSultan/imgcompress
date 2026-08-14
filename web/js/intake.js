@@ -7,7 +7,7 @@
 
 import { toast } from "./dom.js";
 import { state, uid, select } from "./state.js";
-import { SUPPORTED } from "./format.js";
+import { SUPPORTED, SUPPORTED_MIME } from "./format.js";
 import { beginBatch, dispatch, startEngine } from "./engine.js";
 import { renderQueue } from "./queue.js";
 import { renderStage } from "./compare.js";
@@ -66,7 +66,7 @@ function measure(item) {
 }
 
 export function addFiles(files) {
-  const usable = [...files].filter((f) => SUPPORTED.test(f.name) || /^image\//.test(f.type));
+  const usable = [...files].filter((f) => SUPPORTED.test(f.name) || SUPPORTED_MIME.has(f.type));
   if (!usable.length) {
     // What happened, then what to do about it. "Unsupported" on its own leaves
     // someone guessing which of their files was the problem and what would work.

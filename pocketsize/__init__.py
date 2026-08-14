@@ -1,12 +1,12 @@
-"""imgcompress - quality-targeted image compression for design assets."""
+"""Pocketsize - quality-targeted image compression for design assets."""
 
 import multiprocessing as _multiprocessing
 
 from .core import CompressionResult, Settings, compress, compress_file, compress_tree, write_result
 
 # Must run before anything creates a process pool, and it belongs here rather
-# than in one entry point because there are three ways in: the `imgcompress`
-# command, the `imgcompress-gui` command, and `import imgcompress` from
+# than in one entry point because there are three ways in: the `pocketsize`
+# command, the `pocketsize-gui` command, and `import pocketsize` from
 # somebody else's script.
 #
 # `compress_tree` uses a ProcessPoolExecutor, and under the spawn start method -
@@ -14,7 +14,7 @@ from .core import CompressionResult, Settings, compress, compress_file, compress
 # the program in order to import the module it needs. In a normal install that
 # re-execution is a fresh `python`, and harmless. In a frozen bundle there is no
 # python to re-execute: the child runs the application's own executable again,
-# which starts a whole new imgcompress, which opens a pool of its own. A folder
+# which starts a whole new Pocketsize, which opens a pool of its own. A folder
 # of images becomes a fork bomb.
 #
 # It stayed hidden because `compress_tree` takes a single-process path when there

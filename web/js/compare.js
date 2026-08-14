@@ -224,9 +224,16 @@ async function ensureDiff() {
 
   const canvas = $("img-diff");
   try {
+    /* Decode straight to heatmap scale. The heatmap is at most 2048 wide, and
+       decoding a 12MP original in full on the main thread just to shrink it
+       again was tens of milliseconds of jank per press of D. When the width is
+       not yet known the full decode is the honest fallback. */
+    const opts = it.width
+      ? { resizeWidth: Math.min(it.width, 2048), resizeQuality: "high" }
+      : {};
     const [a, b] = await Promise.all([
-      createImageBitmap(it.file),
-      createImageBitmap(it.afterBlob),
+      createImageBitmap(it.file, opts),
+      createImageBitmap(it.afterBlob, opts),
     ]);
     const w = Math.min(a.width, 2048);
     const h = Math.round((a.height / a.width) * w);

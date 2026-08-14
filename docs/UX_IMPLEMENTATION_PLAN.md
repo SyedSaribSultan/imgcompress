@@ -25,7 +25,7 @@ Presentation copy of the proposal: https://claude.ai/code/artifact/b9411fb9-f837
 | --- | --- |
 | Fix set | Problems A–F as specified below, plus UI rules and performance plan |
 | Problem D | Footer link to the existing CLI (option a). No hosted API, ever — contradicts "nothing is uploaded" |
-| Problem F | Decline org layer (SSO/policy/usage). Ship `imgcompress-report.txt` in every zip, always, no checkbox |
+| Problem F | Decline org layer (SSO/policy/usage). Ship `pocketsize-report.txt` in every zip, always, no checkbox |
 | "identical" × documents ceiling | Warning fires and the 4096px ceiling wins (the destination physically can't take more) |
 | Report format | Plain text only |
 | Local vs server | Stay local. Perceived slowness is fixed by the §Performance plan, not by a server |
@@ -112,7 +112,7 @@ CLI gains `--lossless` mapping to the same set.
 ### D — footer line
 
 "Also a command line — the same engine, for folders and scripts:
-`pip install imgcompress`" → links to the GitHub README.
+`pip install pocketsize`" → links to the GitHub README.
 
 ### E — weak devices
 
@@ -122,7 +122,7 @@ device. Pick 'always AVIF' under More choices to try it anyway."
 
 ### F — audit record
 
-`imgcompress-report.txt` in every zip: per image — original name, dimensions,
+`pocketsize-report.txt` in every zip: per image — original name, dimensions,
 bytes → kept format, dimensions, bytes; visual match; shrunk?; pixel-identical?;
 full versions-tried table. Plain text.
 
@@ -146,9 +146,9 @@ full versions-tried table. Plain text.
 
 ## Order of work (files)
 
-1. **Foundation**: `imgcompress/destinations.py` (social + lossless set) →
+1. **Foundation**: `pocketsize/destinations.py` (social + lossless set) →
    run `tools/gen_destinations.py` → `web/destinations.js` regenerated →
-   `imgcompress/webui/app.html` parity → `tests/test_compress.py`.
+   `pocketsize/webui/app.html` parity → `tests/test_compress.py`.
 2. **Panel & copy (A+C)**: `web/index.html`, `web/js/settings.js`,
    `web/js/format.js`, `web/js/state.js`.
 3. **Disclosure & outputs (B+D+F)**: `web/worker.js` (hard-cap flag),

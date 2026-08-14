@@ -38,9 +38,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image  # noqa: E402
 
-from imgcompress import Settings, compress  # noqa: E402
-from imgcompress import encoders as enc  # noqa: E402
-from imgcompress.quality import HAVE_SSIMULACRA2, ssim, ssimulacra2  # noqa: E402
+from pocketsize import Settings, compress  # noqa: E402
+from pocketsize import encoders as enc  # noqa: E402
+from pocketsize.quality import HAVE_SSIMULACRA2, ssim, ssimulacra2  # noqa: E402
 
 FLOOR = 90.0          # SSIMULACRA 2, the app's default quality floor
 MAX_DIM = 2560        # the app's default dimension cap
@@ -185,7 +185,7 @@ def strategies(ref: Image.Image, web: dict[str, bytes]) -> list[Result]:
     ref.save(buf, "PNG", compress_level=1)
     res = compress_from_bytes(buf.getvalue())
     if res is not None:
-        out.append(Result("imgcompress desktop", res[1], res[0], "measured floor", True))
+        out.append(Result("pocketsize desktop", res[1], res[0], "measured floor", True))
 
     # -- single format, done properly, searched to the same floor ---------- #
     if not has_alpha:
@@ -308,8 +308,8 @@ def main() -> int:
         ref_bytes = ref_path.stat().st_size
 
         web: dict[str, bytes] = {}
-        for target_dir, label in (("documents", "imgcompress web (documents)"),
-                                  ("web", "imgcompress web (web)")):
+        for target_dir, label in (("documents", "pocketsize web (documents)"),
+                                  ("web", "pocketsize web (web)")):
             d = web_root / target_dir
             if not d.is_dir():
                 continue

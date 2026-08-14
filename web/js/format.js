@@ -66,6 +66,13 @@ export function mimeFor(file) {
 
 export const SUPPORTED = /\.(png|jpe?g|webp|bmp|tiff?|gif|avif)$/i;
 
+/** The MIME types intake may admit when the extension check fails (a paste, a
+ *  drag from a file manager that renames). Deliberately the same set as
+ *  SUPPORTED and never a bare `image/` prefix - that prefix admitted
+ *  image/svg+xml, which the engine cannot process and the extension list
+ *  deliberately excludes. */
+export const SUPPORTED_MIME = new Set(Object.values(MIME_OF));
+
 /** "200 KB", "1.5 MB", "204800" -> bytes. Returns 0 for anything unreadable, so
  *  a half-typed field falls back to the ordinary search rather than capping at
  *  some number nobody asked for. Mirrors cli.parse_size. */

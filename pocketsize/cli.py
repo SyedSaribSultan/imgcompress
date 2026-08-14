@@ -99,7 +99,7 @@ def destination_help() -> str:
 def build_parser() -> argparse.ArgumentParser:
     here = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(
-        prog="imgcompress",
+        prog="pocketsize",
         description=(
             "Make images as small as they go without you being able to see the "
             "difference. Each image is written several ways, every version is "
@@ -110,16 +110,16 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             destination_help() + "\n\n"
             "examples:\n"
-            "  imgcompress                           ./input -> ./output\n"
-            "  imgcompress photos/ -o small/         compress a folder\n"
-            "  imgcompress hero.png --for documents  safe to import into a design tool\n"
-            "  imgcompress input/ --for email        small enough to attach\n"
-            "  imgcompress input/ -q 95              hold a higher visual match\n"
-            "  imgcompress scans/ --lossless         never change a pixel\n"
-            "  imgcompress hero.jpg --under 200KB    best quality that fits a limit\n"
-            "  imgcompress input/ --fit width -m 1600   pin every image to 1600px wide\n"
-            "  imgcompress input/ --fast             quicker, slightly bigger\n"
-            "  imgcompress --check                   show which engines are active\n"
+            "  pocketsize                           ./input -> ./output\n"
+            "  pocketsize photos/ -o small/         compress a folder\n"
+            "  pocketsize hero.png --for documents  safe to import into a design tool\n"
+            "  pocketsize input/ --for email        small enough to attach\n"
+            "  pocketsize input/ -q 95              hold a higher visual match\n"
+            "  pocketsize scans/ --lossless         never change a pixel\n"
+            "  pocketsize hero.jpg --under 200KB    best quality that fits a limit\n"
+            "  pocketsize input/ --fit width -m 1600   pin every image to 1600px wide\n"
+            "  pocketsize input/ --fast             quicker, slightly bigger\n"
+            "  pocketsize --check                   show which engines are active\n"
         ),
     )
     parser.add_argument("source", nargs="?", default=str(here / "input"),
@@ -179,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show every version that was tried, not just the winner")
     parser.add_argument("--check", action="store_true",
                         help="report which optional engines are installed, then exit")
-    parser.add_argument("--version", action="version", version=f"imgcompress {__version__}")
+    parser.add_argument("--version", action="version", version=f"pocketsize {__version__}")
     return parser
 
 

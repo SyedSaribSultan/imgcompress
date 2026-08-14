@@ -17,11 +17,59 @@
  * inside their own region and never touch the shell.
  */
 
+/* The app (#app: the bar and the dashboard) fills the first screen exactly,
+   as it always has. The document itself is now allowed to be taller: past the
+   app sits #about, the page's plain-words explanation of itself. Nothing about
+   the app's own layout changed - the viewport-sized grid simply lives on #app
+   instead of on body. */
 body {
+  height: auto;
+  min-height: 100dvh;
+  overflow-y: auto;
+  overflow-x: clip;
+}
+
+#app {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100dvh;
-  overflow: hidden;
+}
+
+/* ------------------------------- the about ------------------------------- */
+
+/* Below the fold on purpose: the app answers "what do I do", this answers
+   "what is this" for whoever scrolls to ask - people and crawlers alike. */
+#about {
+  border-top: 1px solid var(--c-line);
+  background: var(--c-sunk);
+  padding: var(--s-6) var(--s-4);
+}
+.about-inner {
+  max-width: 680px;
+  margin: 0 auto;
+  display: grid;
+  gap: var(--s-4);
+}
+#about h1 {
+  font-size: 20px;
+  line-height: 1.35;
+  color: var(--c-ink);
+}
+#about p {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--c-ink-2);
+  margin: 0;
+}
+#about a { color: var(--c-ink-2); }
+
+/* Without JavaScript the app is a dead shell; the one paragraph that exists
+   says so, and says the privacy promise holds either way. */
+#noscript {
+  padding: var(--s-4);
+  font-size: 15px;
+  text-align: center;
+  border-bottom: 1px solid var(--c-line);
 }
 
 /* ------------------------------- the bar --------------------------------- */
@@ -108,7 +156,8 @@ body {
    Entered and left with F (or the button on the stage). The regions are not
    destroyed, just out of the way - the plan keeps running the queue. */
 body[data-focus="1"] #side,
-body[data-focus="1"] #facts { display: none; }
+body[data-focus="1"] #facts,
+body[data-focus="1"] #about { display: none; }
 body[data-focus="1"] #dash {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: "stage";
@@ -280,6 +329,19 @@ body[data-focus="1"] #dash {
    document, and a document's height is its content's. */
 @media (max-width: 860px) {
   body { overflow: auto; height: auto; min-height: 100dvh; }
+  /* Same reasoning, now one element down: a one-column phone layout is a
+     document, and a document's height is its content's. */
+  #app { height: auto; min-height: 100dvh; }
+
+  /* An inline link in the about prose is a 19px-tall touch target; the floor
+     is 44px. The padding grows the touch box and the negative margin hands
+     the same pixels straight back to the text layout, so the prose reads
+     exactly as before while the finger gets a full-height target. */
+  #about a {
+    display: inline-block;
+    padding: 14px 6px;
+    margin: -14px -6px;
+  }
 
   #dash {
     grid-template-columns: minmax(0, 1fr);

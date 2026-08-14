@@ -137,7 +137,7 @@ class Session:
         self.queue: queue.Queue[str] = queue.Queue()
         count = workers or max(1, min(6, (os.cpu_count() or 2)))
         self.workers = [
-            threading.Thread(target=self._worker, daemon=True, name=f"imgcompress-{i}")
+            threading.Thread(target=self._worker, daemon=True, name=f"pocketsize-{i}")
             for i in range(count)
         ]
         for w in self.workers:
@@ -453,7 +453,7 @@ def pick_folder(initial: str = "") -> str:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = f"imgcompress/{__version__}"
+    server_version = f"pocketsize/{__version__}"
     session: Session = None  # type: ignore[assignment]
     token: str = ""
     upload_dir: Path = None  # type: ignore[assignment]
@@ -702,7 +702,7 @@ def serve(host: str = "127.0.0.1", port: int = 0, workers: int = 0):
 
     session = Session(workers=workers)
     token = secrets.token_urlsafe(16)
-    upload_dir = Path(tempfile.mkdtemp(prefix="imgcompress-"))
+    upload_dir = Path(tempfile.mkdtemp(prefix="pocketsize-"))
 
     class Bound(Handler):
         pass

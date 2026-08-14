@@ -1,4 +1,4 @@
-/* imgcompress web worker — the compression engine, ported from the Python
+/* Pocketsize web worker — the compression engine, ported from the Python
  * package (core.py / quality.py / encoders.py) to run entirely in the browser.
  *
  * Same premise as the desktop version: quality is measured, never assumed.
@@ -43,7 +43,7 @@ const AVIF_QUALITY = [30, 38, 45, 52, 58, 64, 70, 76, 82, 88, 93, 96];
 
 /* Where the image is going: DESTINATION_FORMATS, OLD_TARGET_NAMES,
  * DOCUMENTS_MAX_DIMENSION and destinationOf() all come from here. The file is
- * generated from imgcompress/destinations.py by tools/gen_destinations.py and
+ * generated from pocketsize/destinations.py by tools/gen_destinations.py and
  * committed; nothing in this worker restates any of those values. */
 importScripts("destinations.js");
 
@@ -169,8 +169,19 @@ function loadCodec(name, script, globalName, wasmFile) {
       try {
         if (onCodecStatus) onCodecStatus(name);
         importScripts(`vendor/${script}`);
-        const bytes = await (await fetch(`vendor/${wasmFile}`)).arrayBuffer();
-        const module = await WebAssembly.compile(bytes);
+        /* Streaming compile: the download and the compile overlap, and Chrome
+           only persists compiled wasm in its code cache for the streaming path
+           - without it, every worker in the pool recompiled the 3.5 MB AVIF
+           codec from scratch, on every visit. The fallback covers servers that
+           send the wrong MIME type (streaming refuses anything that is not
+           application/wasm). */
+        let module;
+        try {
+          module = await WebAssembly.compileStreaming(fetch(`vendor/${wasmFile}`));
+        } catch {
+          const bytes = await (await fetch(`vendor/${wasmFile}`)).arrayBuffer();
+          module = await WebAssembly.compile(bytes);
+        }
         await self[globalName].init(module);
         CODECS[name] = self[globalName];
       } catch (e) {
@@ -1828,15 +1839,16 @@ onmessage = (e) => {
     probeWebp().then(() => {
       postMessage({ type: "caps", caps: { webp: !!CAN_WEBP, png8: CAN_DEFLATE } });
     });
-    /* Warm the codecs while the page is idle, so the first drop starts
-       encoding instead of downloading. The wasm binaries land in the HTTP
-       cache, which every later worker instantiates from. A weak device skips
-       warming AVIF - the one download heavy enough to matter there. */
-    setTimeout(() => {
-      loadMozjpeg().catch(() => {});
-      loadOxipng().catch(() => {});
-      loadWebp().catch(() => {});
-      if (!WEAK_DEVICE) loadAvif().catch(() => {});
-    }, 250);
+  } else if (msg.type === "warm") {
+    /* Warm the codecs so the first drop starts encoding instead of
+       downloading. The page sends this once the service worker's offline copy
+       is ready, so the warm READS the cache instead of racing the very
+       download that fills it - a first visit used to fetch the AVIF codec
+       twice because this fired on a timer. A weak device skips warming AVIF -
+       the one download heavy enough to matter there. */
+    loadMozjpeg().catch(() => {});
+    loadOxipng().catch(() => {});
+    loadWebp().catch(() => {});
+    if (!WEAK_DEVICE) loadAvif().catch(() => {});
   }
 };

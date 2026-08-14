@@ -5,7 +5,7 @@
  * distributed across the controls that happen to display it.
  */
 
-/* Generated from imgcompress/destinations.py, handed over by the bridge in
+/* Generated from pocketsize/destinations.py, handed over by the bridge in
  * index.html. Every destination's label, frame size and quality floor comes from
  * there; not one of those values is restated in this codebase. */
 export const D = window.DESTINATIONS;

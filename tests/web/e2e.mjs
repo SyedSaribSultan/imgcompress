@@ -1,4 +1,4 @@
-/* Browser E2E for the imgcompress web app: real Chrome, real files, real
+/* Browser E2E for the Pocketsize web app: real Chrome, real files, real
  * downloads. Serves web/ locally with production headers, uploads the fixture
  * set, and checks the engine's promises hold.
  *
@@ -60,7 +60,7 @@ try {
 
   await page.goto(BASE, { waitUntil: "networkidle0" });
 
-  ok((await page.title()).includes("imgcompress"), "page title");
+  ok((await page.title()).includes("Pocketsize"), "page title");
 
   // The floor the engine actually runs with, on a fresh profile. An init
   // scaling bug once set the slider to 9000, which clamped to its max and

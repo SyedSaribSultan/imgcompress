@@ -5,10 +5,10 @@ Thanks for taking a look.
 ## Getting set up
 
 ```bash
-git clone https://github.com/SyedSaribSultan/imgcompress
-cd imgcompress
+git clone https://github.com/SyedSaribSultan/pocketsize
+cd pocketsize
 python -m pip install -e ".[full,app,dev]"
-imgcompress --check          # confirm every engine is active
+pocketsize --check          # confirm every engine is active
 python -m unittest discover -s tests
 ```
 
@@ -67,10 +67,10 @@ and re-run; CI runs both with `--check` and fails on a stale copy.
 
 | Output | Source |
 | --- | --- |
-| `web/destinations.js` | `imgcompress/destinations.py` |
-| `imgcompress/webui/heyoz-tokens.css` | `web/heyoz-tokens.css` |
-| `imgcompress/webui/fonts.css` + `fonts/` | `web/fonts.css` + `web/fonts/` |
-| `imgcompress/webui/favicon.svg` | `web/favicon.svg` |
+| `web/destinations.js` | `pocketsize/destinations.py` |
+| `pocketsize/webui/heyoz-tokens.css` | `web/heyoz-tokens.css` |
+| `pocketsize/webui/fonts.css` + `fonts/` | `web/fonts.css` + `web/fonts/` |
+| `pocketsize/webui/favicon.svg` | `web/favicon.svg` |
 
 If you find yourself typing a destination's name, a frame size, a colour or a
 corner radius into a second file, that is the mistake these exist to prevent —
@@ -121,6 +121,6 @@ meaning. Do not re-handle it per component or per app.
 
 ## Reporting a bug
 
-Include the output of `imgcompress --check`, your OS and Python version, and
+Include the output of `pocketsize --check`, your OS and Python version, and
 ideally the image that triggered it. "It made my file bigger" is a great bug
 report if the file is attached.

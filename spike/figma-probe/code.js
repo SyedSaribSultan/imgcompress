@@ -218,7 +218,7 @@ async function runBridgeLadder() {
     }
   }
   say("main", "probe finished - copy the report before closing the plugin");
-  figma.notify("imgcompress probe finished. Copy the report before closing.");
+  figma.notify("pocketsize probe finished. Copy the report before closing.");
 }
 
 /* ------------------------------------------------------------------------- *

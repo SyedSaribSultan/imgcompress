@@ -1,6 +1,6 @@
 """Write the browser's destination table from the Python one.
 
-`imgcompress/destinations.py` is the reference. The browser needs the same
+`pocketsize/destinations.py` is the reference. The browser needs the same
 table, and for one commit it had two hand-written copies of it - which drifted
 within the hour, in the same branch, immediately after the hazard had been
 written down. A test that compares copies catches that afterwards. Not having
@@ -40,9 +40,9 @@ sys.path.insert(0, str(ROOT))
 
 
 def _load_destinations():
-    """Load `imgcompress/destinations.py` on its own, not through the package.
+    """Load `pocketsize/destinations.py` on its own, not through the package.
 
-    `from imgcompress import destinations` runs the package's `__init__`, which
+    `from pocketsize import destinations` runs the package's `__init__`, which
     imports the engine, which imports Pillow and numpy. That turns "is this
     committed file current?" - a question answered entirely by two files on disk
     - into something that needs the whole dependency tree installed. CI found
@@ -55,8 +55,8 @@ def _load_destinations():
     every pull request and should never be able to go red because a release of
     Pillow broke.
     """
-    path = ROOT / "imgcompress" / "destinations.py"
-    spec = importlib.util.spec_from_file_location("imgcompress_destinations", path)
+    path = ROOT / "pocketsize" / "destinations.py"
+    spec = importlib.util.spec_from_file_location("pocketsize_destinations", path)
     module = importlib.util.module_from_spec(spec)
     # Registered before it is executed, because @dataclass resolves a field's
     # type by looking its own module up in sys.modules. Skip this and the
@@ -85,7 +85,7 @@ BROWSER_ONLY_ALIASES = {
 
 BANNER = """/* GENERATED FILE - DO NOT EDIT.
  *
- * Written by tools/gen_destinations.py from imgcompress/destinations.py, which
+ * Written by tools/gen_destinations.py from pocketsize/destinations.py, which
  * is the reference for every value here. Edit that file and re-run the
  * generator; CI regenerates this one and fails if it differs from what is
  * committed.
@@ -194,7 +194,7 @@ def main(argv=None) -> int:
             return 1
         if existing != fresh:
             print(f"FAIL: {OUTPUT.relative_to(ROOT)} is out of date with "
-                  "imgcompress/destinations.py.\n"
+                  "pocketsize/destinations.py.\n"
                   "Run `python tools/gen_destinations.py` and commit the result.",
                   file=sys.stderr)
             import difflib

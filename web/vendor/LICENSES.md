@@ -15,6 +15,25 @@ codecs (Apache-2.0, Google LLC):
 No modifications were made to the codecs; the `.js` glue files are esbuild
 IIFE bundles of the packages' published ES modules.
 
+## Pinned builds
+
+Vendored 2026-08-05 from the then-current @jsquash npm releases. If an
+advisory lands against jSquash or an upstream codec, these hashes are how to
+tell whether the shipped builds are the affected ones. Recompute with
+`Get-FileHash -Algorithm SHA256` (or `sha256sum`); any change to these files
+must update this table in the same commit.
+
+| SHA-256 | File |
+| --- | --- |
+| `af50ac1b4e622b7441c26a98103f92fd7a8c549b6a8c6ee8535a3cebf4e12706` | `mozjpeg.js` |
+| `24d4177f1c4963e2058b107189249651c61fdef125570e79b1dfb63c8bb49326` | `mozjpeg_enc.wasm` |
+| `243e84f1e632e4f5d2b602ddf33e4987fb9e0a377369ba418d52413a1dbe3d35` | `oxipng.js` |
+| `5ea3e53c0b4fc1b4e8d1511d35b89329d9376bec75a9c4d3c054774487e5f9a3` | `squoosh_oxipng_bg.wasm` |
+| `8aecdb7782191a2e376a195b5038330c31636e327d48f52b5815fac375556723` | `avif.js` |
+| `d9f2a95164362af48558d176e619becfd49dd97b50b86c679b47100860522b3d` | `avif_enc.wasm` |
+| `ed231f933ddaa112b51ee4df8117b5fa4245ce1b370be0b2f8ef688f1f36c9e1` | `webp.js` |
+| `39c279269ec1163b987b6d69749458e3d5b03b9585f58b6ca5455b76b504a305` | `webp_enc_simd.wasm` |
+
 # Icons
 
 The interface glyphs (inline `<svg>` in `index.html` and the select chevron

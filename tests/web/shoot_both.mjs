@@ -21,7 +21,7 @@ const FIX = path.join(here, "fixtures");
 const PYTHON = process.env.PYTHON || "python";
 
 const webServer = spawn("node", [path.join(here, "serve.mjs"), "8181"], { stdio: "ignore" });
-const deskServer = spawn(PYTHON, ["-u", "-m", "imgcompress.gui", "--no-open", "--port", "8182"],
+const deskServer = spawn(PYTHON, ["-u", "-m", "pocketsize.gui", "--no-open", "--port", "8182"],
                          { cwd: REPO, stdio: ["ignore", "pipe", "pipe"] });
 
 let out = "";

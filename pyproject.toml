@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "imgcompress"
+name = "pocketsize"
 version = "2.7.0"
 description = "Quality-targeted image compression. Measures perceptual quality instead of guessing it, and picks the best format per image."
 readme = "README.md"
@@ -49,24 +49,24 @@ app = ["pywebview>=4.4"]
 dev = ["ruff>=0.5"]
 
 [project.scripts]
-imgcompress = "imgcompress.cli:main"
-imgcompress-gui = "imgcompress.gui:main"
+pocketsize = "pocketsize.cli:main"
+pocketsize-gui = "pocketsize.gui:main"
 
 [project.urls]
-Homepage = "https://github.com/SyedSaribSultan/imgcompress"
-"Web App" = "https://imgcompress-app.vercel.app"
-Issues = "https://github.com/SyedSaribSultan/imgcompress/issues"
-Changelog = "https://github.com/SyedSaribSultan/imgcompress/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/SyedSaribSultan/pocketsize"
+"Web App" = "https://pocketsize.vercel.app"
+Issues = "https://github.com/SyedSaribSultan/pocketsize/issues"
+Changelog = "https://github.com/SyedSaribSultan/pocketsize/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-packages = ["imgcompress"]
+packages = ["pocketsize"]
 
 [tool.setuptools.package-data]
 # The desktop app is one HTML file plus the design system it shares with the
 # web app: the token layer, the face declarations and the faces themselves.
 # They are copied in by tools/sync_webui_assets.py and must ship, because the
 # app has to render correctly from a pip install with no network at all.
-imgcompress = ["webui/*.html", "webui/*.css", "webui/fonts/*.woff2"]
+pocketsize = ["webui/*.html", "webui/*.css", "webui/fonts/*.woff2"]
 
 [tool.ruff]
 line-length = 100

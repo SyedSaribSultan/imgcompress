@@ -24,7 +24,7 @@ def _run_window(url: str, on_close=None) -> bool:
         return False
     try:
         window = webview.create_window(
-            "Image Compressor",
+            "Pocketsize",
             url,
             width=1280,
             height=840,
@@ -42,8 +42,8 @@ def _run_window(url: str, on_close=None) -> bool:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        prog="imgcompress-gui",
-        description="Open the Image Compressor desktop interface.",
+        prog="pocketsize-gui",
+        description="Open the Pocketsize desktop interface.",
     )
     parser.add_argument("paths", nargs="*", help="files or folders to queue on launch")
     parser.add_argument("--port", type=int, default=0, help="port to bind (default: any free port)")
@@ -53,7 +53,7 @@ def main(argv=None) -> int:
                         help="just start the server and print the URL")
     parser.add_argument("-j", "--workers", type=int, default=0,
                         help="parallel compression workers (default: auto)")
-    parser.add_argument("--version", action="version", version=f"imgcompress {__version__}")
+    parser.add_argument("--version", action="version", version=f"pocketsize {__version__}")
     args = parser.parse_args(argv)
 
     httpd, session, url = serve(port=args.port, workers=args.workers)
@@ -66,7 +66,7 @@ def main(argv=None) -> int:
         if path.exists():
             session.add_path(path)
 
-    print(f"Image Compressor {__version__}")
+    print(f"Pocketsize {__version__}")
     print(f"  {url}")
 
     if args.no_open:

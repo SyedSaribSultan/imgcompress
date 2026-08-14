@@ -1,6 +1,6 @@
 /* GENERATED FILE - DO NOT EDIT.
  *
- * Written by tools/gen_destinations.py from imgcompress/destinations.py, which
+ * Written by tools/gen_destinations.py from pocketsize/destinations.py, which
  * is the reference for every value here. Edit that file and re-run the
  * generator; CI regenerates this one and fails if it differs from what is
  * committed.

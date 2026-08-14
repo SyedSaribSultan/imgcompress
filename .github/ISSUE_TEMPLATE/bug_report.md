@@ -11,7 +11,7 @@ labels: bug
 
 **The image** (attach it if you can - most bugs here are content-specific)
 
-**Output of `imgcompress --check`**
+**Output of `pocketsize --check`**
 
 ```
 paste here

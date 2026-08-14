@@ -28,7 +28,7 @@ const REPO = path.resolve(here, "..", "..");
 
 const tokens = readFileSync(path.join(WEB, "heyoz-tokens.css"), "utf8");
 const desktopHtml = readFileSync(
-  path.join(REPO, "imgcompress", "webui", "app.html"), "utf8");
+  path.join(REPO, "pocketsize", "webui", "app.html"), "utf8");
 const desktop = (desktopHtml.match(/<style>([\s\S]*?)<\/style>/) || ["", ""])[1];
 
 let bad = 0;

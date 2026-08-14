@@ -9,6 +9,7 @@
  * The contract, in full:
  *
  *   out  { type: "probe" }                          -> asks what this browser can write
+ *   out  { type: "warm" }                           -> load codecs now (cache is ready)
  *   out  { type: "job", id, rev, name, buffer, mime, settings }
  *   in   { type: "caps", caps }                     answer to the probe
  *   in   { type: "progress", id, rev, stage, frac, detail, total }
@@ -71,6 +72,15 @@ function ensurePool(want) {
 export function startEngine() {
   ensurePool(1);
   pool[0].w.postMessage({ type: "probe" });
+}
+
+/** Load the codecs ahead of the first drop. Called by main.js once the service
+ *  worker's offline copy is ready (or on a short timer where there is no
+ *  service worker), so the warm reads the cache instead of racing the install
+ *  download. Safe to call more than once - the worker caches each load. */
+export function warmCodecs() {
+  ensurePool(1);
+  pool[0].w.postMessage({ type: "warm" });
 }
 
 /** Mark the start of a run. Adding files to a run already in flight extends it

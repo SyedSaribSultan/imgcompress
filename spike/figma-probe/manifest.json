@@ -1,5 +1,5 @@
 {
-  "name": "imgcompress wasm probe",
+  "name": "pocketsize wasm probe",
   "id": "1000000000000000001",
   "api": "1.0.0",
   "main": "code.js",

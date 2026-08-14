@@ -13,7 +13,7 @@
  *
  *   Nothing about a destination is written here. Its label, frame size, quality
  *   floor and permitted formats all come from destinations.js, generated from
- *   imgcompress/destinations.py.
+ *   pocketsize/destinations.py.
  */
 
 import { $, setText, show, toastAside } from "./dom.js";

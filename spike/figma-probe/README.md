@@ -18,7 +18,7 @@ browser.
 
 1. Menu → **Plugins** → **Development** → **Import plugin from manifest...**
 2. Pick `spike/figma-probe/manifest.json`.
-3. Open any design file — an empty one is fine — and run **imgcompress wasm
+3. Open any design file — an empty one is fine — and run **pocketsize wasm
    probe** from Plugins → Development.
 4. Wait for `probe finished`, then press **Copy report**.
 

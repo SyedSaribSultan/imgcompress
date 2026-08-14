@@ -22,7 +22,7 @@ import {
 } from "./settings.js";
 import {
   startEngine, dispatch, requeue, removeItems, cancelAll, setBatchEndHandler, pool,
-  holdWork,
+  holdWork, warmCodecs,
 } from "./engine.js";
 import { addFiles, filesFromDataTransfer } from "./intake.js";
 import { chooseCandidate, previewCandidate, endPreview } from "./views.js";
@@ -563,7 +563,7 @@ setBatchEndHandler(() => {
   /* Installing is offered once, and only after the product has shown its
      worth - a prompt before value is a prompt declined. */
   if (installable) {
-    hintOnce("install", "Install imgcompress? It works fully offline — "
+    hintOnce("install", "Install Pocketsize? It works fully offline — "
       + "nothing ever leaves your device.", {
       label: "Install",
       onAction: () => { installable.prompt(); installable = null; },
@@ -603,10 +603,21 @@ if ("serviceWorker" in navigator) {
       if (sw.state === "activated") announce();
     });
   }).catch(() => {});
+
+  /* Warm the codecs only once this page is service-worker-controlled, so the
+     warm reads the freshly installed cache. Before this, the warm fired on a
+     timer and RACED the install's own download of the same files - a first
+     visit could fetch the 3.5 MB AVIF codec twice. Repeat visits are
+     controlled immediately, so they warm immediately. */
+  if (navigator.serviceWorker.controller) warmCodecs();
+  else navigator.serviceWorker.addEventListener("controllerchange", () => warmCodecs(), { once: true });
+} else {
+  // No offline layer to wait for - warm once the first paint is out the door.
+  setTimeout(warmCodecs, 1000);
 }
 
 /* Installed as an app, the OS can hand files straight here - right-click an
-   image, "Open with imgcompress". The launch queue is that handoff. */
+   image, "Open with Pocketsize". The launch queue is that handoff. */
 if ("launchQueue" in window && window.launchQueue.setConsumer) {
   window.launchQueue.setConsumer(async (launch) => {
     const files = [];

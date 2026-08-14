@@ -1,5 +1,5 @@
 @echo off
-REM Double-click to open the Image Compressor app.
+REM Double-click to open the Pocketsize app.
 REM Pass a folder to queue it on launch:  run.bat "C:\path\to\images"
 
 cd /d "%~dp0"
@@ -20,5 +20,5 @@ if not %errorlevel%==0 (
   %PYRUN% -m pip install --quiet --upgrade -r requirements.txt
 )
 
-%PYRUN% -m imgcompress.gui %*
+%PYRUN% -m pocketsize.gui %*
 if not %errorlevel%==0 pause

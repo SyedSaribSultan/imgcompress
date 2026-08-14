@@ -22,9 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from imgcompress import encoders as enc  # noqa: E402
-from imgcompress.core import _decode, _search_one  # noqa: E402
-from imgcompress.quality import HAVE_SSIMULACRA2, get_metric, ssim_map  # noqa: E402
+from pocketsize import encoders as enc  # noqa: E402
+from pocketsize.core import _decode, _search_one  # noqa: E402
+from pocketsize.quality import HAVE_SSIMULACRA2, get_metric, ssim_map  # noqa: E402
 
 warnings.simplefilter("ignore", UserWarning)
 FIXTURES = Path(__file__).resolve().parent / "fixtures"

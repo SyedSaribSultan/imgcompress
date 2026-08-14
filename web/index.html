@@ -3,14 +3,73 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>imgcompress — compress images in your browser</title>
-<meta name="description" content="Compress PNG, JPEG, WebP and AVIF in your browser. Every image is encoded several ways, measured, and the smallest one that still looks right is kept. Nothing is uploaded.">
+<title>Pocketsize — free, private image compression in your browser</title>
+<meta name="description" content="Compress PNG, JPEG, WebP and AVIF free, entirely in your browser. Every image is encoded several ways, measured, and the smallest one that still looks right is kept. Nothing is uploaded — after one visit it even works offline.">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070605">
+<link rel="canonical" href="https://pocketsize.vercel.app/">
+
+<!-- The social card. og.png is the one asset with words baked in; the alt
+     carries the same words for everyone who cannot see it. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Pocketsize">
+<meta property="og:title" content="Pocketsize — compress images in your browser">
+<meta property="og:description" content="Free, private image compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
+<meta property="og:url" content="https://pocketsize.vercel.app/">
+<meta property="og:image" content="https://pocketsize.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Pocketsize — compression that proves it didn't ruin your image. Nothing is uploaded.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Pocketsize — compress images in your browser">
+<meta name="twitter:description" content="Free, private image compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
+<meta name="twitter:image" content="https://pocketsize.vercel.app/og.png">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
+
+<!-- The three faces that paint the first screen, fetched alongside the CSS
+     rather than after it - without these, the fallback face paints first and
+     the page visibly re-sets itself. -->
+<link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+
+<!-- The whole module graph, declared here so the browser fetches it in one
+     wave instead of discovering imports three levels deep, one level per
+     round trip. The list mirrors sw.js's PRECACHE. -->
+<link rel="modulepreload" href="/js/dom.js">
+<link rel="modulepreload" href="/js/format.js">
+<link rel="modulepreload" href="/js/state.js">
+<link rel="modulepreload" href="/js/views.js">
+<link rel="modulepreload" href="/js/render.js">
+<link rel="modulepreload" href="/js/settings.js">
+<link rel="modulepreload" href="/js/intake.js">
+<link rel="modulepreload" href="/js/engine.js">
+<link rel="modulepreload" href="/js/queue.js">
+<link rel="modulepreload" href="/js/compare.js">
+<link rel="modulepreload" href="/js/facts.js">
+<link rel="modulepreload" href="/js/save.js">
+<link rel="modulepreload" href="/js/panels.js">
+
+<!-- What this page is, for the machines that catalogue software. A data
+     block, never executed, so the CSP's ban on inline EXECUTABLE script
+     stands untouched. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Pocketsize",
+  "url": "https://pocketsize.vercel.app/",
+  "description": "Free, private image compression in the browser. PNG, JPEG, WebP and AVIF. Every result is measured against the original. Nothing is uploaded, and it works offline.",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "Any — runs in the browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 
 <!-- Six stylesheets, one per concern, loaded in dependency order: tokens, then
      the shell that positions the regions, then the regions themselves. Nothing
@@ -38,6 +97,16 @@
 
 <a class="skip" href="#queue-list">Skip to the pictures</a>
 
+<noscript>
+  <p id="noscript">Pocketsize compresses images entirely in your browser, which
+  needs JavaScript turned on. Nothing is uploaded either way.</p>
+</noscript>
+
+<!-- The app fills the first screen exactly; #about is what a scroll past it
+     finds. The wrapper exists so the shell can be viewport-sized while the
+     document itself is allowed to be taller than the viewport. -->
+<div id="app">
+
 <!-- ============================== THE BAR ==============================
      Intake and output. These two actions apply to everything in the run, which
      is why they live above the regions rather than inside any one of them.
@@ -45,13 +114,16 @@
 <header id="bar">
   <!-- The wordmark opens the shortcuts-and-about card: people expect a logo
        to lead somewhere, and this is the somewhere that helps. -->
-  <button class="brand" id="brand-btn" aria-haspopup="dialog" aria-label="About imgcompress and keyboard shortcuts">
-    <svg width="18" height="18" viewBox="0 0 17 17" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="15" height="15" rx="3.5" stroke="currentColor" opacity=".4"/>
-      <path d="M5 11.5 7.4 8l2.1 2.4L11 8.6l1.6 2.9H5Z" fill="currentColor"/>
-      <circle cx="6.2" cy="5.6" r="1.25" fill="currentColor" opacity=".6"/>
+  <button class="brand" id="brand-btn" aria-haspopup="dialog" aria-label="About Pocketsize and keyboard shortcuts">
+    <!-- The mark: a picture tucked into a pocket. Monochrome here; the same
+         shapes carry the brand colours in favicon.svg and the app icons. -->
+    <svg width="18" height="18" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="58" height="58" rx="13" stroke="currentColor" stroke-width="4" opacity=".4"/>
+      <circle cx="23" cy="19" r="4.5" fill="currentColor" opacity=".6"/>
+      <path d="M14 38 28 22l10 11 6-6 6 11Z" fill="currentColor" opacity=".6"/>
+      <path d="M10 36h44v10a8 8 0 0 1-8 8H18a8 8 0 0 1-8-8Z" fill="currentColor"/>
     </svg>
-    <b>imgcompress</b>
+    <b>Pocketsize</b>
   </button>
 
   <span class="spacer"></span>
@@ -137,7 +209,7 @@
 
       <div id="plan-fields">
         <!-- Options are built by settings.js from destinations.js, which is
-             generated from imgcompress/destinations.py. No destination's name,
+             generated from pocketsize/destinations.py. No destination's name,
              frame size or quality floor is written out here. -->
         <div class="field">
           <label for="target">Going to</label>
@@ -245,8 +317,8 @@
          finally says so. -->
     <p id="cli-note" class="muted">Also a command line — the same engine, for
       folders and scripts:
-      <a href="https://github.com/SyedSaribSultan/imgcompress" target="_blank"
-         rel="noopener"><code>pip install imgcompress</code></a></p>
+      <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank"
+         rel="noopener"><code>pip install pocketsize</code></a></p>
 
     <!-- The panel's edge is the person's: drag it, or focus it and use the
          arrow keys. Double-click puts the width back to automatic. -->
@@ -410,6 +482,39 @@
     </div>
   </section>
 </main>
+</div><!-- /#app -->
+
+<!-- =============================== ABOUT ===============================
+     The page below the app: what this is, in plain words. The app itself asks
+     one question and shows the answer; this is for the person (and the search
+     engine) who arrives wanting to know what they are looking at before they
+     drop anything. It sits past the first screen and interrupts nothing.
+     ==================================================================== -->
+<section id="about" aria-labelledby="about-h">
+  <div class="about-inner">
+    <h1 id="about-h">Pocketsize — compress images in your browser, free and private</h1>
+    <p>Pocketsize makes pictures smaller. Add PNG, JPEG, WebP, GIF, BMP or TIFF
+       files and it saves each one several ways — as JPEG, PNG, WebP and AVIF —
+       measures every version against your original, and keeps the smallest one
+       that still looks right. You never have to take its word for it: the
+       original and the result sit side by side with a slider, a difference
+       view, and a measured visual-match score for every file.</p>
+    <p>Your pictures never leave your computer. There is no upload, no server
+       and no account — the compression runs on your own device, inside your
+       browser. That is also why the whole app keeps working with no internet
+       after your first visit, and why you can install it like an app and open
+       images with it straight from your file manager.</p>
+    <p>It can shrink big photos to a pixel limit you choose, or work to a size
+       cap — "keep this under 200 KB". And if you choose
+       "identical — every pixel kept", that is exactly what happens: the same
+       pixels, never resized, just stored smaller.</p>
+    <p>Pocketsize is free and open source. The same engine is also a command
+       line, for folders and scripts:
+       <code>pip install pocketsize</code> ·
+       <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank"
+          rel="noopener">source &amp; licence</a></p>
+  </div>
+</section>
 
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -419,7 +524,7 @@
 <!-- The shortcuts-and-about card, opened by the wordmark or "?". Help that
      fits on one card, not a manual. -->
 <dialog id="help" aria-labelledby="help-title">
-  <h3 id="help-title">imgcompress</h3>
+  <h3 id="help-title">Pocketsize</h3>
   <p>Every picture is saved several ways, measured against the original, and
      the smallest one that still looks right is kept. Nothing ever leaves your
      computer — after one visit, it even works offline.</p>
@@ -433,8 +538,8 @@
     <div><kbd>?</kbd><span>this card</span></div>
   </div>
   <p class="muted">The same engine as a command line:
-    <code>pip install imgcompress</code> ·
-    <a href="https://github.com/SyedSaribSultan/imgcompress" target="_blank" rel="noopener">source &amp; licence</a></p>
+    <code>pip install pocketsize</code> ·
+    <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank" rel="noopener">source &amp; licence</a></p>
   <div class="row">
     <button class="btn primary" id="help-close">Close</button>
   </div>
@@ -453,11 +558,13 @@
   </div>
 </dialog>
 
-<!-- Generated from imgcompress/destinations.py and loaded as a classic script,
+<!-- Generated from pocketsize/destinations.py and loaded as a classic script,
      because worker.js pulls in the same file with importScripts and cannot take
      a module. The bridge hands its bindings to the module graph explicitly.
-     There is no inline script anywhere on this page, which is what lets the CSP
-     forbid inline script outright rather than allow-listing a hash. -->
+     There is no inline EXECUTABLE script anywhere on this page, which is what
+     lets the CSP forbid inline script outright rather than allow-listing a
+     hash. (The JSON-LD block in the head is a data block: browsers never run
+     it, so the CSP never comes into play.) -->
 <script src="/destinations.js"></script>
 <script src="/js/destinations-bridge.js"></script>
 <script type="module" src="/js/main.js"></script>

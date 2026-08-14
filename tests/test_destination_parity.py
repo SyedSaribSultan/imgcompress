@@ -1,6 +1,6 @@
 """The destination table has one author. This keeps it that way.
 
-`imgcompress/destinations.py` is the reference. `web/destinations.js` is
+`pocketsize/destinations.py` is the reference. `web/destinations.js` is
 generated from it by `tools/gen_destinations.py` and committed, because `web/`
 has no build step and should not grow one. Everything else - `worker.js`,
 `app.js`, the markup - reads that generated file rather than restating it.
@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from imgcompress import destinations as dest  # noqa: E402
+from pocketsize import destinations as dest  # noqa: E402
 from tools import gen_destinations  # noqa: E402
 
 WORKER_JS = ROOT / "web" / "worker.js"
@@ -42,7 +42,7 @@ APP_JS_FILES = sorted(APP_JS_DIR.glob("*.js"))
 SETTINGS_JS = APP_JS_DIR / "settings.js"
 INDEX_HTML = ROOT / "web" / "index.html"
 GENERATED_JS = ROOT / "web" / "destinations.js"
-DESKTOP_HTML = ROOT / "imgcompress" / "webui" / "app.html"
+DESKTOP_HTML = ROOT / "pocketsize" / "webui" / "app.html"
 
 
 def _read(path: Path) -> str:
