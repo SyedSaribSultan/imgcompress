@@ -37,10 +37,10 @@
   top: 50%;
   /* Checkerboard, so transparency reads as transparency rather than as white.
      Two gradients at 16px is the whole trick; it costs no image request. */
-  background-color: #ffffff;
+  background-color: var(--c-checker-ground);
   background-image:
-    linear-gradient(45deg, #e6e6e8 25%, transparent 25%, transparent 75%, #e6e6e8 75%),
-    linear-gradient(45deg, #e6e6e8 25%, transparent 25%, transparent 75%, #e6e6e8 75%);
+    linear-gradient(45deg, var(--c-checker-square) 25%, transparent 25%, transparent 75%, var(--c-checker-square) 75%),
+    linear-gradient(45deg, var(--c-checker-square) 25%, transparent 25%, transparent 75%, var(--c-checker-square) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 8px 8px;
 }
@@ -83,8 +83,8 @@
   top: 0; bottom: 0;
   left: 50%;
   width: 1px;
-  background: rgb(255 255 255 / 0.9);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+  background: var(--c-over-line);
+  box-shadow: 0 0 0 1px var(--c-over-shadow);
   pointer-events: none;
 }
 #divider > .tag {
@@ -92,10 +92,10 @@
   top: var(--s-3);
   padding: 3px var(--s-2);
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.66);
+  background: var(--c-over-glass);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  color: #fff;
+  color: var(--c-over-ink);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -118,8 +118,8 @@
   border-radius: 999px;
   background:
     var(--icon-grip) center / 16px no-repeat,
-    rgb(255 255 255 / 0.92);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+    var(--c-over-grip);
+  box-shadow: 0 1px 4px var(--c-over-shadow);
 }
 
 /* The real control over the split: a native range, invisible but present, so
@@ -239,8 +239,8 @@
   transform: translateX(-50%);
   padding: 3px var(--s-3);
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.66);
-  color: #fff;
+  background: var(--c-over-glass);
+  color: var(--c-over-ink);
   font-size: 13px;
   white-space: nowrap;
   z-index: 2;
@@ -262,10 +262,10 @@
   gap: var(--s-2);
   padding: var(--s-2) var(--s-4);
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.72);
+  background: var(--c-over-glass-strong);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  color: #fff;
+  color: var(--c-over-ink);
   font-size: 15px;
   z-index: 2;
 }

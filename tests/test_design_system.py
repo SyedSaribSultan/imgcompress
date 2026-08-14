@@ -241,16 +241,17 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
                          "base.css must load before the sheets that consume it")
 
     def test_only_base_defines_colour_literals(self):
-        """A hex outside base.css is a value with no name, and a value with no
-        name is one nobody can change in both themes at once."""
+        """A colour outside base.css is a value with no name, and a value with
+        no name is one nobody can change everywhere at once. That now includes
+        the over-the-photograph furniture: the transparency checkerboard and
+        the caliper's glass deliberately ignore the page theme, but their
+        values are still NAMED - the --c-checker-* and --c-over-* tokens in
+        base.css - so even the deliberate exceptions have exactly one home.
+        The net catches every way CSS spells a raw colour, not just hex."""
+        raw = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(")
         for name in WEB_SHEETS[1:]:
             with self.subTest(sheet=name):
-                found = re.findall(r"#[0-9a-fA-F]{3,8}\b", _web_css(name))
-                # compare.css paints the transparency checkerboard and the
-                # caliper, both of which sit on top of a photograph and must not
-                # follow the page theme. They are the documented exception.
-                if name == "compare.css":
-                    continue
+                found = raw.findall(_web_css(name))
                 self.assertEqual(found, [], f"{name} hand-types {found}")
 
     def test_every_token_used_is_defined_in_base(self):

@@ -38,6 +38,21 @@
   --c-warn: var(--oz-color-content-warning);
   --c-bad: var(--oz-color-content-critical);
 
+  /* Over the photograph. These sit on top of an arbitrary image, not on a
+     themed surface, so they deliberately do NOT move with the theme: the
+     white checkerboard is the one universal sign for transparency, and the
+     dark glass pills must hold against any picture in either scheme. The raw
+     values live here and nowhere else - probe_theme knows they stay put, and
+     the design-system test forbids a sheet from hand-typing a colour. */
+  --c-checker-ground: #ffffff;
+  --c-checker-square: #e6e6e8;
+  --c-over-line: rgb(255 255 255 / 0.9);
+  --c-over-grip: rgb(255 255 255 / 0.92);
+  --c-over-glass: rgb(0 0 0 / 0.66);
+  --c-over-glass-strong: rgb(0 0 0 / 0.72);
+  --c-over-ink: #fff;
+  --c-over-shadow: rgb(0 0 0 / 0.35);
+
   /* Space. Six steps of the system scale (4/8/12/16/24/32). */
   --s-1: var(--oz-space-1);
   --s-2: var(--oz-space-3);
@@ -166,16 +181,6 @@ kbd {
   z-index: 10;
 }
 .skip:focus { left: var(--s-2); }
-
-/* Available to screen readers, absent from the page. */
-.sr-only {
-  position: absolute;
-  width: 1px; height: 1px;
-  margin: -1px; padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 
 .muted { color: var(--c-ink-3); }
 .spacer { flex: 1; }

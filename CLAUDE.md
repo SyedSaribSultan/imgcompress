@@ -23,6 +23,31 @@ re-decide anything it already decides. If you hit a decision it does not cover,
 6. **Local-first is the product.** No hosted API, no upload paths —
    "nothing is uploaded" is the moat.
 
+## UI construction rules (owner-mandated 2026-08-14)
+
+All UI in both interfaces is built strictly from the design system — the
+vanilla-stack equivalent of "only use `@/components/ui`":
+
+1. **One place for values.** Raw colours (`#hex`, `rgb()`, `hsl()`) exist in
+   exactly two files: `web/heyoz-tokens.css` (the palette) and
+   `web/css/base.css` (the named vocabulary, including the deliberate
+   over-the-photograph constants `--c-checker-*` / `--c-over-*`). Every other
+   sheet, and the desktop `<style>` block, consumes names only.
+   Machine-enforced: `test_design_system.test_only_base_defines_colour_literals`.
+2. **No ad-hoc primitives.** A control is a central class (`.btn`, `.field`,
+   `.chips`, …) from the region sheets. A missing pattern gets a class added
+   centrally — never a one-off style on an element, never inline `style=`
+   (the CSP blocks it in production anyway; the design-system test blocks it
+   before that).
+3. **No inline executable script.** The only inline `<script>` allowed in
+   `web/index.html` is the JSON-LD data block (never executed; gate:
+   `test_the_page_carries_no_inline_executable_script`).
+4. **The desktop app never diverges.** It consumes copies produced by
+   `tools/sync_webui_assets.py`; run it and commit the result rather than
+   editing copies.
+5. **New gates must be seen red.** Any new enforcement added for these rules
+   follows the observed-failing rule: break it, watch it fail, then fix.
+
 ## Repo invariants (from the codebase itself)
 
 - `pocketsize/destinations.py` is the single source of truth for
