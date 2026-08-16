@@ -12,7 +12,7 @@
 
 import { $, setText, show } from "./dom.js";
 import { state, isReady, isBusy, totals } from "./state.js";
-import { human, fmtLabel } from "./format.js";
+import { human, fmtLabel, clock, videoResultLine } from "./format.js";
 
 const rows = new Map();   // id -> the element showing it
 
@@ -31,6 +31,18 @@ function subLine(it) {
     case "cancelled":
       return { text: "stopped", tone: "" };
     default: {
+      /* A finished video reads in the approved words, and every disclosure it
+         owes rides on the same line as the percentage - see videoResultLine.
+         Nothing is passed through a second wording here, because a fact said
+         two ways in two places is a fact that will eventually disagree. */
+      if (it.isVideo) {
+        const pct = it.originalBytes
+          ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
+        return {
+          text: videoResultLine(it) + (it.status === "saved" ? " · downloaded" : ""),
+          tone: pct > 0 ? "good" : "",
+        };
+      }
       const pct = it.originalBytes
         ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
       const saved = pct > 0 ? `−${pct}%` : "no smaller";
@@ -57,7 +69,12 @@ function makeRow(it) {
   el.setAttribute("role", "option");
   el.innerHTML =
     '<img class="thumb" alt="" decoding="async">' +
-    '<span class="name"><span class="name-head"></span><span class="name-tail"></span></span>' +
+    '<span class="name"><span class="name-head"></span><span class="name-tail"></span>' +
+    /* What this row is holding, said before anything has happened to it. A
+       video takes minutes where a picture takes a second, and a row that does
+       not say which one it is makes the wait look like a fault. Its length
+       rides along for the same reason. */
+    '<span class="kind" hidden></span></span>' +
     '<span class="now num"></span>' +
     '<span class="sub"></span>' +
     '<span class="row-acts">' +
@@ -89,6 +106,10 @@ function paintRow(el, it) {
   }
   paintName(el, it.name);
   if (el.title !== it.name) el.title = it.name;
+
+  const kind = el.querySelector(".kind");
+  show(kind, !!it.isVideo);
+  if (it.isVideo) setText(kind, it.duration ? `Video · ${clock(it.duration)}` : "Video");
   show(el.querySelector(".retry"), it.status === "failed");
   setText(el.querySelector(".now"), isReady(it) ? human(it.newBytes) : "");
 
@@ -110,6 +131,7 @@ function paintRow(el, it) {
      to be reworded. */
   el.dataset.status = it.status;
   el.dataset.format = it.fmt || "";
+  el.dataset.kind = it.isVideo ? "video" : "image";
   el.setAttribute("aria-selected", String(state.selected === it.id));
   // The row's whole accessible name, so a screen reader gets the file and its
   // result in one read rather than four unlabelled fragments.

@@ -9,7 +9,7 @@
 
 import { $, setText, toast } from "./dom.js";
 import { state, isReady, totals } from "./state.js";
-import { human, splitName, fmtLabel, scoreText } from "./format.js";
+import { human, splitName, fmtLabel, scoreText, clock } from "./format.js";
 import { scheduleRender } from "./render.js";
 
 /** The extension the output should carry: the format's own, or the original's
@@ -76,7 +76,9 @@ export function downloadOne(it) {
  * the file, and the toast says so rather than letting someone believe they pasted
  * a 400 KB JPEG. */
 export async function copyImage(it) {
-  if (!it || !isReady(it)) return;
+  // Clipboards take images and nothing else; the button is not offered on a
+  // video, and this is the guard behind that.
+  if (!it || !isReady(it) || it.isVideo) return;
   const btn = $("copy-one");
   btn.disabled = true;
   try {
@@ -116,7 +118,14 @@ export async function copyImage(it) {
 function buildReport(done, names) {
   const lines = [];
   const t = totals();
-  lines.push(`Pocketsize report — ${done.length} picture${done.length === 1 ? "" : "s"}`);
+  const clips = done.filter((it) => it.isVideo).length;
+  // The noun follows what is in the run: a record that calls three clips
+  // "pictures" is a record that was not looking.
+  const what = clips
+    ? `${done.length} file${done.length === 1 ? "" : "s"} (${done.length - clips} `
+      + `picture${done.length - clips === 1 ? "" : "s"}, ${clips} video${clips === 1 ? "" : "s"})`
+    : `${done.length} picture${done.length === 1 ? "" : "s"}`;
+  lines.push(`Pocketsize report — ${what}`);
   lines.push(`${human(t.before)} in, ${human(t.after)} out, ${human(t.saved)} saved.`);
   lines.push("Everything ran in this browser. Nothing was uploaded.");
   lines.push("");
@@ -131,6 +140,10 @@ function buildReport(done, names) {
     lines.push(`   size:          ${human(it.originalBytes)} → ${human(it.newBytes)}`);
     lines.push(`   pixels:        ${it.width}×${it.height}`
       + (resized ? ` → ${it.outW}×${it.outH} (shrunk)` : " (unchanged)"));
+    if (it.isVideo) {
+      lines.push(`   length:        ${clock(it.duration)}`);
+      lines.push("   made by:       your browser's own video encoder");
+    }
     lines.push(`   visual match:  ${scoreText(it.score, it.lossless)}`);
     lines.push(`   pixel-exact:   ${it.lossless ? "yes" : "no"}`);
     if (it.hardCapped) {
@@ -254,7 +267,8 @@ export async function downloadAll() {
        trust. */
     const shrunk = done.filter(
       (it) => it.outW && (it.outW !== it.width || it.outH !== it.height)).length;
-    toast(`Zipped ${done.length} pictures — saved you ${human(totals().saved)}.`
+    const noun = done.some((it) => it.isVideo) ? "files" : "pictures";
+    toast(`Zipped ${done.length} ${noun} — saved you ${human(totals().saved)}.`
       + (shrunk ? ` ${shrunk} of them ${shrunk === 1 ? "was" : "were"} shrunk in pixels, `
         + "not just compressed." : "")
       + " A written report of everything is inside.");

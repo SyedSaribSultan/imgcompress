@@ -35,6 +35,199 @@ jobs:
       - name: Test
         run: python -m unittest discover -s tests -v
 
+  video:
+    # The matrix above deliberately does not install the video extra, and this
+    # job is why that is safe rather than a hole. PyAV needs Python 3.11 and
+    # this package still supports 3.9, so `av` carries an environment marker:
+    # on the 3.9 legs `pip install ".[video]"` resolves to nothing, installs
+    # nothing, and would prove nothing while looking exactly like a job that
+    # tested the feature. So the extra is exercised once, here, on an
+    # interpreter that can actually hold it.
+    name: video engine (the optional extra)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install, with video
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[full,video]"
+      - name: The engine must be live, or every test below skips itself
+        # NOT allowed to fail, and not allowed to be inferred from a green run.
+        # Every engine test in tests/test_video.py is wrapped in
+        # `skipUnless(video.available())`, which is right for a designer's
+        # laptop and catastrophic here: a wheel that failed to install would
+        # skip every engine test, print OK, and show the same tick with video
+        # untested from then on. That is the AVIF-corpus failure this repo
+        # already had once. So the capabilities are asserted before anything runs.
+        #
+        # Both encoders are named because a build missing SVT-AV1 does not
+        # error - `usable()` simply drops AV1 and every destination quietly
+        # becomes H.264. And xpsnr is named because it is the independent
+        # witness decision V5 requires: without the filter, the second-opinion
+        # test skips itself and the "never certify with the metric you searched
+        # on" rule stops being checked at all.
+        run: |
+          python - <<'PY'
+          from pocketsize import video
+
+          caps = video.capabilities()
+          print(caps)
+          missing = [k for k in ("pyav", "h264-mp4", "av1-mp4", "aac", "xpsnr")
+                     if not caps.get(k)]
+          if missing:
+              raise SystemExit(
+                  "the video engine is incomplete on this runner: "
+                  + ", ".join(missing)
+                  + " - the tests would skip themselves and this job would pass "
+                    "green with video untested")
+          PY
+      - name: Report active engines
+        run: pocketsize --check
+      - name: Build both video corpora
+        # Neither is committed: they are written by PyAV and would be a binary
+        # blob in the repo that nothing could verify. The test classes build
+        # them on demand too; building them here means a corpus failure reads
+        # as a corpus failure instead of as a mysterious test error.
+        run: |
+          python tests/make_video_fixtures.py
+          python tests/make_real_world_fixtures.py
+      - name: The engine, the awkward inputs, and the desktop wiring
+        # Run through the API rather than `python -m unittest` so the skip
+        # count can be asserted. A skip is the one outcome that looks like
+        # success and is not, and every guard in these files is conditional on
+        # an engine this job has just proved is present.
+        run: |
+          python - <<'PY'
+          import sys
+          import unittest
+
+          suite = unittest.TestLoader().discover("tests", pattern="test_video*.py")
+          found = suite.countTestCases()
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+
+          for case, why in result.skipped:
+              print(f"SKIPPED {case.id()}: {why}")
+          print(f"found {found}, ran {result.testsRun}, skipped {len(result.skipped)}")
+
+          if not result.wasSuccessful():
+              sys.exit(1)
+          if result.skipped:
+              sys.exit("a video test skipped on a runner with the engine installed "
+                       "- that is the failure mode this job exists to catch")
+          # A floor, not an exact count: the suite grows, and a gate that has to
+          # be edited every time somebody adds a test gets edited without being
+          # read. What this catches is a file that stopped being discovered at
+          # all, which reads as a clean pass everywhere else.
+          if found < 50:
+              sys.exit(f"only {found} video tests were discovered - "
+                       "test_video.py or test_video_desktop.py did not load")
+          PY
+
+  browser:
+    # The browser tier had no CI at all. The E2E suite, the design gates and
+    # the video probe were all run by hand, which means they were run when
+    # somebody remembered - and the things they catch (a CSP violation, a
+    # module refused for its MIME type, a face that silently falls back, a
+    # WebCodecs encoder that is not there) are invisible everywhere else.
+    # Python cannot stand in for any of it: the claim is about a browser.
+    name: real Chrome, real page
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        # `full` for the fixture builders and for the desktop server that
+        # verify_desktop.mjs boots; `video` for the one 18 KB clip the browser
+        # probe compresses - the fixture is written by PyAV.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[full,video]"
+      - name: Install the browser harness
+        working-directory: tests/web
+        run: npm ci
+      - name: Point the harness at this runner's Chrome
+        # resolve_puppeteer.mjs defaults to a Windows path and reads CHROME_PATH
+        # as the documented override. If there is no Chrome, stop here and say
+        # so: a browser gate that quietly does not run is worse than no gate,
+        # and "puppeteer could not find a browser" must never be a skip.
+        run: |
+          CHROME="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$CHROME" ]; then
+            echo "::error::no Google Chrome on this runner - the browser gates cannot run"
+            exit 1
+          fi
+          "$CHROME" --version
+          echo "CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
+      - name: Let Chrome's own sandbox start
+        # Ubuntu 24.04 blocks unprivileged user namespaces, one of the two
+        # sandboxes Chrome can use; the Google Chrome package also ships the
+        # SUID sandbox and falls back to it, so this is belt-and-braces. It is
+        # deliberately not `--no-sandbox`: these gates run the browser the
+        # product runs in. Tolerated if the knob is absent - if Chrome still
+        # cannot start, the gates below fail loudly, which is the point.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: The design system, statically
+        # No browser needed for this one, so it runs first: a hand-typed
+        # colour, a hand-typed duration or a transition of a layout property
+        # should not wait behind three minutes of encoding to be reported.
+        run: node tests/web/verify_tokens.mjs
+      - name: Build the web fixtures
+        run: python tests/web/make_web_fixtures.py
+      - name: The promise suite, in real Chrome under the real CSP
+        # Dozens of assertions against real app state: the fresh-profile
+        # quality floor is exactly 90 (an init bug once clamped it to 99 and
+        # every search silently over-preserved), the winner is the smallest
+        # candidate that passed the floor, nothing ships bigger than its
+        # source, corrupt files fail gracefully, and the console stays clean
+        # under production headers.
+        run: node tests/web/e2e.mjs
+      - name: The faces load and paint, and nothing renders above 600
+        run: node tests/web/verify_fonts.mjs
+      - name: The desktop app renders from the shared design system
+        # Boots the real Python server and looks at the real page: the static
+        # gate can only prove app.html *references* the token layer, not that
+        # a browser ever receives it.
+        run: node tests/web/verify_desktop.mjs
+      - name: Build the video corpus
+        run: python tests/make_video_fixtures.py
+      - name: A video compresses in the browser
+        # Mediabunny reads the container, WebCodecs encodes, and the vendored
+        # module is loaded by a module worker under the site's real CSP - four
+        # ways to fail that no mock reproduces. The probe also asserts the
+        # browser reported at least one encoder, so a Chrome without WebCodecs
+        # is a red job rather than a quiet pass.
+        run: node tests/web/probe_video.mjs
+      - name: And a person can actually do it on the page
+        # The step above proves the engine works by talking to the worker
+        # directly, which is exactly the test a wiring bug survives: the queue,
+        # the disclosure line, the split-compare clock and the download all sit
+        # between that worker and the person. This one drops a file into the
+        # real page and asks the app what it believes.
+        run: node tests/web/probe_video_ui.mjs
+      - name: Numbers follow the reader, not the author
+        # Launches real Chrome in three locales rather than stubbing Intl,
+        # because the thing under test is whether the code asks the platform
+        # at all - a formatter pinned to en-US passes a mocked test and fails
+        # every German user. "90,5" read as "905" is a different claim about
+        # the same file, on a page whose whole argument is a measured number.
+        run: node tests/web/probe_i18n.mjs
+      - name: The use-case pages set the plan their copy promises
+        # A page that opens with "already set for Discord" and does not set it
+        # is a promise the product breaks in the first second. Asserted from
+        # the settings the app ADOPTED, never from the attribute in the HTML,
+        # which being present proves nothing about anything consuming it.
+        run: node tests/web/probe_video_pages.mjs
+
   minimal:
     name: without optional engines
     runs-on: ubuntu-latest
@@ -113,6 +306,14 @@ jobs:
       # people edit is in web/, the copy is committed so a pip install needs no
       # build, and a stale copy is a red build rather than two visual identities.
       - run: python tools/sync_webui_assets.py --check
+      # The metric, in the form a module worker can load. web/ss2.module.js is
+      # web/ss2.js with an export appended, because the image worker is classic
+      # (importScripts) and the video worker is a module (no importScripts), and
+      # the CSP rules out every runtime escape hatch between them. Generated
+      # rather than copied, and checked here, because a second hand-maintained
+      # copy of a validated metric is two engines quietly disagreeing about what
+      # "looks the same" means.
+      - run: python tools/gen_ss2_module.py --check
 
   lint:
     runs-on: ubuntu-latest

@@ -51,6 +51,13 @@ export const state = {
      null means "not asked yet", which is different from false. */
   caps: { webp: null, png8: null, avif: null },
 
+  /* And the same question asked of the video worker: does this browser have
+     WebCodecs at all, and which of our formats will it write. null means the
+     answer has not come back yet, which is why nothing tests it as falsy -
+     "we have not asked" and "it cannot" are different things to say to a
+     person holding a video. */
+  videoCaps: null,
+
   suffix: false,
 
   /* The whole of the selection model: null means nothing is on the stage, an id
@@ -105,6 +112,59 @@ export function effectiveSettings(item) {
     if (item.override.maxDimension != null) s.maxDimension = item.override.maxDimension;
   }
   return s;
+}
+
+/** Can this browser re-encode video at all? Three states, and only one of them
+ *  is a yes: unknown (nobody has asked), no (no WebCodecs, or no encoder it
+ *  will admit to), and a list of formats. */
+export function canEncodeVideo() {
+  const c = state.videoCaps;
+  return !!(c && c.webcodecs && Array.isArray(c.formats) && c.formats.length);
+}
+
+/** The one sentence for a browser that cannot do this. Approved copy (V8), in
+ *  one place so the intake refusal and a job that reaches the engine anyway
+ *  say exactly the same thing. */
+export const NO_VIDEO_HERE =
+  "This browser can't re-encode video yet — the desktop app can.";
+
+/** What the engine is actually run with for one VIDEO.
+ *
+ *  Video reads the video columns of the destination table and never the image
+ *  ones: the frame cap, the floor and the byte ceiling are different numbers
+ *  for the same destination, and mixing them would silently run a video at a
+ *  picture's settings. Returns null when this destination takes no video -
+ *  which the table itself decides, exactly as the desktop engine reads it.
+ *
+ *  Zero new decisions: nothing here is a question. The person chose where the
+ *  video is going and that is the whole of it. */
+export function videoPlan(item) {
+  const target = D.destinationOf(state.settings.target);
+  const numbers = D.DESTINATION_VIDEO_NUMBERS[target];
+  if (!numbers) return null;
+  const picture = D.DESTINATION_NUMBERS[target];
+
+  /* The floor. A destination carries one for video and another for pictures,
+     and the video one is the default. But "Must still look" is the person
+     speaking about quality out loud, so when it has been moved off the
+     destination's own picture default, that answer is theirs and it counts
+     for the video too - the same rule the command line follows, where a
+     quality given on the line overrides the destination's and nothing else
+     does. */
+  const spoken = picture && state.settings.qualityTarget !== picture.qualityTarget;
+  const floor = item?.override?.qualityTarget
+    ?? (spoken ? state.settings.qualityTarget : numbers.qualityTarget);
+
+  return {
+    target,
+    formats: D.DESTINATION_VIDEO_FORMATS[target] || [],
+    /* The frame cap is the destination's, and a per-video override can zero it
+       - which is what the resize disclosure's own undo does. */
+    maxDimension: item?.override?.maxDimension ?? numbers.maxDimension,
+    qualityTarget: floor,
+    sizeCapBytes: Math.round((numbers.sizeCapMb || 0) * 1024 * 1024),
+    audio: numbers.audio,
+  };
 }
 
 /** Batch totals, over everything that has a result. */

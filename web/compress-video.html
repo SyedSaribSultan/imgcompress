@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en" data-preset-target="web">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compress video in your browser — free, private — Pocketsize</title>
+<meta name="description" content="Make a video smaller without uploading it. Re-encoded on your own device, measured against the original frame by frame, and played back side by side so you can see the quality was kept.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#EEEFE9">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191B21">
+<link rel="canonical" href="https://pocketsize.vercel.app/compress-video">
+
+<!-- The social card. og.png is the one asset with words baked in; the alt
+     carries the same words for everyone who cannot see it. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Pocketsize">
+<meta property="og:title" content="Compress video in your browser — free, private — Pocketsize">
+<meta property="og:description" content="Make a video smaller without uploading it. Re-encoded on your own device, measured against the original frame by frame, and played back side by side so you can see the quality was kept.">
+<meta property="og:url" content="https://pocketsize.vercel.app/compress-video">
+<meta property="og:image" content="https://pocketsize.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Pocketsize — compression that proves it didn't ruin your image. Nothing is uploaded.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Compress video in your browser — free, private — Pocketsize">
+<meta name="twitter:description" content="Make a video smaller without uploading it. Re-encoded on your own device, measured against the original frame by frame, and played back side by side so you can see the quality was kept.">
+<meta name="twitter:image" content="https://pocketsize.vercel.app/og.png">
+
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<!-- The three faces that paint the first screen, fetched alongside the CSS
+     rather than after it - without these, the fallback face paints first and
+     the page visibly re-sets itself. -->
+<link rel="preload" href="/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/geist-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+
+<!-- The whole module graph, declared here so the browser fetches it in one
+     wave instead of discovering imports three levels deep, one level per
+     round trip. The list mirrors sw.js's PRECACHE. -->
+<link rel="modulepreload" href="/js/dom.js">
+<link rel="modulepreload" href="/js/format.js">
+<link rel="modulepreload" href="/js/state.js">
+<link rel="modulepreload" href="/js/views.js">
+<link rel="modulepreload" href="/js/render.js">
+<link rel="modulepreload" href="/js/settings.js">
+<link rel="modulepreload" href="/js/intake.js">
+<link rel="modulepreload" href="/js/engine.js">
+<link rel="modulepreload" href="/js/queue.js">
+<link rel="modulepreload" href="/js/compare.js">
+<link rel="modulepreload" href="/js/facts.js">
+<link rel="modulepreload" href="/js/save.js">
+<link rel="modulepreload" href="/js/panels.js">
+
+<!-- What this page is, for the machines that catalogue software. A data
+     block, never executed, so the CSP's ban on inline EXECUTABLE script
+     stands untouched. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Pocketsize",
+  "url": "https://pocketsize.vercel.app/",
+  "description": "Free, private image and video compression in the browser. PNG, JPEG, WebP, AVIF, MP4 and WebM. Every result is measured against the original. Nothing is uploaded, and it works offline.",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "Any — runs in the browser",
+  "isAccessibleForFree": true,
+  "featureList": [
+    "Image compression",
+    "Video compression",
+    "Runs on your device — nothing is uploaded",
+    "Every result measured against the original",
+    "Works offline after one visit"
+  ],
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+
+<!-- Six stylesheets, one per concern, loaded in dependency order: tokens, then
+     the shell that positions the regions, then the regions themselves. Nothing
+     below base.css invents a colour or a spacing value of its own. -->
+<!-- Applies the resolved theme before first paint - a classic script, because
+     a deferred module would let the wrong theme flash first. The token layer
+     below flips on data-theme and knows nothing about the OS preference, so
+     the script always stamps an answer; there is no unstamped state. -->
+<script src="/js/theme.js"></script>
+
+<!-- The HeyOz token layer and its self-hosted faces, loaded before base.css,
+     which aliases this app's six-name vocabulary onto them. heyoz-tokens.css
+     is a vendored copy - see GUIDE.md; edit it upstream, never here. -->
+<link rel="stylesheet" href="/heyoz-tokens.css">
+<link rel="stylesheet" href="/fonts.css">
+
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/media-accent.css">
+<link rel="stylesheet" href="/css/layout.css">
+<link rel="stylesheet" href="/css/controls.css">
+<link rel="stylesheet" href="/css/queue.css">
+<link rel="stylesheet" href="/css/compare.css">
+<link rel="stylesheet" href="/css/facts.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Which video formats can it read?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "MP4, MOV, WebM, MKV and most things a browser can already play, including the HEVC clips an iPhone records. Results are written as MP4 so they play everywhere."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my video uploaded anywhere?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. There is no server and no upload path — the whole encode runs on your device, which you can verify yourself in about a minute."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How long does a video take?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Longer than a picture, because there is far more of it: expect a wait comparable to the clip's own running time. It reports what it is doing throughout, and you can stop it at any point."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Will the quality drop?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Only as far as you allow. The engine searches for the smallest encode that still measures as looking right, and reports the score it measured — with a second, independent measurement alongside it."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<a class="skip" href="#queue-list">Skip to the pictures</a>
+
+<noscript>
+  <p id="noscript">Pocketsize compresses images entirely in your browser, which
+  needs JavaScript turned on. Nothing is uploaded either way.</p>
+</noscript>
+
+<!-- The app fills the first screen exactly; #about is what a scroll past it
+     finds. The wrapper exists so the shell can be viewport-sized while the
+     document itself is allowed to be taller than the viewport. -->
+<div id="app">
+
+<!-- ============================== THE BAR ==============================
+     Intake and output. These two actions apply to everything in the run, which
+     is why they live above the regions rather than inside any one of them.
+     ==================================================================== -->
+<header id="bar">
+  <!-- The wordmark opens the shortcuts-and-about card: people expect a logo
+       to lead somewhere, and this is the somewhere that helps. -->
+  <button class="brand" id="brand-btn" aria-haspopup="dialog" aria-label="About Pocketsize and keyboard shortcuts">
+    <!-- The mark: a picture tucked into a pocket. Monochrome here; the same
+         shapes carry the brand colours in favicon.svg and the app icons. -->
+    <svg width="18" height="18" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="58" height="58" rx="13" stroke="currentColor" stroke-width="4" opacity=".4"/>
+      <circle cx="23" cy="19" r="4.5" fill="currentColor" opacity=".6"/>
+      <path d="M14 38 28 22l10 11 6-6 6 11Z" fill="currentColor" opacity=".6"/>
+      <path d="M10 36h44v10a8 8 0 0 1-8 8H18a8 8 0 0 1-8-8Z" fill="currentColor"/>
+    </svg>
+    <b>Pocketsize</b>
+  </button>
+
+  <span class="spacer"></span>
+
+  <!-- Three modes, cycled: Match my device, Light, Dark. The visible word is
+       always the CURRENT mode; the title says what a click moves to. The
+       glyphs on these buttons are vendored Lucide icons (ISC licence, see
+       vendor/LICENSES.md) - always beside their words, never instead of them. -->
+  <button class="btn quiet" id="theme-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>
+    <span id="theme-word">Theme</span>
+  </button>
+
+  <button class="btn" id="add-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+    Add pictures
+  </button>
+  <button class="btn" id="clear-btn" hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+    Clear
+  </button>
+  <!-- The one primary action on the page. Hidden rather than disabled while
+       there is nothing to download: a greyed-out button is a dead thing taking
+       up the slot that answers "what do I do now". -->
+  <button class="btn primary" id="save-btn" hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+    <span id="save-label">Download</span>
+  </button>
+
+  <input type="file" id="file-input" multiple accept="image/*,video/*" hidden>
+
+  <div id="batch" role="progressbar" aria-label="Batch progress"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="batch-bar"></i></div>
+</header>
+
+<main id="dash">
+
+  <!-- ============================== THE SIDE =============================
+       The pictures, then the plan that applies to them. The pictures come
+       first because that is the order a person acts in: add pictures, answer
+       one question, see the result.
+       =================================================================== -->
+  <aside id="side">
+
+    <section id="queue-sec" aria-labelledby="queue-h">
+      <div class="region-head">
+        <h2 id="queue-h">Pictures</h2>
+        <span class="num muted" id="queue-count">0</span>
+        <span class="spacer"></span>
+      </div>
+
+      <div id="queue-empty">
+        <button class="btn primary" id="empty-add">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+          Choose pictures
+        </button>
+        <p>or drop them anywhere on this page, or paste a screenshot</p>
+        <p class="muted">Your pictures never leave your computer.</p>
+      </div>
+
+      <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
+      <!-- The empty state's teaching disappears after first use; the affordance
+           should not. -->
+      <p class="muted" id="queue-hint" hidden>Drop more pictures anytime.</p>
+
+      <div id="queue-foot" hidden>
+        <!-- How many finished and how many did not, in words. A run that ends with
+             two images missing has to say so somewhere other than by having two
+             fewer rows than you remember dropping. -->
+        <span id="t-count"></span>
+        <span class="spacer"></span>
+        <span class="num" id="t-sizes"></span>
+        <span class="num" id="t-saved"></span>
+      </div>
+    </section>
+
+    <section id="plan-sec" aria-labelledby="plan-h">
+      <div class="region-head">
+        <h2 id="plan-h">Plan</h2>
+        <span class="spacer"></span>
+        <span class="muted">every picture</span>
+      </div>
+
+      <div id="plan-fields">
+        <!-- Options are built by settings.js from destinations.js, which is
+             generated from pocketsize/destinations.py. No destination's name,
+             frame size or quality floor is written out here. -->
+        <div class="field">
+          <label for="target">Going to</label>
+          <select id="target"></select>
+        </div>
+
+        <div class="field">
+          <label for="quality-preset">Must still look</label>
+          <!-- 90 carries `selected` deliberately: a select's initial value is
+               otherwise its FIRST option, which is "identical" - and a fresh
+               profile must not boot into the lossless promise by accident of
+               option order. reflectQualityWords treats "identical" as a choice
+               and never overwrites it, which is correct everywhere except an
+               unstamped first paint; this attribute is what makes the first
+               paint already-stamped. -->
+          <select id="quality-preset">
+            <option value="identical">identical — every pixel kept</option>
+            <option value="95">perfect, even for re-editing</option>
+            <option value="90" selected>exactly the same to your eye</option>
+            <option value="85">the same unless you zoom in and compare</option>
+            <option value="80">the same at a glance</option>
+            <option value="70">clean when shown small</option>
+            <option value="custom" hidden>as close as you asked for</option>
+          </select>
+        </div>
+
+        <!-- One row for the one thing a person decides about size: shrink big
+             photos, or never touch a pixel count. Which edge the number caps is
+             expert nuance and lives under "More choices". -->
+        <div class="field" id="shrink-field">
+          <label for="shrink-mode">Shrink big photos</label>
+          <div class="pair">
+            <select id="shrink-mode">
+              <option value="cap">to at most</option>
+              <option value="never">never — keep every pixel</option>
+            </select>
+            <!-- The datalist offers the landmark sizes without adding a
+                 control: recognition for the common cases, a free number for
+                 the rest. -->
+            <input type="number" id="maxdim" min="16" step="64" value="2560"
+                   list="dim-presets" aria-label="Pixel limit">
+            <datalist id="dim-presets">
+              <option value="1024"></option>
+              <option value="1920"></option>
+              <option value="2048"></option>
+              <option value="2560"></option>
+              <option value="4096"></option>
+            </datalist>
+            <span class="unit" id="maxdim-unit">px</span>
+          </div>
+        </div>
+        <p class="plan-why" id="shrink-note" hidden></p>
+
+        <!-- The floor the engine actually runs on, driven entirely by the words
+             above and never typed by a person. It is a fact about the machine,
+             not a question for anyone. -->
+        <input type="hidden" id="quality" value="90">
+        <p class="plan-why" id="quality-note"></p>
+        <!-- One step back to known-good, shown only once something differs
+             from the destination's own defaults. -->
+        <button class="btn quiet sm" id="plan-reset" hidden>Back to automatic</button>
+
+        <details id="more-choices">
+          <summary>More choices</summary>
+
+          <div class="field">
+            <label for="plan-goal">Size limit</label>
+            <div class="pair">
+              <select id="plan-goal">
+                <option value="small">none — just make it small</option>
+                <option value="cap">at most</option>
+              </select>
+              <input type="text" id="plan-cap" inputmode="decimal" value="200 KB"
+                     size="7" aria-label="Size limit" hidden>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="plan-format">File type</label>
+            <select id="plan-format"></select>
+          </div>
+
+          <div class="field" id="fit-field">
+            <label for="plan-fit">Count the shrink limit on</label>
+            <select id="plan-fit">
+              <option value="longest">the longest side</option>
+              <option value="width">the width</option>
+              <option value="height">the height</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <!-- The words are wrapped in one span on purpose: bare text inside a
+                 flex container becomes several anonymous flex items, so "Add",
+                 "-min" and "to filenames" were each getting the row's gap. -->
+            <label class="check"><input type="checkbox" id="suffix-toggle">
+              <span>Add <code>-min</code> to filenames</span></label>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- The one line for the people whose job is folders and scripts. The web
+         page and the pip package are the same engine; this is where the page
+         finally says so. -->
+    <p id="cli-note" class="muted">Also a command line — the same engine, for
+      folders and scripts:
+      <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank"
+         rel="noopener"><code>pip install pocketsize</code></a></p>
+
+    <!-- The panel's edge is the person's: drag it, or focus it and use the
+         arrow keys. Double-click puts the width back to automatic. -->
+    <div class="pane-handle" id="side-handle" role="separator" tabindex="0"
+         aria-orientation="vertical" aria-label="Resize the side panel"></div>
+  </aside>
+
+  <!-- ============================= THE STAGE =============================
+       The original and the result, on top of each other. One #frame holds both
+       at natural size and carries the zoom, so the two can never drift apart.
+       =================================================================== -->
+  <section id="stage" aria-label="Comparison">
+
+    <div id="view" data-mode="split">
+      <div id="frame">
+        <img id="img-before" alt="Original image" decoding="async">
+        <div class="after" id="img-after-wrap"><img id="img-after" alt="Compressed image" decoding="async"></div>
+        <!-- The same two layers again, for video. One #frame, one transform,
+             so the split, the divider and the zoom keep working unchanged -
+             and the compressed player follows the original's clock, because
+             two free-running players drift apart within seconds and a split
+             showing second 3 against second 5 is not a comparison. -->
+        <video id="vid-before" playsinline preload="metadata" hidden></video>
+        <div class="after" id="vid-after-wrap" hidden>
+          <video id="vid-after" playsinline preload="metadata" muted></video>
+        </div>
+        <canvas id="img-diff" aria-label="Difference heatmap"></canvas>
+      </div>
+
+      <div id="divider">
+        <span class="tag l" id="tag-l">Original</span>
+        <span class="tag r" id="tag-r">Compressed</span>
+      </div>
+    </div>
+
+    <!-- The real control over the split: a native range, invisible but present,
+         so dragging and arrow-stepping both work without being reimplemented. -->
+    <input type="range" id="split" min="0" max="100" value="50"
+           aria-label="Comparison split position">
+
+    <div class="stage-bar top">
+      <div class="segmented" role="group" aria-label="Comparison mode">
+        <button id="mode-split" aria-pressed="true">Split</button>
+        <button id="mode-after" aria-pressed="false">After</button>
+        <!-- Disabled on a video, with the reason in the title: the heatmap is
+             built from two decoded still frames, and a frame of a clip is not
+             the clip. A control that stayed live and drew nothing would be
+             worse than one that says what it is for. -->
+        <button id="mode-diff" aria-pressed="false">Diff</button>
+      </div>
+      <!-- The video's own transport. It lives up here rather than on the
+           player because the invisible split slider covers the whole stage,
+           so native controls would be unreachable exactly when the comparison
+           is being used - and because a person can watch the original while
+           the compressed one is still being made. Pressing play moves both
+           sides; the compressed one follows. -->
+      <div class="transport" id="transport" hidden>
+        <button class="btn quiet sm" id="vid-play" aria-label="Play the video">Play</button>
+        <input type="range" id="vid-seek" class="scrub" min="0" max="1000" value="0"
+               aria-label="Position in the video">
+        <span class="z num" id="vid-time">0:00 / 0:00</span>
+      </div>
+      <span class="spacer"></span>
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button class="btn quiet sm" id="zoom-out" aria-label="Zoom out">−</button>
+        <span class="z num" id="zoom-label">Fit</span>
+        <button class="btn quiet sm" id="zoom-in" aria-label="Zoom in">+</button>
+        <!-- Not also called "Fit": the readout beside it already says "Fit" when
+             that is the current state, and two adjacent Fits read as a fault. -->
+        <button class="btn quiet sm" id="zoom-reset">Reset</button>
+      </div>
+      <!-- The comparison, alone: F or this button hides everything else. -->
+      <button class="btn quiet sm" id="focus-btn" aria-pressed="false" title="Show only the comparison (F)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>
+        Focus
+      </button>
+    </div>
+
+    <div class="stage-bar bottom">
+      <input type="text" id="out-name" spellcheck="false" aria-label="Name for this image">
+      <span class="num muted" id="out-ext"></span>
+      <span class="size num" id="s-size">—</span>
+      <span class="saved num" id="s-saved"></span>
+      <span class="spacer"></span>
+      <button class="btn sm" id="copy-one">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        Copy
+      </button>
+      <!-- Secondary: this gets one file out, where the bar gets the run out. Two
+           primary buttons on one screen are two answers to the same question. -->
+      <button class="btn sm" id="dl-one">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+        Download
+      </button>
+    </div>
+
+    <!-- The empty state carries its own exit; the same block also reports a
+         file that could not be compressed, with the button hidden. -->
+    <div id="stage-hero">
+      <p id="stage-empty">Nothing to compare yet.</p>
+      <button class="btn" id="stage-choose">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+      Choose pictures
+      </button>
+    </div>
+
+    <!-- Which image is showing, when the caliper is not there to say it - and
+         the legend, when the picture is a heatmap. -->
+    <span id="mode-badge" hidden></span>
+
+    <div id="stage-work" hidden>
+      <span id="work-say"></span>
+      <button class="btn quiet sm" id="stop-btn">Stop</button>
+    </div>
+  </section>
+
+  <!-- ============================= THE FACTS =============================
+       Three separate blocks: the encodes that exist, the numbers behind the one
+       kept, and the way to override the plan for this image alone.
+       =================================================================== -->
+  <section id="facts" aria-label="Details">
+    <div class="pane-handle" id="facts-handle" role="separator" tabindex="0"
+         aria-orientation="horizontal" aria-label="Resize the details panel"></div>
+    <div class="fact-blocks">
+
+      <section id="versions" aria-labelledby="versions-h">
+        <h3 id="versions-h">Versions tried</h3>
+        <div class="chips" id="cands" role="group" aria-labelledby="versions-h"></div>
+        <p id="chip-why">Every version here is real and ready. Tap one to keep
+           it instead.</p>
+      </section>
+
+      <section id="measured" aria-labelledby="measured-h">
+        <h3 id="measured-h">How this was measured</h3>
+        <!-- The resize, when there was one, comes BEFORE the numbers it
+             affects, at full strength. A shrink disclosed in fine print under
+             an impressive percentage is the disclosure happening backwards. -->
+        <p class="note strong" id="s-resize" hidden></p>
+        <!-- The undo lives where the realisation happens: someone reading the
+             resize disclosure is exactly the someone who may not have wanted
+             one. Hidden when the destination's own ceiling makes full size
+             impossible. -->
+        <button type="button" class="btn sm" id="keep-size" hidden>Keep full size for this picture</button>
+        <div class="stats">
+          <div><div class="k">Format</div><div class="v" id="s-format">—</div></div>
+          <div><div class="k">Visual match</div><div class="v num" id="s-score">—</div></div>
+          <div><div class="k">Dimensions</div><div class="v num" id="s-dims">—</div></div>
+          <!-- Video only: how long the clip runs, which is the fact that
+               explains why this one took minutes. -->
+          <div id="s-length-cell" hidden><div class="k">Length</div><div class="v num" id="s-length">—</div></div>
+          <div><div class="k">Time</div><div class="v num" id="s-time">—</div></div>
+        </div>
+        <p class="note" id="s-note" hidden></p>
+        <p class="note warn" id="s-warn" hidden></p>
+      </section>
+
+      <section id="redo" aria-labelledby="redo-h">
+        <h3 id="redo-h">Just this image</h3>
+        <div class="field">
+          <label for="ov-format">Format</label>
+          <select id="ov-format">
+            <option value="">follow the plan</option>
+            <option value="jpeg">JPEG</option>
+            <option value="png8">PNG — fewer colors</option>
+            <option value="png">PNG — every pixel kept</option>
+            <option value="webp">WebP</option>
+            <option value="avif">AVIF</option>
+          </select>
+        </div>
+        <!-- The same words the plan speaks, not a raw 60-99 number the plan
+             deliberately abolished: one vocabulary, everywhere it is asked. -->
+        <div class="field">
+          <label for="ov-quality">Must still look</label>
+          <select id="ov-quality">
+            <option value="">follow the plan</option>
+            <option value="95">perfect, even for re-editing</option>
+            <option value="90">exactly the same to your eye</option>
+            <option value="85">the same unless you zoom in and compare</option>
+            <option value="80">the same at a glance</option>
+            <option value="70">clean when shown small</option>
+          </select>
+        </div>
+        <div class="redo-actions">
+          <button class="btn sm" id="ov-apply">Compress again</button>
+          <button class="btn quiet sm" id="ov-reset" hidden>Reset</button>
+          <button class="btn quiet sm" id="remove-btn">Remove</button>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+</div><!-- /#app -->
+
+<!-- =============================== ABOUT ===============================
+     The page below the app: what this is, in plain words. The app itself asks
+     one question and shows the answer; this is for the person (and the search
+     engine) who arrives wanting to know what they are looking at before they
+     drop anything. It sits past the first screen and interrupts nothing.
+     ==================================================================== -->
+<section id="about" aria-labelledby="about-h">
+  <div class="about-inner">
+    <h1 id="about-h">Compress video in your browser</h1>
+    <p>Add an MP4, MOV, WebM or MKV and Pocketsize re-encodes it on your own device. It measures sample frames of the result against the same moments of your original, keeps the smallest version that still looks right, and then plays both clips side by side, in step, so you can check rather than trust.</p>
+    <p>Almost every other online video compressor uploads your file to a server first. That is a real wait on a large clip, and a real decision about a video that might be of your family. This one has no server to upload to: the encoding runs in your browser, using the video engine your browser already ships.</p>
+    <p>If the picture had to be made smaller on screen, or a size limit cost some sharpness, the same line that shows your saving says so. A number you cannot check is not evidence.</p>
+    <p>Your pictures never leave your computer: the compression runs in your browser, on your own device, and <a href="/nothing-is-uploaded">you can verify that yourself in about a minute</a>. After one visit it even works with no internet at all.</p>
+    <p>This page is <a href="/">Pocketsize</a> with the plan pre-set for one job. Nothing is locked — change any control once it is open.</p>
+    <h2>Which video formats can it read?</h2>
+    <p>MP4, MOV, WebM, MKV and most things a browser can already play, including the HEVC clips an iPhone records. Results are written as MP4 so they play everywhere.</p>
+    <h2>Is my video uploaded anywhere?</h2>
+    <p>No. There is no server and no upload path — the whole encode runs on your device, which you can verify yourself in about a minute.</p>
+    <h2>How long does a video take?</h2>
+    <p>Longer than a picture, because there is far more of it: expect a wait comparable to the clip's own running time. It reports what it is doing throughout, and you can stop it at any point.</p>
+    <h2>Will the quality drop?</h2>
+    <p>Only as far as you allow. The engine searches for the smallest encode that still measures as looking right, and reports the score it measured — with a second, independent measurement alongside it.</p>
+  </div>
+</section>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<!-- Feedforward during a drag: what letting go will do, and to how many. -->
+<div id="drop-say" hidden aria-hidden="true">Drop to add pictures</div>
+
+<!-- The shortcuts-and-about card, opened by the wordmark or "?". Help that
+     fits on one card, not a manual. -->
+<dialog id="help" aria-labelledby="help-title">
+  <h3 id="help-title">Pocketsize</h3>
+  <p>Every picture is saved several ways, measured against the original, and
+     the smallest one that still looks right is kept. Nothing ever leaves your
+     computer — after one visit, it even works offline.</p>
+  <div id="help-keys">
+    <div><kbd>Space</kbd><span>hold to flick between before and after — the fastest way to spot a difference</span></div>
+    <div><kbd>D</kbd><span>difference heatmap</span></div>
+    <div><kbd>F</kbd><span>focus mode — just the comparison</span></div>
+    <div><kbd>Esc</kbd><span>leave focus mode</span></div>
+    <div><kbd>&uarr;</kbd><kbd>&darr;</kbd><span>move through the pictures</span></div>
+    <div><kbd>Delete</kbd><span>remove the selected picture</span></div>
+    <div><kbd>?</kbd><span>this card</span></div>
+  </div>
+  <p class="muted">The same engine as a command line:
+    <code>pip install pocketsize</code> ·
+    <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank" rel="noopener">source &amp; licence</a></p>
+  <div class="row">
+    <button class="btn primary" id="help-close">Close</button>
+  </div>
+</dialog>
+
+<!-- JPEG has no alpha channel. Asking for JPEG with transparent artwork queued
+     is a question with two defensible answers, so it is asked once rather than
+     resolved silently in either direction. -->
+<dialog id="alpha-ask" aria-labelledby="alpha-ask-title">
+  <h3 id="alpha-ask-title">This format cannot store transparency</h3>
+  <p id="alpha-ask-body"></p>
+  <div class="row">
+    <button class="btn" id="alpha-cancel">Cancel</button>
+    <button class="btn" id="alpha-keep">Keep those as PNG</button>
+    <button class="btn primary" id="alpha-flatten">Flatten onto white</button>
+  </div>
+</dialog>
+
+<!-- Generated from pocketsize/destinations.py and loaded as a classic script,
+     because worker.js pulls in the same file with importScripts and cannot take
+     a module. The bridge hands its bindings to the module graph explicitly.
+     There is no inline EXECUTABLE script anywhere on this page, which is what
+     lets the CSP forbid inline script outright rather than allow-listing a
+     hash. (The JSON-LD block in the head is a data block: browsers never run
+     it, so the CSP never comes into play.) -->
+<script src="/destinations.js"></script>
+<script src="/js/destinations-bridge.js"></script>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

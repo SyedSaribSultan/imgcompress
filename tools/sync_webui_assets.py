@@ -38,7 +38,14 @@ BANNER = (
 )
 
 # Text files, banner-stamped so nobody edits the copy by mistake.
-STYLESHEETS = ["heyoz-tokens.css", "fonts.css"]
+#
+# `css/media-accent.css` is here rather than being retyped into the desktop
+# app's own <style> block for the reason that block is forbidden from naming a
+# colour at all: two copies of a value drift, and this one has to mean the same
+# thing in both interfaces or a video is purple in one product and not the
+# other. It is the only file from `css/` the desktop app needs, because it is
+# the only one that names a colour the token layer does not carry.
+STYLESHEETS = ["heyoz-tokens.css", "fonts.css", "css/media-accent.css"]
 
 # The faces themselves. Binary, copied verbatim.
 FONT_DIR = WEB / "fonts"
@@ -74,8 +81,14 @@ def stylesheet(name: str) -> str:
 
 
 def planned() -> list:
-    """[(destination, expected bytes)] for everything this tool owns."""
-    out = [(WEBUI / name, stylesheet(name).encode("utf-8")) for name in STYLESHEETS]
+    """[(destination, expected bytes)] for everything this tool owns.
+
+    Sources may sit in a subfolder of `web/` but the copies are always flat in
+    `webui/`, because the desktop app serves that directory as one place and
+    its links are written accordingly.
+    """
+    out = [(WEBUI / Path(name).name, stylesheet(name).encode("utf-8"))
+           for name in STYLESHEETS]
     for face in sorted(FONT_DIR.glob("*.woff2")):
         out.append((WEBUI / "fonts" / face.name, face.read_bytes()))
     for icon in ICONS:

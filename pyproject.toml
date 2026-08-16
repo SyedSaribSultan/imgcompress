@@ -47,6 +47,18 @@ full = [
 # A real application window instead of a browser tab.
 app = ["pywebview>=4.4"]
 dev = ["ruff>=0.5"]
+# Video. Kept out of `full` on purpose, for two reasons that are both real.
+#
+# PyAV needs Python 3.11, and this package still supports 3.9 - folding it into
+# `full` would quietly drop support for two interpreter versions to add a
+# feature most people installing an image compressor did not ask for.
+#
+# And the wheel carries a complete FFmpeg including x264 and x265, which are
+# GPL. Depending on it is fine and leaves this package's own licence alone;
+# *bundling* it into the standalone installers is a different act with
+# different obligations, and until that is resolved the installers must not
+# ship it. See docs/VIDEO_IMPLEMENTATION_PLAN.md, decision V3.
+video = ["av>=15; python_version >= '3.11'"]
 
 [project.scripts]
 pocketsize = "pocketsize.cli:main"

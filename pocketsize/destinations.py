@@ -35,6 +35,23 @@ EVERY_FORMAT = ("jpeg", "png8", "png", "webp", "webp-lossless", "avif")
 # percent, so this list stays conservative on purpose.
 STORED_AS_GIVEN = ("jpeg", "png8", "png")
 
+# Video formats are codec+container pairs, because neither half is a choice a
+# person can make on its own: AV1 is the smaller file and H.264 is the one that
+# plays on a 2019 iPad, and both are only useful inside a container the
+# destination will accept. Listed best-first; the bake-off decides.
+#
+# HEVC is absent on purpose and is not an oversight. Its patent position is
+# three pools deep with no internet-use exemption, which is why free tools
+# avoid emitting it. We decode whatever arrives, including HEVC from an iPhone;
+# we never write it.
+EVERY_VIDEO = ("av1-mp4", "h264-mp4")
+
+# The one pair that plays literally everywhere: every browser, every phone,
+# every office suite, every slide deck. Microsoft's own documentation
+# recommends exactly this for PowerPoint, and Keynote converts anything else
+# to it on import.
+PLAYS_ANYWHERE = ("h264-mp4",)
+
 
 @dataclass(frozen=True)
 class Destination:
@@ -56,6 +73,42 @@ class Destination:
     hidden: bool = False
     """Kept working for scripts written against an older version, not offered."""
 
+    # ---- video ----
+    #
+    # A destination answers the same question for a video as for an image, so
+    # video lives in this table rather than a parallel one. But video answers
+    # it with different numbers, and one field images never needed at all.
+
+    video_formats: tuple = ()
+    """Codec+container pairs this destination may write. Empty means this
+    destination does not accept video, and a video sent to it is reported and
+    skipped rather than guessed at."""
+
+    video_max_dimension: int = 0
+    """Longest edge in pixels for video. 0 never resizes. Separate from
+    `max_dimension` because the right answer differs: 2560 is a sensible photo
+    for a website and a needlessly expensive video for one."""
+
+    video_target: float = 0.0
+    """Minimum measured visual match for video, on the same 0-100 scale as
+    `ss2_target`. Scored on sampled frames, pooled worst-first."""
+
+    size_cap_mb: float = 0.0
+    """A hard byte ceiling this destination is defined by. 0 means none.
+
+    This is the field images never needed. An image destination is defined by
+    where it is going; a video destination is usually defined by a number
+    someone else chose - Discord's 10 MB, Gmail's 25 MB - and missing it by a
+    byte means the file is refused. When this is set the engine stops
+    searching for quality and starts encoding to fit, then measures and
+    reports what it actually achieved."""
+
+    audio: str = "copy"
+    """What to do with the sound. `copy` keeps the original track untouched
+    whenever the container can carry it - re-encoding lossy audio only ever
+    loses, and audio is a small fraction of a video's bytes. `aac` and `opus`
+    force a re-encode where the container demands it."""
+
 
 DESTINATIONS = {
     d.name: d
@@ -69,6 +122,12 @@ DESTINATIONS = {
             ssim_target=0.97,
             help="Smallest possible files using modern formats. "
                  "Best for anything that loads in a browser.",
+            video_formats=EVERY_VIDEO,
+            # 1920 rather than the image table's 2560: a browser plays video
+            # into a box, and the bytes a 4K master spends are not recovered
+            # by any codec when the player is 900px wide.
+            video_max_dimension=1920,
+            video_target=92.0,
         ),
         Destination(
             name="documents",
@@ -93,15 +152,53 @@ DESTINATIONS = {
             ssim_target=0.97,
             help="Only formats these tools store as-is. "
                  "Prevents files getting bigger when you import them.",
+            # The same conservatism, for the same reason: Microsoft documents
+            # MP4/H.264/AAC as what PowerPoint supports, and Keynote converts
+            # anything else to it on import. AV1 in a slide deck is a file
+            # that plays on the machine that made it and nowhere else.
+            video_formats=PLAYS_ANYWHERE,
+            video_max_dimension=1920,
+            video_target=90.0,
+            audio="aac",
         ),
         Destination(
             name="email",
-            label="Email or chat",
+            label="Email",
             formats=STORED_AS_GIVEN,
             max_dimension=1920,
             ss2_target=88.0,
             ssim_target=0.965,
             help="Small enough to attach, and opens everywhere.",
+            video_formats=PLAYS_ANYWHERE,
+            video_max_dimension=1920,
+            video_target=90.0,
+            # Gmail and Outlook.com both stop at 25 MB, and an attachment is
+            # base64-encoded on the way out, which adds about a third. 18 MB
+            # of video arrives as roughly 24 MB of mail. The cap is the real
+            # limit, not the advertised one.
+            size_cap_mb=18.0,
+        ),
+        Destination(
+            name="chat",
+            label="Discord or group chat",
+            formats=STORED_AS_GIVEN,
+            max_dimension=1920,
+            ss2_target=88.0,
+            ssim_target=0.965,
+            help="Fits Discord's free 10 MB limit, and plays everywhere.",
+            # H.264 first here, unlike `web`: a chat client renders an inline
+            # preview with whatever decoder it has, and the one that always
+            # works is H.264. AV1 stays on the list because when it fits under
+            # the cap at a higher measured score, it wins on merit.
+            video_formats=("h264-mp4", "av1-mp4"),
+            # 1280 rather than 1920: 10 MB is a hard ceiling, and the bits
+            # saved by not sending 1080p are bits the encoder spends on not
+            # looking like a smear. Below the crossover, smaller and sharper
+            # beats larger and mushy - the per-title finding, applied.
+            video_max_dimension=1280,
+            video_target=88.0,
+            size_cap_mb=10.0,
+            audio="aac",
         ),
         Destination(
             name="social",
@@ -117,6 +214,16 @@ DESTINATIONS = {
             ssim_target=0.965,
             help="Sized and saved so Instagram, X and Facebook "
                  "won't shrink it again themselves.",
+            # Every platform re-encodes video on arrival, so the job is not to
+            # be small - it is to stay above their floor so their encoder has
+            # something good to work from. YouTube documents 8 Mbps at 1080p30
+            # as its recommendation; a file that arrives already starved comes
+            # out the other side twice degraded.
+            video_formats=PLAYS_ANYWHERE,
+            video_max_dimension=1920,
+            video_target=90.0,
+            size_cap_mb=500.0,
+            audio="aac",
         ),
         Destination(
             name="thumbnail",
@@ -145,6 +252,9 @@ DESTINATIONS = {
             ss2_target=95.0,
             ssim_target=0.99,
             help="No resizing, highest fidelity. For print and originals.",
+            video_formats=EVERY_VIDEO,
+            video_max_dimension=0,
+            video_target=96.0,
         ),
         Destination(
             name="lossless",
@@ -194,6 +304,25 @@ def exists(name: str) -> bool:
 
 def formats_for(name: str) -> list:
     return list(get(name).formats)
+
+
+def video_formats_for(name: str) -> list:
+    return list(get(name).video_formats)
+
+
+def takes_video(name: str) -> bool:
+    """Whether this destination will accept a video at all.
+
+    A thumbnail destination is a real place to send an image and not a place
+    to send a video, and saying so is better than inventing an answer. The
+    caller reports and skips rather than guessing.
+    """
+    return exists(name) and bool(get(name).video_formats)
+
+
+def video_names() -> list:
+    """The destinations that accept video, in the order they are offered."""
+    return [d.name for d in visible() if d.video_formats]
 
 
 def effective_limit(name: str, requested: int) -> int:

@@ -3,19 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pocketsize — free, private image compression in your browser</title>
-<meta name="description" content="Compress PNG, JPEG, WebP and AVIF free, entirely in your browser. Every image is encoded several ways, measured, and the smallest one that still looks right is kept. Nothing is uploaded — after one visit it even works offline.">
+<title>Pocketsize — free, private image and video compression in your browser</title>
+<meta name="description" content="Compress images and video free, entirely in your browser. Nothing is uploaded. Every file is measured against the original, so you can see the quality was kept.">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070605">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#EEEFE9">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191B21">
 <link rel="canonical" href="https://pocketsize.vercel.app/">
 
 <!-- The social card. og.png is the one asset with words baked in; the alt
      carries the same words for everyone who cannot see it. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pocketsize">
-<meta property="og:title" content="Pocketsize — compress images in your browser">
-<meta property="og:description" content="Free, private image compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
+<meta property="og:title" content="Pocketsize — compress images and video in your browser">
+<meta property="og:description" content="Free, private image and video compression. Every result is measured against the original and proven on screen. Nothing is uploaded.">
 <meta property="og:url" content="https://pocketsize.vercel.app/">
 <meta property="og:image" content="https://pocketsize.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
@@ -64,9 +64,17 @@
   "@type": "WebApplication",
   "name": "Pocketsize",
   "url": "https://pocketsize.vercel.app/",
-  "description": "Free, private image compression in the browser. PNG, JPEG, WebP and AVIF. Every result is measured against the original. Nothing is uploaded, and it works offline.",
+  "description": "Free, private image and video compression in the browser. PNG, JPEG, WebP, AVIF, MP4 and WebM. Every result is measured against the original. Nothing is uploaded, and it works offline.",
   "applicationCategory": "MultimediaApplication",
   "operatingSystem": "Any — runs in the browser",
+  "isAccessibleForFree": true,
+  "featureList": [
+    "Image compression",
+    "Video compression",
+    "Runs on your device — nothing is uploaded",
+    "Every result measured against the original",
+    "Works offline after one visit"
+  ],
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
@@ -87,6 +95,7 @@
 <link rel="stylesheet" href="/fonts.css">
 
 <link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/css/media-accent.css">
 <link rel="stylesheet" href="/css/layout.css">
 <link rel="stylesheet" href="/css/controls.css">
 <link rel="stylesheet" href="/css/queue.css">
@@ -153,7 +162,7 @@
     <span id="save-label">Download</span>
   </button>
 
-  <input type="file" id="file-input" multiple accept="image/*" hidden>
+  <input type="file" id="file-input" multiple accept="image/*,video/*" hidden>
 
   <div id="batch" role="progressbar" aria-label="Batch progress"
        aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="batch-bar"></i></div>
@@ -335,7 +344,16 @@
     <div id="view" data-mode="split">
       <div id="frame">
         <img id="img-before" alt="Original image" decoding="async">
-        <div class="after"><img id="img-after" alt="Compressed image" decoding="async"></div>
+        <div class="after" id="img-after-wrap"><img id="img-after" alt="Compressed image" decoding="async"></div>
+        <!-- The same two layers again, for video. One #frame, one transform,
+             so the split, the divider and the zoom keep working unchanged -
+             and the compressed player follows the original's clock, because
+             two free-running players drift apart within seconds and a split
+             showing second 3 against second 5 is not a comparison. -->
+        <video id="vid-before" playsinline preload="metadata" hidden></video>
+        <div class="after" id="vid-after-wrap" hidden>
+          <video id="vid-after" playsinline preload="metadata" muted></video>
+        </div>
         <canvas id="img-diff" aria-label="Difference heatmap"></canvas>
       </div>
 
@@ -354,7 +372,23 @@
       <div class="segmented" role="group" aria-label="Comparison mode">
         <button id="mode-split" aria-pressed="true">Split</button>
         <button id="mode-after" aria-pressed="false">After</button>
+        <!-- Disabled on a video, with the reason in the title: the heatmap is
+             built from two decoded still frames, and a frame of a clip is not
+             the clip. A control that stayed live and drew nothing would be
+             worse than one that says what it is for. -->
         <button id="mode-diff" aria-pressed="false">Diff</button>
+      </div>
+      <!-- The video's own transport. It lives up here rather than on the
+           player because the invisible split slider covers the whole stage,
+           so native controls would be unreachable exactly when the comparison
+           is being used - and because a person can watch the original while
+           the compressed one is still being made. Pressing play moves both
+           sides; the compressed one follows. -->
+      <div class="transport" id="transport" hidden>
+        <button class="btn quiet sm" id="vid-play" aria-label="Play the video">Play</button>
+        <input type="range" id="vid-seek" class="scrub" min="0" max="1000" value="0"
+               aria-label="Position in the video">
+        <span class="z num" id="vid-time">0:00 / 0:00</span>
       </div>
       <span class="spacer"></span>
       <div class="zoom" role="group" aria-label="Zoom">
@@ -441,6 +475,9 @@
           <div><div class="k">Format</div><div class="v" id="s-format">—</div></div>
           <div><div class="k">Visual match</div><div class="v num" id="s-score">—</div></div>
           <div><div class="k">Dimensions</div><div class="v num" id="s-dims">—</div></div>
+          <!-- Video only: how long the clip runs, which is the fact that
+               explains why this one took minutes. -->
+          <div id="s-length-cell" hidden><div class="k">Length</div><div class="v num" id="s-length">—</div></div>
           <div><div class="k">Time</div><div class="v num" id="s-time">—</div></div>
         </div>
         <p class="note" id="s-note" hidden></p>
@@ -492,14 +529,20 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Pocketsize — compress images in your browser, free and private</h1>
+    <h1 id="about-h">Pocketsize — compress images and video in your browser, free and private</h1>
     <p>Pocketsize makes pictures smaller. Add PNG, JPEG, WebP, GIF, BMP or TIFF
        files and it saves each one several ways — as JPEG, PNG, WebP and AVIF —
        measures every version against your original, and keeps the smallest one
        that still looks right. You never have to take its word for it: the
        original and the result sit side by side with a slider, a difference
        view, and a measured visual-match score for every file.</p>
-    <p>Your pictures never leave your computer. There is no upload, no server
+    <p>It compresses video the same way. Drop in an MP4, MOV, WebM or MKV and
+       it re-encodes the clip, measures the result against the original frame
+       by frame, and keeps the smallest version that still looks right — then
+       plays the two side by side, in step, so you can check. A video going to
+       a chat app is held under that app's size limit, and if fitting the limit
+       cost some sharpness, the same line that shows the saving says so.</p>
+    <p>Your pictures and videos never leave your computer. There is no upload, no server
        and no account — the compression runs on your own device, inside your
        browser. That is not a promise to take on trust:
        <a href="/nothing-is-uploaded">here is how to check it yourself, in
@@ -522,6 +565,10 @@
        <a href="/png-to-avif">PNG to AVIF</a> ·
        <a href="/compress-for-email">for email</a> ·
        <a href="/bulk-image-compressor">a whole folder at once</a>.</p>
+    <p>And for video:
+       <a href="/compress-video">compress video</a> ·
+       <a href="/compress-video-for-discord">for Discord's 10 MB limit</a> ·
+       <a href="/compress-video-for-email">small enough to email</a>.</p>
     <p>Pocketsize is free and open source. The same engine is also a command
        line, for folders and scripts:
        <code>pip install pocketsize</code> ·

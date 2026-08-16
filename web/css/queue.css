@@ -100,6 +100,30 @@
 }
 .row .name-tail { flex: none; }
 
+/* What this row is holding, when that is not obvious from the thumbnail: a
+   video, and how long it runs. It sits after the name and never gives way to
+   truncation, because "why is this one taking two minutes" is answered here
+   and nowhere else on the row. */
+.row .kind {
+  flex: none;
+  margin-left: var(--s-2);
+  padding: 0 var(--s-1);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-ink-3);
+}
+
+/* Decision D5: video is purple where an image is the brand accent. The badge
+   already says "Video" in words and carries the running time - the colour is
+   a second and faster signal in a mixed queue, never the only one, so a
+   person who does not separate these two hues loses nothing. */
+.row[data-kind="video"] .kind {
+  border-color: var(--c-media-video);
+  color: var(--c-media-video);
+}
+
 /* The row's own actions, revealed by attention: hover or focus on a pointer,
    always present where there is no hover to have. They sit over the size
    column so nothing jumps when they appear. */

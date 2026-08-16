@@ -3,6 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- This page is handed the run's API token, so anything that could execute
+     here could drive every local route - reading any file the person can
+     read and writing anywhere they can write. There is no injection to
+     exploit today (every untrusted string goes through escapeHtml or
+     textContent), but the blast radius if one ever landed is total, so the
+     floor is set here rather than trusted to that discipline holding.
+
+     `default-src 'none'` denies everything not named below. The inline
+     script and styles are the app's own and unavoidable without a build
+     step this project deliberately does not have; `connect-src 'self'` is
+     the load-bearing line - it means no amount of injected script can send
+     a byte anywhere but this loopback server, which is the desktop half of
+     the same promise the web app's CSP makes.
+
+     `frame-ancestors` is deliberately NOT here: it is ignored when delivered
+     in a meta element, and a directive that silently does nothing is worse
+     than an absent one. The server sends it as a real header instead. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Pocketsize</title>
 <!-- The same design system the web app loads. Both files are copied in from
      web/ by tools/sync_webui_assets.py and checked by CI, so the two
@@ -11,6 +29,10 @@
 <link rel="icon" href="/webui/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/webui/heyoz-tokens.css">
 <link rel="stylesheet" href="/webui/fonts.css">
+<!-- The one named colour the token layer does not carry: the video accent
+     (D5). Shared with the browser app rather than retyped here, because this
+     file is not allowed to name a colour and two copies of a value drift. -->
+<link rel="stylesheet" href="/webui/media-accent.css">
 <style>
 /* ---------------------------------------------------------------------------
    The interface is chrome around photographs, so it stays achromatic. Exactly
@@ -305,6 +327,25 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
   font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
   color: var(--oz-color-content-tertiary);
 }
+/* Decision D5: video is purple where a picture is the brand accent. The badge
+   says "Video" in words and carries the running time, so the colour is a
+   second and faster signal in a mixed queue rather than the only one. It also
+   answers a question the desktop queue could not: a video has no image
+   thumbnail, so without this a clip was a row with an empty square.
+
+   The value itself is NOT here. This file is not one of the two allowed to
+   name a colour, so the purple is defined once in web/css/base.css - which
+   the app links above as part of the shared design system - and consumed
+   here by name, exactly like every other colour on this page. */
+.row .kind {
+  display: inline-block;
+  margin-right: var(--oz-space-2);
+  padding: 0 var(--oz-space-2);
+  border: 1px solid var(--c-media-video);
+  border-radius: var(--app-radius-sm);
+  color: var(--c-media-video);
+  font-size: var(--oz-text-body-xs);
+}
 .row .tail {
   display: inline-flex; align-items: center; gap: var(--oz-space-3);
   justify-content: flex-end;
@@ -426,6 +467,8 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 /* The viewport is sized in JS to the image's fitted box, so the split divider
    lines up with the visible edges instead of with a letterboxed container. */
 .viewport { position: relative; line-height: 0; touch-action: none; }
+.viewport video { display: block; width: 100%; height: auto; }
+.viewport .after video { position: absolute; inset: 0; width: 100%; height: 100%; }
 .viewport img {
   display: block; width: 100%; height: 100%; object-fit: contain;
   user-select: none; -webkit-user-drag: none;
@@ -612,6 +655,12 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
       <div class="viewport" id="viewport">
         <img id="img-before" alt="Original image">
         <div class="after"><img id="img-after" alt="Compressed image"></div>
+        <video id="vid-before" hidden muted playsinline loop
+               aria-label="Original video"></video>
+        <div class="after" id="vid-after-wrap" hidden>
+          <video id="vid-after" muted playsinline loop
+                 aria-label="Compressed video"></video>
+        </div>
         <input class="split-input" type="range" id="split" min="0" max="100" value="50"
                aria-label="Comparison split position">
         <div class="divider" id="divider">
@@ -712,6 +761,10 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
               <div class="v" id="s-floor">&mdash;</div></div>
             <div class="stat"><div class="k">Dimensions</div>
               <div class="v" id="s-dims">&mdash;</div></div>
+            <div class="stat" id="s-duration-row" hidden><div class="k">Running time</div>
+              <div class="v" id="s-duration">&mdash;</div></div>
+            <div class="stat" id="s-witness-row" hidden><div class="k">Second opinion</div>
+              <div class="v" id="s-witness">&mdash;</div></div>
           </div>
           <div class="note" id="s-note" hidden></div>
           <div class="warn" id="s-warn" hidden></div>
@@ -841,14 +894,50 @@ async function api(path, body, opts = {}) {
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 }
 const imgURL = (id, which) => `/api/image/${id}/${which}?token=${encodeURIComponent(TOKEN)}`;
+const vidURL = (id, which) => `/api/video/${id}/${which}?token=${encodeURIComponent(TOKEN)}`;
+
+/* Two players, one clock. Comparing video means the same instant on both
+   sides - a split that shows second 3 against second 5 is not a comparison,
+   it is two videos. The compressed side follows the original rather than both
+   running free, because two independent players drift apart within seconds. */
+function syncPlayers(before, after) {
+  if (before.dataset.bound === "1") return;
+  before.dataset.bound = "1";
+  const follow = () => {
+    if (!after.src || after.readyState < 1) return;
+    if (Math.abs(after.currentTime - before.currentTime) > 0.08) {
+      after.currentTime = before.currentTime;
+    }
+  };
+  before.addEventListener("timeupdate", follow);
+  before.addEventListener("seeked", follow);
+  before.addEventListener("play", () => { follow(); after.play().catch(() => {}); });
+  before.addEventListener("pause", () => after.pause());
+}
 
 /* ------------------------------- helpers -------------------------------- */
+/* Numbers follow the reader. Most of the world writes 1,4 MB where this used
+   to hard-code 1.4 MB, and on a page whose whole argument is a measured
+   number that is not cosmetic - "90,5" read as "905" is a different claim.
+   Built once each: constructing a formatter is the expensive part and the
+   queue formats several numbers per row per frame. The COPY here is still
+   English, which is a real limit and a deliberate one - that needs a person
+   who speaks the language, not a machine translation. */
+const WHOLE = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const ONE_DP = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 1, maximumFractionDigits: 1,
+});
+/* The SSIM fallback scale is 0-1, so it needs the decimals its own scale
+   implies rather than the one-decimal shape the 0-100 scale uses. */
+const SSIM_DP = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 3, maximumFractionDigits: 3,
+});
 function human(n) {
   if (!n && n !== 0) return "—";
   const u = ["B", "KB", "MB", "GB"];
   let v = n, i = 0;
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-  return `${i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
+  return `${i === 0 ? WHOLE.format(v) : ONE_DP.format(v)} ${u[i]}`;
 }
 const shortPath = (p) => (!p ? "Choose a folder…" : p.length > 44 ? "…" + p.slice(-43) : p);
 
@@ -889,9 +978,24 @@ function statusLine(it) {
   if (it.status === "failed") return `<span class="err">${escapeHtml(it.error || "failed")}</span>`;
   if (it.status === "queued") return "waiting";
   if (it.status === "working") return "encoding…";
-  const pct = it.saved_pct > 0 ? `−${it.saved_pct.toFixed(0)}%` : "no gain";
+  const pct = it.saved_pct > 0 ? `−${WHOLE.format(it.saved_pct)}%` : "no gain";
+  /* The cap disclosure rides on the SAME line as the percentage, at the same
+     size - never after, never smaller. `capped` is a flag the engine posts;
+     this line never infers it from the numbers. */
+  const capped = it.capped ? ", not as sharp to fit the size limit" : "";
   const tail = it.status === "saved" ? ` <span class="save">saved</span>` : "";
-  return `${human(it.original_bytes)} → ${human(it.new_bytes)} · ${pct}${tail}`;
+  return `${human(it.original_bytes)} → ${human(it.new_bytes)} · ${pct}${capped}${tail}`;
+}
+
+/* A running time as a clock writes it: 0:07, 2:31, 1:04:20. */
+function clockTime(seconds) {
+  if (!isFinite(seconds) || seconds <= 0) return "";
+  const whole = Math.round(seconds);
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const s = whole % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
@@ -926,7 +1030,8 @@ function renderQueue() {
         `background-image:url('${imgURL(it.id, "before")}')`}"></span>
       <span class="cell">
         <span class="name">${escapeHtml(it.name)}</span>
-        <span class="meta">${statusLine(it)}</span>
+        <span class="meta">${it.is_video ? `<span class="kind">Video${
+          it.duration ? " · " + clockTime(it.duration) : ""}</span> ` : ""}${statusLine(it)}</span>
       </span>
       <span class="cell">
         <span class="track"><i style="--p:${ready && saved > 0
@@ -1004,6 +1109,9 @@ function renderWorking(it) {
     "Trying a few ways to shrink this, keeping only the one that still looks "
     + "right next to your original.";
   const frac = it.status === "working" ? (it.frac || 0.05) : 0;
+  // toFixed, not Intl: this is a CSS value, and a locale that writes a
+  // comma decimal would produce "0,412" - which CSS discards, leaving the
+  // bar stuck at zero. Numbers a MACHINE reads stay machine-formatted.
   $("working-bar").style.setProperty("--p", frac.toFixed(3));
   $("working-now").textContent = it.phase || "";
 }
@@ -1037,11 +1145,32 @@ function renderInspector(it) {
   if (!it) return;
   $("insp-name").textContent = it.name;
 
+  const isVideo = it.is_video === true;
+  const vBefore = $("vid-before"), vAfter = $("vid-after");
+  const vWrap = $("vid-after-wrap");
+  $("img-before").hidden = isVideo;
+  $("img-before").nextElementSibling.hidden = isVideo;
+  vBefore.hidden = !isVideo;
+  vWrap.hidden = !isVideo;
+  if (isVideo) {
+    const wantV = vidURL(it.id, "before");
+    if (vBefore.dataset.src !== wantV) {
+      vBefore.dataset.src = wantV; vBefore.src = wantV; vBefore.controls = true;
+    }
+    const readyV = it.status === "done" || it.status === "saved";
+    const wantVA = readyV ? vidURL(it.id, "after") + `&v=${it.new_bytes}` : "";
+    if (vAfter.dataset.src !== wantVA) {
+      vAfter.dataset.src = wantVA; vAfter.src = wantVA || "";
+    }
+    syncPlayers(vBefore, vAfter);
+  }
+
   const before = $("img-before"), after = $("img-after");
-  const wantBefore = imgURL(it.id, "before");
+  const wantBefore = isVideo ? "" : imgURL(it.id, "before");
   if (before.dataset.src !== wantBefore) { before.dataset.src = wantBefore; before.src = wantBefore; }
   const ready = it.status === "done" || it.status === "saved";
-  const wantAfter = ready ? imgURL(it.id, "after") + `&v=${it.new_bytes}` : "";
+  const wantAfter = (ready && !isVideo)
+    ? imgURL(it.id, "after") + `&v=${it.new_bytes}` : "";
   if (after.dataset.src !== wantAfter) { after.dataset.src = wantAfter; after.src = wantAfter || ""; }
   $("viewport").classList.toggle("solo", mode === "after" || !ready);
   $("divider").style.display = mode === "split" && ready ? "" : "none";
@@ -1053,8 +1182,12 @@ function renderInspector(it) {
   $("s-size").innerHTML = ready
     ? `${human(it.new_bytes)} <small>from ${human(it.original_bytes)}</small>`
     : (it.status === "failed" ? "—" : "working…");
+  /* The engine's `capped` flag rides on the same line as the percentage, at
+     full size. A quality traded away to meet a byte limit is the least
+     trustworthy number on the page unless it says so where the number is. */
+  const cappedLine = it.capped ? ", not as sharp to fit the size limit" : "";
   $("s-saved").innerHTML = ready
-    ? (it.saved_pct > 0 ? `−${it.saved_pct.toFixed(0)}% <small>${human(it.original_bytes - it.new_bytes)}</small>`
+    ? (it.saved_pct > 0 ? `−${WHOLE.format(it.saved_pct)}%${cappedLine} <small>${human(it.original_bytes - it.new_bytes)}</small>`
                         : "none")
     : "—";
   $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
@@ -1064,18 +1197,28 @@ function renderInspector(it) {
   // that scale is 0-1 and calling it the same thing would be misleading.
   $("s-metric-k").textContent = it.metric === "ssim" ? "SSIM" : "Visual match";
   $("s-score").textContent = it.score == null ? (ready ? "pixel-identical" : "—")
-    : (it.metric === "ssim" ? it.score.toFixed(4)
+    : (it.metric === "ssim" ? SSIM_DP.format(it.score)
                             : `${Math.round(it.score)} / 100`);
   $("s-dims").innerHTML = !it.width ? "—"
     : (it.out_width && it.out_width !== it.width
         ? `${it.out_width}×${it.out_height} <small>from ${it.width}×${it.height}</small>`
         : `${it.width}×${it.height}`);
   const floor = it.override?.quality_target ?? state.settings.quality_target;
-  $("s-floor").innerHTML = `${state.settings.metric === "ssim" ? Number(floor).toFixed(2) : floor}` +
+  $("s-floor").innerHTML = `${state.settings.metric === "ssim" ? SSIM_DP.format(Number(floor)) : floor}` +
     (it.override ? ' <small>override</small>' : "");
 
+  /* The video facts the engine already posts and this panel used to drop on
+     the floor: what happened to the sound, how long the clip runs, and the
+     second opinion from the independent metric. Facts, not inferences. */
+  $("s-duration-row").hidden = !(isVideo && it.duration > 0);
+  $("s-duration").textContent = clockTime(it.duration) || "—";
+  $("s-witness-row").hidden = !(isVideo && it.witness > 0);
+  $("s-witness").textContent = it.witness > 0
+    ? `${ONE_DP.format(it.witness)} dB (XPSNR)` : "—";
+
   const note = $("s-note");
-  note.hidden = !it.note; note.textContent = it.note || "";
+  const notes = [it.note, it.audio_note].filter(Boolean);
+  note.hidden = !notes.length; note.textContent = notes.join(" · ");
   const warn = $("s-warn");
   const messages = [...(it.warnings || [])];
   if (it.error) messages.unshift(it.error);
@@ -1102,7 +1245,7 @@ function renderInspector(it) {
 
     const scoreOf = (c) => (c.score == null ? "—"
       : c.score >= 100 ? "identical"
-      : it.metric === "ssim" ? c.score.toFixed(3)
+      : it.metric === "ssim" ? SSIM_DP.format(c.score)
       : `${Math.round(c.score)}/100`);
 
     // One plain sentence per version that lost, same as the web app.
@@ -1165,7 +1308,7 @@ function renderSummary() {
   const saved = (t.before || 0) - (t.after || 0);
   $("t-sizes").textContent = t.done ? `${human(t.before)} → ${human(t.after)}` : "";
   $("t-saved").textContent = t.done && saved > 0
-    ? `saved ${human(saved)} (${((saved / t.before) * 100).toFixed(0)}%)` : "";
+    ? `saved ${human(saved)} (${WHOLE.format((saved / t.before) * 100)}%)` : "";
   $("folder-path").textContent = shortPath(state.last_folder);
   const n = t.unsaved || 0;
   const btn = $("save-btn");

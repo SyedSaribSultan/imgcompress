@@ -69,6 +69,24 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://pocketsize.vercel.app/compress-video</loc>
+    <lastmod>2026-08-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pocketsize.vercel.app/compress-video-for-discord</loc>
+    <lastmod>2026-08-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://pocketsize.vercel.app/compress-video-for-email</loc>
+    <lastmod>2026-08-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://pocketsize.vercel.app/nothing-is-uploaded</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>

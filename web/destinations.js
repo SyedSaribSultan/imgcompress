@@ -19,6 +19,7 @@ const DESTINATION_ORDER = [
   "web",
   "documents",
   "email",
+  "chat",
   "social",
   "thumbnail",
   "original"
@@ -40,6 +41,11 @@ const DESTINATION_FORMATS = {
     "png"
   ],
   "email": [
+    "jpeg",
+    "png8",
+    "png"
+  ],
+  "chat": [
     "jpeg",
     "png8",
     "png"
@@ -87,10 +93,16 @@ const DESTINATION_NUMBERS = {
     "help": "Only formats these tools store as-is. Prevents files getting bigger when you import them."
   },
   "email": {
-    "label": "Email or chat",
+    "label": "Email",
     "maxDimension": 1920,
     "qualityTarget": 88.0,
     "help": "Small enough to attach, and opens everywhere."
+  },
+  "chat": {
+    "label": "Discord or group chat",
+    "maxDimension": 1920,
+    "qualityTarget": 88.0,
+    "help": "Fits Discord's free 10 MB limit, and plays everywhere."
   },
   "social": {
     "label": "Social media post",
@@ -109,6 +121,72 @@ const DESTINATION_NUMBERS = {
     "maxDimension": 0,
     "qualityTarget": 95.0,
     "help": "No resizing, highest fidelity. For print and originals."
+  }
+};
+
+/* Which video formats each destination may write, as codec+container
+ * pairs. A destination missing from this map takes no video. */
+const DESTINATION_VIDEO_FORMATS = {
+  "web": [
+    "av1-mp4",
+    "h264-mp4"
+  ],
+  "documents": [
+    "h264-mp4"
+  ],
+  "email": [
+    "h264-mp4"
+  ],
+  "chat": [
+    "h264-mp4",
+    "av1-mp4"
+  ],
+  "social": [
+    "h264-mp4"
+  ],
+  "original": [
+    "av1-mp4",
+    "h264-mp4"
+  ]
+};
+
+/* Video's own frame size, visual match, byte ceiling and sound rule. */
+const DESTINATION_VIDEO_NUMBERS = {
+  "web": {
+    "maxDimension": 1920,
+    "qualityTarget": 92.0,
+    "sizeCapMb": 0.0,
+    "audio": "copy"
+  },
+  "documents": {
+    "maxDimension": 1920,
+    "qualityTarget": 90.0,
+    "sizeCapMb": 0.0,
+    "audio": "aac"
+  },
+  "email": {
+    "maxDimension": 1920,
+    "qualityTarget": 90.0,
+    "sizeCapMb": 18.0,
+    "audio": "copy"
+  },
+  "chat": {
+    "maxDimension": 1280,
+    "qualityTarget": 88.0,
+    "sizeCapMb": 10.0,
+    "audio": "aac"
+  },
+  "social": {
+    "maxDimension": 1920,
+    "qualityTarget": 90.0,
+    "sizeCapMb": 500.0,
+    "audio": "aac"
+  },
+  "original": {
+    "maxDimension": 0,
+    "qualityTarget": 96.0,
+    "sizeCapMb": 0.0,
+    "audio": "copy"
   }
 };
 
