@@ -776,7 +776,16 @@ class Handler(BaseHTTPRequestHandler):
         is the same reasoning the byte-range player downstream is built on.
 
         Returns the number of bytes written, or None if the declared length
-        is missing, negative, or past the limit for this kind of file.
+        is missing, negative, past the limit for this kind of file, or if the
+        body arrived SHORT of what it declared.
+
+        That last case is the one worth naming. A dropped connection or a
+        browser tab closed mid-upload ends the read early, and the obvious
+        version of this loop returns the partial count - which is truthy, so
+        the caller accepts a half-written file and queues it as if it were
+        whole. The person then gets a corrupt result, or a confusing decode
+        error, for a file that was never fully delivered. A body that did not
+        all arrive is not a body.
         """
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -792,6 +801,8 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 handle.write(chunk)
                 written += len(chunk)
+        if written != length:
+            return None
         return written
 
     def _serve_static(self, route: str):
@@ -968,10 +979,24 @@ class Handler(BaseHTTPRequestHandler):
             # Streamed to disk rather than read into memory first: a 2 GB clip
             # buffered whole is 2 GB resident on the machine that then has to
             # encode it.
+            #
+            # The declared size decides the answer before a byte is read, so
+            # "too large" is distinguishable from "did not all arrive" - two
+            # different things to tell a person, and the second one used to be
+            # invisible: a dropped connection left a partial file queued as if
+            # it were whole.
+            declared = self.headers.get("Content-Length") or "0"
+            try:
+                too_big = int(declared) > limit
+            except ValueError:
+                too_big = False
             written = self._spool_body(target, limit)
             if written is None:
                 target.unlink(missing_ok=True)
-                return self._json({"error": "file too large"}, 413)
+                if too_big:
+                    return self._json({"error": "file too large"}, 413)
+                return self._json(
+                    {"error": "the upload did not finish arriving"}, 400)
             if not written:
                 target.unlink(missing_ok=True)
                 return self._json({"error": "empty upload"}, 400)

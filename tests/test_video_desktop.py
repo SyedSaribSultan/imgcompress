@@ -222,6 +222,82 @@ class TheDesktopVideoPath(unittest.TestCase):
                          if video.is_video_path(name) else server.MAX_BODY)
                 self.assertEqual(limit, expected)
 
+    def test_an_upload_that_stops_early_is_refused_not_queued(self):
+        """A dropped connection or a tab closed mid-upload ends the read
+        early. The obvious streaming loop returns the partial byte count,
+        which is truthy - so a half-written file was accepted and queued as
+        though it were whole, and the person got a corrupt result or a
+        confusing decode error for a file that never fully arrived.
+
+        Driven through the real server rather than by calling the helper, so
+        what is tested is the path an actual upload takes.
+        """
+        import http.client
+        import threading
+
+        from pocketsize.server import serve
+
+        httpd, session, url = serve(port=0, workers=1)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            token = url.split("token=")[1]
+            port = httpd.server_address[1]
+            payload = (FIXTURES / "still.mp4").read_bytes()
+
+            def upload(body, declared, name):
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.putrequest("POST", "/api/upload")
+                conn.putheader("X-Token", token)
+                conn.putheader("X-Filename", name)
+                conn.putheader("Content-Length", str(declared))
+                conn.endheaders()
+                try:
+                    conn.send(body)
+                    response = conn.getresponse()
+                    return response.status, response.read().decode()
+                finally:
+                    conn.close()
+
+            # Honest upload: accepted.
+            status, _ = upload(payload, len(payload), "whole.mp4")
+            self.assertEqual(status, 200)
+
+            # Truncated: half the body against the full declaration, then the
+            # socket is shut down for writing - which is what a dropped
+            # connection actually looks like to the server, and is the only
+            # thing that ends its read. Sent raw rather than through
+            # http.client, which has no way to say "and now stop".
+            import socket
+
+            sock = socket.create_connection(("127.0.0.1", port), timeout=30)
+            try:
+                half = payload[:len(payload) // 2]
+                head = (
+                    f"POST /api/upload HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+                    f"X-Token: {token}\r\nX-Filename: cut-short.mp4\r\n"
+                    f"Content-Length: {len(payload)}\r\n\r\n"
+                ).encode()
+                sock.sendall(head + half)
+                sock.shutdown(socket.SHUT_WR)
+                answer = b""
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    answer += chunk
+            finally:
+                sock.close()
+            self.assertIn(b"400", answer.split(b"\r\n")[0], answer[:200])
+            self.assertIn(b"did not finish", answer)
+
+            # And nothing half-written was kept or queued.
+            names = [i["name"] for i in session.snapshot()["items"]]
+            self.assertIn("whole.mp4", names)
+            self.assertNotIn("cut-short.mp4", names)
+        finally:
+            httpd.shutdown()
+            session.cleanup()
+
     def test_the_desktop_page_carries_a_content_security_policy(self):
         """The page is handed the run's API token, so anything that could
         execute in it could read and write any file the person can. There is
