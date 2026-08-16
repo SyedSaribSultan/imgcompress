@@ -22,17 +22,26 @@
    app sits #about, the page's plain-words explanation of itself. Nothing about
    the app's own layout changed - the viewport-sized grid simply lives on #app
    instead of on body. */
+/* The document scrolls, not body. `overflow-y: auto` here made BODY the scroll
+   container, and a sticky element cannot stick beyond its own parent's box - the
+   bar sat in #app, #app ended at the first screen, and the bar left with it the
+   moment the reader scrolled into #about. Left as the default, the viewport does
+   the scrolling and the sticky bar spans the whole page. overflow-x stays: it is
+   what stops a wide region propping the page open sideways, and clip (unlike
+   hidden) does not create a scroll container to break sticky again. */
 body {
   height: auto;
   min-height: 100dvh;
-  overflow-y: auto;
   overflow-x: clip;
 }
 
+/* #app now wraps the dashboard alone - the bar moved out to be a child of the
+   document, because sticky cannot carry an element past its own parent's box.
+   What is left is a single-row grid whose job is unchanged: give the regions one
+   grid parent, and fill what is left of the first screen under the bar. */
 #app {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100dvh;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* ------------------------------- the about ------------------------------- */
@@ -90,8 +99,15 @@ body {
    the bar silently propped the entire body grid open to 497px and every region
    under it inherited the overflow. Wrapping to a second line is the honest
    answer; shrinking the buttons would mean truncating the labels. */
+/* Sticky, because the document scrolls past the app into #about and the bar
+   carries the two things you may want at any depth: Add pictures, and the
+   download of what has already finished. Scrolling down to read what the page
+   is should not mean scrolling back up to act on it. It sticks to the viewport
+   rather than to #app, so it survives the whole scroll. */
 #bar {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -161,6 +177,17 @@ body {
     "side stage"
     "side facts";
   min-height: 0;
+}
+
+/* What "fills the first screen" means now that the bar is outside #app: the
+   dashboard takes the viewport less the bar's own height. Scoped to the wide
+   layout on purpose - the narrow layout below deliberately lets this be
+   content-height, and constraining it there is the worst bug this file has
+   shipped; the note at the breakpoint spells it out. `--bar-h` is measured from
+   the real bar by js/main.js rather than guessed, because the bar wraps to a
+   second line on small windows. */
+@media (min-width: 861px) {
+  #app { height: calc(100dvh - var(--bar-h, 57px)); }
 }
 
 /* ---- focus mode: the comparison, and nothing else -----------------------

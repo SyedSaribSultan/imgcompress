@@ -24,4 +24,9 @@ tests/real_world_fixtures/
 # vercel
 .vercel/
 
+# scraped research scratch. What was concluded from it belongs in docs/ -
+# THIRD_PARTY_NOTICES.md and PACKAGING.md carry the licensing findings - so the
+# raw pages are working notes, not repo content.
+.firecrawl/
+
 tests/*.log

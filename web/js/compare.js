@@ -373,8 +373,14 @@ function paintMedia(it, hasResult) {
     if (it.beforeURL && $("img-before").getAttribute("src") !== it.beforeURL) {
       $("img-before").src = it.beforeURL;
     }
-    if (hasResult && $("img-after").getAttribute("src") !== it.afterURL) {
-      $("img-after").src = it.afterURL;
+    /* Reconcile to what this item actually has, the way the video layers below
+       do. Guarding the assignment on `hasResult` used to leave the element
+       holding the previous item's blob URL, so selecting a picture that had not
+       been compressed yet showed the last one's result as if it were its own. */
+    const wantAfter = hasResult ? it.afterURL : "";
+    if (($("img-after").getAttribute("src") || "") !== wantAfter) {
+      if (wantAfter) $("img-after").src = wantAfter;
+      else $("img-after").removeAttribute("src");
       diffFor = null;
     }
     return;

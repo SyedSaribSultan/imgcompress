@@ -302,6 +302,34 @@ try {
        "the placeholder is gone once there is a preview");
   }
 
+  /* ---- a picture without a result never wears the last one's ------------
+   * Selecting an item that has no `afterURL` used to leave the compressed
+   * layer holding the previously-selected item's blob URL, so an image that
+   * had not been compressed yet showed someone else's result as its own. The
+   * two sides have to belong to the same picture at all times. */
+  {
+    const stale = await page.evaluate(async () => {
+      const first = state.items[0];
+      imgc.select(first.id);
+      await new Promise((r) => requestAnimationFrame(r));
+      const shown = document.getElementById("img-after").getAttribute("src");
+
+      // A second picture, deliberately back to having no result of its own.
+      const other = state.items[1];
+      if (other.afterURL) URL.revokeObjectURL(other.afterURL);
+      other.afterURL = null;
+      other.fmt = null;
+      imgc.select(other.id);
+      await new Promise((r) => requestAnimationFrame(r));
+      return { shown, after: document.getElementById("img-after").getAttribute("src") };
+    });
+    ok(!!stale.shown, "the first picture's result is on the stage to begin with");
+    ok(!stale.after,
+       `a picture with no result shows none (${stale.after || "empty"})`);
+    ok(stale.after !== stale.shown,
+       "and never the previously-selected picture's result");
+  }
+
   // ---- inspector renders ---------------------------------------------------
   await page.evaluate(() => imgc.select(state.items[0].id));
   await page.waitForFunction(() => document.getElementById("img-before").naturalWidth > 0);

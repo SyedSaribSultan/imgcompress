@@ -111,14 +111,14 @@
   needs JavaScript turned on. Nothing is uploaded either way.</p>
 </noscript>
 
-<!-- The app fills the first screen exactly; #about is what a scroll past it
-     finds. The wrapper exists so the shell can be viewport-sized while the
-     document itself is allowed to be taller than the viewport. -->
-<div id="app">
-
 <!-- ============================== THE BAR ==============================
      Intake and output. These two actions apply to everything in the run, which
      is why they live above the regions rather than inside any one of them.
+
+     A child of body rather than of #app, and that placement is load-bearing: a
+     sticky element cannot travel outside its own parent's box, so while the bar
+     lived inside the viewport-height #app it came unstuck the moment the reader
+     scrolled past the first screen into #about. Its parent is now the document.
      ==================================================================== -->
 <header id="bar">
   <!-- The wordmark opens the shortcuts-and-about card: people expect a logo
@@ -167,6 +167,11 @@
   <div id="batch" role="progressbar" aria-label="Batch progress"
        aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="batch-bar"></i></div>
 </header>
+
+<!-- The dashboard fills the first screen exactly; #about is what a scroll past
+     it finds. The wrapper stays so the regions keep one grid parent, but it no
+     longer wraps the bar - see the note on the bar above. -->
+<div id="app">
 
 <main id="dash">
 

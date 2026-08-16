@@ -419,6 +419,21 @@ function bindStage() {
 
   // A resize changes the fit scale and therefore where the divider cuts.
   addEventListener("resize", () => { applyZoom(); applySplit(); });
+
+  measureBar();
+}
+
+/* The dashboard fills the screen below the bar, so it needs the bar's height as
+   a number. Measured rather than guessed: the bar wraps to a second line on a
+   small window, and a guessed height was already the cause of one misplaced
+   element in this shell (see #batch in layout.css). A ResizeObserver keeps it
+   true through wrapping, theme changes and font loading alike. */
+function measureBar() {
+  const bar = $("bar");
+  const write = () => document.documentElement.style.setProperty(
+    "--bar-h", `${Math.round(bar.getBoundingClientRect().height)}px`);
+  write();
+  if (typeof ResizeObserver === "function") new ResizeObserver(write).observe(bar);
 }
 
 function bindFacts() {
