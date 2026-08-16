@@ -208,7 +208,8 @@ export function cancelAll() {
  *
  *   out  { type: "probe" }                  -> what can this browser encode?
  *   out  { type: "job", id, file, settings } settings: maxDimension,
- *                                            qualityTarget, formats
+ *                                            qualityTarget, formats,
+ *                                            sizeCapBytes
  *   in   { type: "caps", caps }             { webcodecs, formats, hardware }
  *   in   { type: "progress", id, stage, fraction, detail }
  *   in   { type: "done", id, result, blob }
@@ -389,6 +390,11 @@ function dispatchVideo() {
       maxDimension: plan.maxDimension,
       qualityTarget: plan.qualityTarget,
       formats,
+      /* The byte ceiling is part of the plan, not advice. It was computed
+         here and then dropped on the floor for a while - the worker never
+         saw it, so "Fits Discord's free 10 MB limit" could hand back 14 MB
+         with nothing said. */
+      sizeCapBytes: plan.sizeCapBytes || 0,
     },
   });
 }
@@ -453,7 +459,9 @@ function onVideoMessage(msg) {
     }));
     item.candBlobs = new Map();
     item.metric = "ss2";
-    item.warnings = [];
+    /* What the worker could not do is part of the result - a format that
+       failed at the real resolution is a fact, not noise. */
+    item.warnings = r.warnings || [];
     /* The original's shape, as the engine actually read it - rotation applied.
        A phone held upright records a landscape frame and flags it, and every
        number downstream has to mean the picture rather than the way it was

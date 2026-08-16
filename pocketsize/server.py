@@ -47,6 +47,21 @@ from .quality import HAVE_SSIMULACRA2
 WEBUI = Path(__file__).resolve().parent / "webui"
 PREVIEW_MAX = 2800
 
+
+def video_workdir(item_id: str) -> Path:
+    """Where one video's working files live while the app holds it.
+
+    One folder per item, so removing the item can remove the folder. These
+    used to be written and never deleted - thirty phone clips quietly left
+    several gigabytes on the system drive, permanently, because nothing
+    owned the cleanup.
+    """
+    return Path(tempfile.gettempdir()) / "pocketsize-video" / item_id
+
+
+def _sweep_workdir(item_id: str) -> None:
+    shutil.rmtree(video_workdir(item_id), ignore_errors=True)
+
 # Uploads land fully in memory before hitting the temp dir. A design asset has
 # no business being larger than this; a phone video routinely is, which is why
 # the two limits are separate numbers rather than one generous one.
@@ -157,6 +172,15 @@ class Session:
         self.watch_seen: set = set()
         self.rev = 0
         self.toast = ""
+
+        # One stop flag per video in flight. Removing or clearing an item
+        # sets its flag, and the engine checks it between frames - without
+        # this the desktop app had no way to cancel a video at all: the row
+        # vanished from the queue while the worker encoded on for minutes.
+        self.stops: dict[str, threading.Event] = {}
+        # Every video workdir this session ever created, so shutdown can
+        # sweep the ones still on disk without touching another instance's.
+        self.video_dirs: set[str] = set()
 
         self.queue: queue.Queue[str] = queue.Queue()
         count = workers or max(1, min(6, (os.cpu_count() or 2)))
@@ -282,6 +306,7 @@ class Session:
         return added
 
     def remove(self, ids: list[str]) -> None:
+        removed_videos = []
         with self.lock:
             for item_id in ids:
                 item = self.items.pop(item_id, None)
@@ -289,12 +314,31 @@ class Session:
                 self.previews.pop(item_id, None)
                 if item_id in self.order:
                     self.order.remove(item_id)
+                if item and item.kind == "video":
+                    removed_videos.append(item_id)
+                    # An encode running for an item that no longer exists is
+                    # minutes of work for nobody. Tell it to stop; the worker
+                    # sweeps the folder once the engine has let go of it.
+                    stop = self.stops.get(item_id)
+                    if stop is not None:
+                        stop.set()
                 if item and item.temporary:
                     try:
                         Path(item.path).unlink(missing_ok=True)
                     except OSError:
                         pass
+        for item_id in removed_videos:
+            _sweep_workdir(item_id)
         self.touch()
+
+    def cleanup(self) -> None:
+        """Stop everything and take this session's working files with it."""
+        with self.lock:
+            for stop in self.stops.values():
+                stop.set()
+            dirs = set(self.video_dirs)
+        for item_id in dirs:
+            _sweep_workdir(item_id)
 
     def requeue(self, ids: list[str]) -> None:
         with self.lock:
@@ -404,6 +448,9 @@ class Session:
             if item is None:
                 return
             source = Path(item.path)
+            stop = threading.Event()
+            self.stops[item_id] = stop
+            self.video_dirs.add(item_id)
 
         def on_progress(stage, fraction, detail):
             with self.lock:
@@ -412,20 +459,28 @@ class Session:
                     live.stage, live.fraction = stage, fraction
             self.touch()
 
-        out_dir = Path(tempfile.gettempdir()) / "pocketsize-video" / item_id
-        result = vid.compress(
-            source, settings.target,
-            fast=settings.fast,
-            size_target=settings.size_target or 0,
-            max_dimension=(settings.max_dimension
-                           if settings.max_dimension else None),
-            output_dir=out_dir,
-            on_progress=on_progress,
-        )
+        out_dir = video_workdir(item_id)
+        try:
+            result = vid.compress(
+                source, settings.target,
+                fast=settings.fast,
+                size_target=settings.size_target or 0,
+                max_dimension=(settings.max_dimension
+                               if settings.max_dimension else None),
+                output_dir=out_dir,
+                on_progress=on_progress,
+                should_stop=stop.is_set,
+            )
+        finally:
+            with self.lock:
+                self.stops.pop(item_id, None)
 
         with self.lock:
             item = self.items.get(item_id)
             if item is None:
+                # Removed while encoding. The engine has stopped and cleaned
+                # its half-written files; the folder itself goes too.
+                _sweep_workdir(item_id)
                 return
             item.stage, item.fraction = "", 0.0
             if result.error:
@@ -950,6 +1005,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(host: str = "127.0.0.1", port: int = 0, workers: int = 0):
     """Start the server. Returns (httpd, session, url)."""
+    import atexit
     import tempfile
 
     session = Session(workers=workers)
@@ -965,6 +1021,20 @@ def serve(host: str = "127.0.0.1", port: int = 0, workers: int = 0):
 
     httpd = ThreadingHTTPServer((host, port), Bound)
     httpd.daemon_threads = True
-    Bound.on_quit = httpd.shutdown
+
+    def tidy_up():
+        # Whatever way the app ends - the Quit button, the window closing,
+        # the process dying - the working files end with it. They are copies
+        # and intermediates; everything the person chose to keep has already
+        # been saved somewhere they picked.
+        session.cleanup()
+        shutil.rmtree(upload_dir, ignore_errors=True)
+
+    def quit_server():
+        tidy_up()
+        httpd.shutdown()
+
+    atexit.register(tidy_up)
+    Bound.on_quit = quit_server
     url = f"http://{host}:{httpd.server_address[1]}/?token={token}"
     return httpd, session, url

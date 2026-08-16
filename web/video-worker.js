@@ -147,44 +147,51 @@ function frameFor(width, height, limit) {
   return [evenly(width * scale), evenly(height * scale)];
 }
 
-/* Frames nearest a set of moments, as RGBA on a canvas of the given size.
+/* One file, opened once, read many times.
  *
- * Paired by timestamp, never by position. Two encodes of one source do not
- * necessarily hold the same number of frames, and comparing the Nth of one to
- * the Nth of the other silently scores frame 40 against frame 39 and reports a
- * catastrophe that is not there. The desktop tier learned this the same way. */
-async function framesAt(source, times, width, height) {
+ * The old shape built a fresh demuxer and decoder for every set of frames it
+ * wanted - which meant re-opening the whole file for every probe rung, every
+ * window and every verify pass, and never releasing what it built. On a
+ * twenty-minute clip that was about 48 full-file opens; on a four-hour one,
+ * about 480, and the un-released decoder frames are platform memory the
+ * garbage collector cannot see - the tab died partway through exactly the
+ * long jobs this tier exists for. One reader per file, disposed when the
+ * file is done with, is both the fix and the simpler shape.
+ *
+ * Frames are still paired by timestamp, never by position. Two encodes of
+ * one source do not necessarily hold the same number of frames, and
+ * comparing the Nth of one to the Nth of the other silently scores frame 40
+ * against frame 39 and reports a catastrophe that is not there. */
+function makeReader(source, width, height) {
   const input = new Input({ source: new BlobSource(source), formats: ALL_FORMATS });
-  const track = await input.getPrimaryVideoTrack();
-  if (!track) return [];
-  const sink = new CanvasSink(track, { width, height, fit: "fill" });
-  const out = [];
-  for (const time of times) {
-    const result = await sink.getCanvas(time);
-    if (!result) continue;
-    const canvas = result.canvas;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    out.push(context.getImageData(0, 0, canvas.width, canvas.height));
-  }
-  return out;
-}
-
-async function scoreAgainst(original, candidate, windows, width, height, per) {
-  const scores = [];
-  for (const [start, length] of windows) {
-    const times = frameTimes(start, length, per);
-    const reference = await framesAt(original, times, width, height);
-    const made = await framesAt(candidate, times, width, height);
-    const pairs = Math.min(reference.length, made.length);
-    for (let i = 0; i < pairs; i += 1) {
-      try {
-        scores.push(score(reference[i], made[i]));
-      } catch (_) {
-        /* one unscoreable frame must not end the comparison */
+  let track = null;
+  let sink = null;
+  return {
+    input,
+    async frames(times) {
+      if (!sink) {
+        track = await input.getPrimaryVideoTrack();
+        if (!track) return [];
+        sink = new CanvasSink(track, { width, height, fit: "fill" });
       }
-    }
-  }
-  return pooled(scores);
+      const out = [];
+      for (const time of times) {
+        const result = await sink.getCanvas(time);
+        if (!result) continue;
+        const canvas = result.canvas;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        out.push(context.getImageData(0, 0, canvas.width, canvas.height));
+      }
+      return out;
+    },
+    dispose() {
+      try {
+        input.dispose?.();
+      } catch (_) {
+        /* freeing is best-effort; a reader that cannot be freed is dropped */
+      }
+    },
+  };
 }
 
 /* One pair of frames, scored the way the image tier scores a picture: the
@@ -227,6 +234,11 @@ async function encodeOnce(file, opts) {
   return new Blob([output.target.buffer], { type: "video/mp4" });
 }
 
+const MIN_BITRATE = 120_000;
+/* Below this a 1080p encode is not a compromise, it is a smear. If a size cap
+   cannot be met above this floor, the honest answer is that it cannot be met -
+   the same constant, and the same reasoning, as the desktop engine. */
+
 /* The search: the lowest rung that still measures at or above the floor.
    Straight bisection, the same shape the image tier uses on a JPEG ladder. */
 async function searchQuality(file, format, width, height, target, windows, ctx) {
@@ -252,13 +264,17 @@ async function searchQuality(file, format, width, height, target, windows, ctx) 
     const scores = [];
     for (let w = 0; w < windows.length; w += 1) {
       const [start, length] = windows[w];
-      const times = frameTimes(start, length, PROBE_FRAMES);
       const local = frameTimes(0, length, PROBE_FRAMES);
-      const reference = await framesAt(file, times, width, height);
-      const made = await framesAt(parts[w], local, width, height);
-      const pairs = Math.min(reference.length, made.length);
-      for (let i = 0; i < pairs; i += 1) {
-        try { scores.push(score(reference[i], made[i])); } catch (_) { /* skip */ }
+      const reference = await ctx.reference(start, length, PROBE_FRAMES);
+      const reader = makeReader(parts[w], width, height);
+      try {
+        const made = await reader.frames(local);
+        const pairs = Math.min(reference.length, made.length);
+        for (let i = 0; i < pairs; i += 1) {
+          try { scores.push(score(reference[i], made[i])); } catch (_) { /* skip */ }
+        }
+      } finally {
+        reader.dispose();
       }
     }
     const value = pooled(scores).reported;
@@ -277,24 +293,102 @@ async function searchQuality(file, format, width, height, target, windows, ctx) 
   return chosen;
 }
 
+/* Which of two finished encodes wins - the desktop engine's rule, ported
+   verbatim. The rule inverts under a size cap: with no cap, everything on
+   the table already measures close enough, so the smallest file wins; under
+   a cap, everything already fits, so the best-looking one wins. And a
+   candidate that met the quality floor always beats one that only met the
+   byte limit, whatever the numbers say. The old comparison here was
+   `smallest bytes wins`, full stop - which shipped the worse-looking file
+   whenever the sizes disagreed with the scores. */
+function beats(candidate, best, underCap) {
+  if (!!candidate.capped !== !!best.capped) return !candidate.capped;
+  if (candidate.capped) {
+    if (candidate.score !== best.score) return candidate.score > best.score;
+    return candidate.bytes < best.bytes;
+  }
+  if (candidate.bytes !== best.bytes) return candidate.bytes < best.bytes;
+  return candidate.score > best.score;
+}
+
 /* --------------------------------------------------------------------- job */
+
+/* One format, all the way through: search, encode, and - when a byte ceiling
+   exists and the honest quality answer does not fit - the rate-targeted
+   encode that does. Quality first even under a cap: a limit is not an
+   instruction to spend it. This is the desktop engine's hybrid; the browser
+   used to silently drop the cap on the floor, so a person promised "fits
+   Discord's free 10 MB limit" could be handed 14 MB with nothing said. */
+async function oneFormat(file, format, width, height, floor, windows,
+                         sizeCap, duration, hasAudio, ctx) {
+  const ladder = QP_LADDER[format];
+  const index = await searchQuality(file, format, width, height, floor,
+    windows, ctx);
+  ctx.report("compressing", 0.5, format);
+  let blob = await encodeOnce(file, {
+    format, width, height, quantizer: ladder[index], signal: ctx.signal,
+  });
+  let capped = false;
+  let level = ladder[index];
+
+  if (sizeCap && blob.size > sizeCap) {
+    /* Aim at 95% of the cap: container overhead is real, rate control is
+       approximate, and a file that misses the limit by 40 KB is as useless
+       as one that misses it by 4 MB. The sound's share comes off the top -
+       this tier always writes AAC at 128k when there is sound at all. */
+    const audioBits = hasAudio ? 128_000 : 0;
+    let bitrate = (sizeCap * 0.95 * 8) / Math.max(duration, 0.1) - audioBits;
+    if (bitrate >= MIN_BITRATE) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        ctx.report("compressing", 0.6 + attempt * 0.1, format);
+        const rated = await encodeOnce(file, {
+          format, width, height, bitrate: Math.round(bitrate),
+          signal: ctx.signal,
+        });
+        blob = rated;
+        capped = true;
+        level = null;
+        if (rated.size <= sizeCap) break;
+        bitrate = bitrate * (sizeCap / rated.size) * 0.95;
+        if (bitrate < MIN_BITRATE) break;
+      }
+    }
+    /* If no usable rate exists, the quality answer stands, over the cap,
+       and the missed-size disclosure says so - "every encoder failed" on a
+       file that encodes fine is the wrong answer. */
+  }
+
+  ctx.report("checking the result", 0.9, format);
+  const reader = makeReader(blob, width, height);
+  let verdict;
+  try {
+    const scores = [];
+    for (const [start, length] of windows) {
+      const times = frameTimes(start, length, VERIFY_FRAMES);
+      const reference = await ctx.reference(start, length, VERIFY_FRAMES);
+      const made = await reader.frames(times);
+      const pairs = Math.min(reference.length, made.length);
+      for (let i = 0; i < pairs; i += 1) {
+        try { scores.push(score(reference[i], made[i])); } catch (_) { /* skip */ }
+      }
+    }
+    verdict = pooled(scores);
+  } finally {
+    reader.dispose();
+  }
+  return { format, blob, bytes: blob.size, score: verdict.reported,
+           mean: verdict.mean, level, capped };
+}
 
 async function runJob(job) {
   const { file, settings } = job;
   const controller = new AbortController();
-  const ctx = {
-    signal: controller.signal,
-    report(stage, fraction, detail) {
-      self.postMessage({ type: "progress", id: job.id, stage, fraction, detail });
-    },
-  };
-  ctx.report("reading", 0.02, file.name);
 
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   if (!track) throw new Error("no video track in this file");
-
   const duration = await input.computeDuration();
+  const hasAudio = !!(await input.getPrimaryAudioTrack());
   /* The shape a player shows, rotation included - a phone held upright
      records a landscape frame and flags it, and every number downstream has
      to mean the picture rather than the way it was filed away. */
@@ -302,29 +396,70 @@ async function runJob(job) {
   const shownHeight = track.displayHeight ?? track.codedHeight;
   const [width, height] = frameFor(shownWidth, shownHeight, settings.maxDimension || 0);
   const windows = sampleWindows(duration);
+  const sizeCap = Math.max(0, settings.sizeCapBytes || 0);
+
+  /* The original is opened once for the whole job, and its reference frames
+     are remembered across probe rungs and formats - the same frames used to
+     be decoded from scratch for every single probe. */
+  const source = makeReader(file, width, height);
+  const refCache = new Map();
+  const ctx = {
+    signal: controller.signal,
+    report(stage, fraction, detail) {
+      self.postMessage({ type: "progress", id: job.id, stage, fraction, detail });
+    },
+    async reference(start, length, count) {
+      const key = `${start.toFixed(3)}:${length.toFixed(3)}:${count}`;
+      if (!refCache.has(key)) {
+        refCache.set(key,
+          await source.frames(frameTimes(start, length, count)));
+      }
+      return refCache.get(key);
+    },
+  };
+  ctx.report("reading", 0.02, file.name);
 
   const caps = await probeSupport();
   const allowed = (settings.formats || []).filter((f) => caps.formats.includes(f));
   if (!allowed.length) {
+    source.dispose();
+    try { input.dispose?.(); } catch (_) { /* best effort */ }
     throw new Error("this browser cannot encode video");
   }
 
   let best = null;
   const candidates = [];
-  for (const format of allowed) {
-    const ladder = QP_LADDER[format];
-    const index = await searchQuality(file, format, width, height,
-      settings.qualityTarget, windows, ctx);
-    ctx.report("compressing", 0.5, format);
-    const blob = await encodeOnce(file, {
-      format, width, height, quantizer: ladder[index], signal: ctx.signal,
-    });
-    ctx.report("checking the result", 0.9, format);
-    const { reported, mean } = await scoreAgainst(file, blob, windows, width, height, VERIFY_FRAMES);
-    candidates.push({ format, bytes: blob.size, score: reported });
-    if (!best || blob.size < best.bytes) {
-      best = { format, blob, bytes: blob.size, score: reported, mean, level: ladder[index] };
+  const failures = [];
+  try {
+    for (const format of allowed) {
+      /* One format failing must not end the run - an encoder that passes
+         `isConfigSupported` and then falls over at the real resolution used
+         to take every other format down with it, and the person was told
+         their browser cannot encode video at all. */
+      let candidate;
+      try {
+        candidate = await oneFormat(file, format, width, height,
+          settings.qualityTarget, windows, sizeCap, duration, hasAudio, ctx);
+      } catch (error) {
+        failures.push(`${format} failed (${(error && error.message) || error})`);
+        continue;
+      }
+      candidates.push({ format, bytes: candidate.bytes, score: candidate.score });
+      if (!best) {
+        best = candidate;
+      } else if (beats(candidate, best, sizeCap > 0)) {
+        best = candidate;
+      }
     }
+  } finally {
+    source.dispose();
+    try { input.dispose?.(); } catch (_) { /* best effort */ }
+  }
+
+  if (!best) {
+    throw new Error(failures.length
+      ? failures.join("; ")
+      : "this browser cannot encode video");
   }
 
   ctx.report("done", 1, best.format);
@@ -341,6 +476,14 @@ async function runJob(job) {
     shownHeight,
     duration,
     candidates,
+    warnings: failures,
+    /* Flags, not inferences: the same contract the desktop engine keeps.
+       `capped` means the byte ceiling, not the quality floor, decided the
+       answer; `missedSize` means even that was not enough. The UI repeats
+       these on the result line - it never works them out from the numbers. */
+    capped: !!best.capped,
+    missedSize: sizeCap > 0 && best.bytes > sizeCap,
+    audioNote: hasAudio ? "Sound re-encoded to fit this format." : "",
     blob: best.blob,
     /* Said plainly, because it is true and because the person is entitled to
        know which tier they are on: this is the browser's own encoder. */

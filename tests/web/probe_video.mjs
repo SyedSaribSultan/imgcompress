@@ -17,8 +17,9 @@ import puppeteer, { CHROME } from "./resolve_puppeteer.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..", "..");
 const fixture = path.join(root, "tests", "video_fixtures", "still.mp4");
+const grainy = path.join(root, "tests", "video_fixtures", "grain.mp4");
 
-if (!fs.existsSync(fixture)) {
+if (!fs.existsSync(fixture) || !fs.existsSync(grainy)) {
   console.error("build the corpus first: python tests/make_video_fixtures.py");
   process.exit(1);
 }
@@ -119,6 +120,57 @@ try {
       run.stages.join(" -> "));
     check("it says which tier this is",
       typeof run.result.note === "string" && run.result.note.includes("desktop"));
+  }
+
+  /* The size cap. This is the browser tier's own copy of the desktop rule:
+     quality first, and when the honest quality answer does not fit, a
+     rate-targeted encode that does - reported with the `capped` flag the
+     result line repeats. The cap used to be computed by the page and then
+     silently dropped before it reached this worker, so "fits Discord's free
+     10 MB limit" could hand back more with nothing said. */
+  const cap = 90 * 1024;
+  const grainBytes = fs.readFileSync(grainy);
+  const capped = await page.evaluate(async (b64, formats, capBytes) => {
+    const binary = atob(b64);
+    const buffer = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) buffer[i] = binary.charCodeAt(i);
+    const file = new File([buffer], "grain.mp4", { type: "video/mp4" });
+
+    const worker = new Worker("/video-worker.js", { type: "module" });
+    const out = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ error: "job timed out" }), 180000);
+      worker.onmessage = (e) => {
+        if (e.data.type === "done") {
+          clearTimeout(timer);
+          resolve({ result: e.data.result, size: e.data.blob.size });
+        }
+        if (e.data.type === "failed") {
+          clearTimeout(timer);
+          resolve({ error: e.data.error });
+        }
+      };
+      worker.onerror = (e) => { clearTimeout(timer); resolve({ error: e.message }); };
+      worker.postMessage({
+        type: "job", id: "cap", file,
+        settings: { maxDimension: 1280, qualityTarget: 88, formats,
+                    sizeCapBytes: capBytes },
+      });
+    });
+    worker.terminate();
+    return out;
+  }, grainBytes.toString("base64"), caps.formats || [], cap);
+
+  if (capped.error) {
+    check("a size cap reaches the worker", false, capped.error);
+  } else {
+    const kept = capped.size <= cap;
+    check("a size cap is met, or the miss is disclosed",
+      (kept && capped.result.capped === true) || capped.result.missedSize === true,
+      `${capped.size} bytes vs a ${cap} cap; capped=${capped.result.capped} `
+      + `missedSize=${capped.result.missedSize}`);
+    check("the flags are booleans, not undefined dead code",
+      typeof capped.result.capped === "boolean"
+      && typeof capped.result.missedSize === "boolean");
   }
 
   check("no console errors (a CSP violation lands here)",

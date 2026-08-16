@@ -164,12 +164,38 @@ jobs:
           wanted = ("imagequant", "zopfli", "mozjpeg", "ssimulacra2")
           labels = [label for _mark, label in rows]
           unreported = [name for name in wanted if not any(name in label for label in labels)]
-          inactive = [label for mark, label in rows if mark != "x"]
+
+          # Video is the one engine whose ABSENCE is the requirement here.
+          # Decision V3: PyAV's wheels carry GPL x264/x265 inside a complete
+          # FFmpeg, and bundling that into a shipped installer is a different
+          # legal act from depending on it via pip - so until the licence
+          # question is resolved, a bundle that contains PyAV is a broken
+          # release, not a fuller one. The absence must also be *reported*:
+          # a --check that stopped mentioning video would leave this gate
+          # unable to see a violation.
+          bundled_video = [label for mark, label in rows
+                           if mark == "x" and "pyav" in label.lower()]
+          video_reported = any("pyav" in label.lower()
+                               or "not installed" in label.lower()
+                               for label in labels)
+          inactive = [label for mark, label in rows
+                      if mark != "x" and "not installed" not in label.lower()]
 
           if unreported:
               sys.exit(
                   f"--check no longer reports on {unreported}. An engine that is "
                   f"not reported cannot be gated. Reported: {labels}"
+              )
+          if bundled_video:
+              sys.exit(
+                  f"The bundle carries {bundled_video} - PyAV's FFmpeg includes "
+                  "GPL x264/x265, and decision V3 forbids shipping it in the "
+                  "installers until that is resolved. Video stays a pip extra."
+              )
+          if not video_reported:
+              sys.exit(
+                  "--check no longer reports the video engine at all, so this "
+                  "gate cannot verify decision V3. Fix the report, not the gate."
               )
           if inactive:
               sys.exit(
@@ -177,7 +203,7 @@ jobs:
                   "application would run and quietly produce larger files. See "
                   "docs/PACKAGING.md for what usually causes each one."
               )
-          print(f"All {len(rows)} engines active.")
+          print(f"All {len(rows)} engines active; video correctly absent (V3).")
           PY
 
       - name: The built application must compress a real folder

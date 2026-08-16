@@ -48,6 +48,8 @@ from __future__ import annotations
 
 import io
 import math
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
@@ -275,6 +277,12 @@ class VideoInfo:
     None. Set by `probe` from the tags, and refined by `compress` once it has
     measured how bright the content actually gets."""
 
+    probe_note: str = ""
+    """Set when the first frame could not be decoded during probing. Rotation
+    and some colour tags live only on the frames, so a file that fails here
+    may be encoded sideways or in the wrong colour - which is exactly the
+    kind of thing that must be said out loud rather than swallowed."""
+
     @property
     def megapixels(self) -> float:
         return (self.width * self.height) / 1_000_000.0
@@ -320,8 +328,15 @@ def probe(path) -> VideoInfo:
                     if not getattr(info, field_name):
                         setattr(info, field_name,
                                 _code(getattr(first, field_name, 0)))
-        except Exception:
-            pass
+        except Exception as exc:
+            # Rotation and per-frame colour tags are unknowable for this
+            # file. Recorded rather than swallowed: the old bare `pass` here
+            # meant a phone clip whose first frame would not decode was
+            # encoded sideways with no hint as to why.
+            info.probe_note = (
+                "could not decode the first frame to check rotation and "
+                f"colour ({type(exc).__name__})"
+            )
         info.tone_map = tone_map_for(info)
         container.seek(0)
         if vs.frames:
@@ -719,6 +734,55 @@ def content_peak_nits(nits, percentile: float = PEAK_PERCENTILE) -> float:
     return float(np.percentile(brightest, percentile))
 
 
+# --- applying the arithmetic at speed ---------------------------------------
+#
+# The functions above are exact, and they stay exact: a lookup table was tried
+# here twice and measured out of the question both times. The reason is worth
+# recording so nobody spends a third day on it. The conversion ends in a 2.4
+# gamma whose slope is unbounded at black, and the BT.2020->709 matrix pushes
+# saturated colours *through* black (negative light, clipped to zero). Right at
+# that boundary, an error of e in linear light becomes 255*e^(1/2.4) code
+# values on screen: a 65^3 tetrahedral table leaves ~1e-3 of linear error and
+# therefore 14-19 code values of output error on gamut-edge colours - measured,
+# not estimated - and staying under one code value there needs the linear error
+# below (1/255)^2.4 = 1.7e-6, which no interpolated table of any practical size
+# reaches. Only near-exact evaluation passes: float32 arithmetic lands at ~0.19
+# code values on the same adversarial colours.
+#
+# So the speed comes from running the exact arithmetic on row bands in
+# parallel. Every step below is per-pixel independent, so splitting the frame
+# into horizontal bands changes nothing about the answer; numpy releases the
+# GIL inside each element sweep, so the bands genuinely overlap. The 3x3
+# matrices are applied as explicit multiplies rather than `@` because BLAS
+# spins up its own thread pool per call and the two pools fight - measured as
+# a 5x slowdown at two workers.
+
+_TONE_POOL = None
+_TONE_BAND_ROWS = 128
+"""Frames shorter than two bands of this are converted inline - the fixtures
+are 270 rows tall and a thread pool would cost more than it saved."""
+
+
+def _tone_pool() -> ThreadPoolExecutor:
+    global _TONE_POOL
+    if _TONE_POOL is None:
+        _TONE_POOL = ThreadPoolExecutor(
+            max_workers=max(1, min(8, os.cpu_count() or 2)),
+            thread_name_prefix="tonemap",
+        )
+    return _TONE_POOL
+
+
+def _matvec(matrix, planes):
+    """(..., 3) through a 3x3 matrix, as plain ufunc arithmetic (no BLAS)."""
+    m = np.asarray(matrix, planes.dtype)
+    x0, x1, x2 = planes[..., 0], planes[..., 1], planes[..., 2]
+    out = np.empty_like(planes)
+    for i in range(3):
+        out[..., i] = m[i, 0] * x0 + m[i, 1] * x1 + m[i, 2] * x2
+    return out
+
+
 @dataclass(frozen=True)
 class ToneMap:
     """Everything needed to turn one file's HDR frames into ordinary colour.
@@ -777,8 +841,7 @@ class ToneMap:
 
     def display(self, frame) -> np.ndarray:
         """One decoded frame as BT.709 SDR code values in 0..1."""
-        return sdr_from_nits(self.nits(frame), self.source_peak,
-                             self.wide_gamut)
+        return self._convert(frame, pack=False)
 
     def to_frame(self, frame):
         """One HDR frame as an ordinary BT.709 frame, ready to encode or score.
@@ -792,17 +855,69 @@ class ToneMap:
         an onward scaler does to the candidate it does to the reference too,
         and the comparison stays about the encode.
         """
-        code = self.display(frame)
-        ycc = code @ _RGB_TO_BT709_YCBCR.T.astype(code.dtype)
-        planes = np.empty((3,) + code.shape[:2], np.uint8)
-        planes[0] = np.clip(ycc[..., 0] * 219.0 + 16.0, 0.0, 255.0).round()
-        planes[1] = np.clip(ycc[..., 1] * 224.0 + 128.0, 0.0, 255.0).round()
-        planes[2] = np.clip(ycc[..., 2] * 224.0 + 128.0, 0.0, 255.0).round()
+        planes = self._convert(frame, pack=True)
         out = av.VideoFrame.from_ndarray(planes, format="yuv444p")
         out.colorspace = _BT709_CODE
         out.color_primaries = _BT709_CODE
         out.color_trc = _BT709_CODE
         out.color_range = _LIMITED_RANGE
+        return out
+
+    def _convert(self, frame, pack: bool):
+        """The whole conversion, run on row bands in parallel.
+
+        Same arithmetic as `signal` -> `nits` -> `sdr_from_nits`, sliced into
+        horizontal bands: every step is per-pixel, so the bands cannot see
+        each other and the answer is the one the plain functions give. This
+        is what took a 4K frame from 2.2 seconds to well under half of one -
+        the sweeps are transcendental-bound and numpy lets go of the GIL
+        inside each one, so the cores genuinely overlap.
+        """
+        planes = frame.to_ndarray(format="yuv444p16le").astype(np.float32)
+        height, width = planes.shape[0], planes.shape[1]
+        if pack:
+            out = np.empty((3, height, width), np.uint8)
+        else:
+            out = np.empty_like(planes)
+        top = 0.0
+        if self.full_range:
+            depth = _component_bits(frame)
+            top = float(((1 << depth) - 1) << (16 - depth))
+
+        def band(a, b):
+            chunk = planes[a:b]
+            if self.full_range:
+                chunk[..., 0] /= top
+                chunk[..., 1:] = (chunk[..., 1:] - 32768.0) / top
+            else:
+                chunk[..., 0] = (chunk[..., 0] - 4096.0) / 56064.0
+                chunk[..., 1:] = (chunk[..., 1:] - 32768.0) / 28672.0
+            rgb = _matvec(_YCBCR[self.matrix], chunk)
+            np.clip(rgb, 0.0, 1.0, out=rgb)
+            if self.transfer == "arib-std-b67":
+                nits = hlg_nits(rgb)
+            else:
+                nits = pq_nits(rgb)
+            code = sdr_from_nits(nits, self.source_peak, self.wide_gamut)
+            if pack:
+                ycc = _matvec(_RGB_TO_BT709_YCBCR, code)
+                out[0, a:b] = np.clip(ycc[..., 0] * 219.0 + 16.0,
+                                      0.0, 255.0).round()
+                out[1, a:b] = np.clip(ycc[..., 1] * 224.0 + 128.0,
+                                      0.0, 255.0).round()
+                out[2, a:b] = np.clip(ycc[..., 2] * 224.0 + 128.0,
+                                      0.0, 255.0).round()
+            else:
+                out[a:b] = code
+
+        pool = _tone_pool()
+        workers = pool._max_workers
+        if height < 2 * _TONE_BAND_ROWS or workers < 2:
+            band(0, height)
+        else:
+            count = min(workers * 2, max(2, height // _TONE_BAND_ROWS))
+            edges = np.linspace(0, height, count + 1, dtype=int)
+            list(pool.map(lambda p: band(*p), zip(edges[:-1], edges[1:])))
         return out
 
 
@@ -898,6 +1013,14 @@ class EncodeSpec:
     here because the encoder needs to undo both, and reading them again from
     the file per encode would be four probes per search."""
 
+    audio_copied: bool = False
+    audio_written: bool = False
+    """What the encode actually did with the sound, written back by `encode`.
+    These are facts recorded at the moment the choice was made, because the
+    old way - inferring "copied" afterwards by comparing codec names on the
+    finished file - reported "kept exactly as it was" for audio that had in
+    fact been decoded and re-encoded to the same codec."""
+
 
 def _transform_chain(info, width: int, height: int,
                      pixel_format: str = "yuv420p") -> list:
@@ -976,11 +1099,16 @@ def _sws_flags() -> str:
     return "LANCZOS"
 
 
-def encode(src, spec: EncodeSpec, dest=None):
+def encode(src, spec: EncodeSpec, dest=None, progress=None):
     """Encode one video, or one window of it, and return the bytes written.
 
     `dest` may be a path; when it is None the result comes back in memory,
     which is what the probe encodes want.
+
+    `progress` is only ever consulted, never reported to, from here down:
+    the encode loop asks it "should I stop?" between frames, because this
+    loop is where the minutes are actually spent and a cancellation that is
+    only checked between stages is a cancellation the person cannot use.
     """
     buffer = None
     if dest is None:
@@ -1028,8 +1156,10 @@ def encode(src, spec: EncodeSpec, dest=None):
                     out, src_audio, spec
                 )
 
+            spec.audio_copied = copy_audio
+            spec.audio_written = astream is not None
             _pump(inp, out, vs, ostream, src_audio, astream, aresampler,
-                  copy_audio, spec)
+                  copy_audio, spec, progress)
         finally:
             out.close()
 
@@ -1102,8 +1232,14 @@ def _open_audio(out, src_audio, spec: EncodeSpec):
     return False, astream, resampler
 
 
+_STOP_CHECK_FRAMES = 16
+"""How often the encode loop asks whether it should stop, in demuxed packets.
+Roughly twice a second of content: often enough that "stop" means now, rare
+enough to cost nothing."""
+
+
 def _pump(inp, out, vs, ostream, src_audio, astream, aresampler, copy_audio,
-          spec: EncodeSpec):
+          spec: EncodeSpec, progress=None):
     """Decode, straighten, scale, convert the colour, encode, mux."""
     reformatter_size = (spec.width, spec.height)
     tone = _tone_map_of(spec)
@@ -1130,7 +1266,12 @@ def _pump(inp, out, vs, ostream, src_audio, astream, aresampler, copy_audio,
         streams.append(src_audio)
 
     first_pts = None
+    decoded = 0
     for packet in inp.demux(streams):
+        if progress is not None:
+            decoded += 1
+            if decoded % _STOP_CHECK_FRAMES == 0:
+                progress.check()
         # A packet with no dts is the demuxer's flush signal, and decoding it
         # is how the last frames come out. Skipping it - the usual "ignore
         # corrupt packets" idiom - quietly truncates every encode by however
@@ -1386,13 +1527,22 @@ def pooled(scores) -> tuple:
     ordered = sorted(scores)
     mean = sum(ordered) / len(ordered)
     if len(ordered) < 4:
-        return ordered[0], mean
+        # Too few scores for a percentile to mean anything. The raw minimum
+        # was used here once and it made the search flinch: three frames is
+        # every probe of every clip under a minute, and one unlucky frame -
+        # a cut, a flash - drove the whole search to a needlessly high rung
+        # and a needlessly large file. The median of a tiny set is the
+        # estimate that one bad draw cannot own; the number a person is shown
+        # still comes from the verify pass, which has enough scores for the
+        # percentile below.
+        # (lower middle, so a pair reports its worse half, not its better)
+        return ordered[(len(ordered) - 1) // 2], mean
     index = max(0, int(math.floor(0.10 * (len(ordered) - 1))))
     return ordered[index], mean
 
 
 def xpsnr(reference, candidate, width: int, height: int,
-          tone_mapped: bool = False) -> float:
+          tone_mapped: bool = False, info=None) -> float:
     """A second opinion, in dB, from a different family of metric.
 
     The search watches SSIMULACRA 2. If the only number we ever reported was
@@ -1403,6 +1553,16 @@ def xpsnr(reference, candidate, width: int, height: int,
     opinion on video (not still images), and carries a temporal term, so it
     fails differently. Two numbers agreeing is the evidence; either one alone
     is a claim.
+
+    The reference goes through the same straightening the encoder applied -
+    a phone clip's output has its rotation baked into the pixels, and
+    comparing it against the sideways stored frames would measure the
+    rotation, return about 12 dB, and look like a catastrophe that is not
+    there. Frames are paired by timestamp for the same reason the scorer
+    pairs them that way: two files do not have to hold the same number of
+    frames. And the result is pooled worst-first like every other score
+    here, because an average is exactly the number that hides the five bad
+    seconds a person notices.
 
     Returns 0.0 when there is no second opinion to be had, which is not a
     failure - it means this build, or this file, cannot offer one.
@@ -1425,38 +1585,69 @@ def xpsnr(reference, candidate, width: int, height: int,
             graph = av.filter.Graph()
             dist_in = graph.add_buffer(template=cs)
             ref_in = graph.add_buffer(template=rs)
-            scaler = graph.add("scale", f"{width}:{height}")
-            node = graph.add("xpsnr")
+            # The candidate was straightened and un-squashed on its way out
+            # of the encoder, so the reference must be too.
+            node = ref_in
+            steps = (_transform_chain(info, width, height)[:-1]
+                     if info is not None
+                     else [("scale", f"{width}:{height}")])
+            for name, args in steps:
+                step = graph.add(name, args) if args else graph.add(name)
+                node.link_to(step)
+                node = step
+            metric = graph.add("xpsnr")
             sink = graph.add("buffersink")
-            dist_in.link_to(node, 0, 0)
-            ref_in.link_to(scaler, 0, 0)
-            scaler.link_to(node, 0, 1)
-            node.link_to(sink)
+            dist_in.link_to(metric, 0, 0)
+            node.link_to(metric, 0, 1)
+            metric.link_to(sink)
             graph.configure()
 
             values = []
-            ref_frames = rc.decode(rs)
-            for frame in cc.decode(cs):
-                try:
-                    reference_frame = next(ref_frames)
-                except StopIteration:
-                    break
-                dist_in.push(frame)
-                ref_in.push(reference_frame)
+
+            def drain():
                 while True:
                     try:
                         got = sink.pull()
                     except Exception:
-                        break
+                        return
                     raw = got.metadata.get("lavfi.xpsnr.xpsnr.y")
                     if raw:
                         try:
                             values.append(float(raw))
                         except ValueError:
                             pass
+
+            # Paired by presentation time, not by position: for each frame
+            # of the candidate, the reference is advanced to the frame
+            # nearest that moment. Position pairing drifts the instant one
+            # file drops or duplicates a frame, and then the metric reports
+            # the drift instead of the encode.
+            def moment(frame, fallback=0.0):
+                return float(frame.time) if frame.time is not None else fallback
+
+            ref_frames = rc.decode(rs)
+            ahead = next(ref_frames, None)
+            behind = None
+            for frame in cc.decode(cs):
+                t = moment(frame)
+                while ahead is not None and moment(ahead, t) < t:
+                    behind, ahead = ahead, next(ref_frames, None)
+                if ahead is None:
+                    pick = behind
+                elif behind is None:
+                    pick = ahead
+                else:
+                    pick = (ahead if abs(moment(ahead, t) - t)
+                            <= abs(moment(behind, t) - t) else behind)
+                if pick is None:
+                    break
+                dist_in.push(frame)
+                ref_in.push(pick)
+                drain()
             if not values:
                 return 0.0
-            return sum(values) / len(values)
+            reported, _mean = pooled(values)
+            return reported
     except Exception:
         return 0.0
 
@@ -1488,10 +1679,17 @@ class Progress:
     """Where a long job says what it is doing.
 
     Deliberately tiny, and deliberately not a callback the engine trusts. The
-    engine calls `step()` at the points where it genuinely knows something new;
-    the caller decides whether that becomes a progress bar, a line of text, or
-    nothing at all. `stop()` is checked at the same points, so a cancelled job
-    dies at a known boundary rather than mid-mux with a half-written file.
+    engine calls `step()` at the points where it genuinely knows something
+    new; the caller decides whether that becomes a progress bar, a line of
+    text, or nothing at all.
+
+    Stopping is checked in two places, and the difference matters. `step()`
+    checks at stage boundaries. `check()` is asked *inside* the encode and
+    verify loops, every second or so of content - because the stages are
+    where the engine talks and the loops are where the minutes go, and a
+    cancellation that waits for the next stage boundary on a half-hour encode
+    is not a cancellation. Whoever owns a half-written file removes it on the
+    way out, so stopping never leaves something that looks like a result.
     """
 
     def __init__(self, on_step=None, should_stop=None):
@@ -1585,7 +1783,7 @@ class VideoResult:
 
 
 def _encode_windows(src, fmt, width, height, crf, windows, fast=True,
-                    bitrate=0, info=None):
+                    bitrate=0, info=None, progress=None):
     """One probe: every sample window encoded at one setting, in memory."""
     out = []
     for start, length in windows:
@@ -1594,12 +1792,42 @@ def _encode_windows(src, fmt, width, height, crf, windows, fast=True,
             fast=fast, start=start, length=length, with_audio=False,
             faststart=False, info=info,
         )
-        out.append(encode(src, spec))
+        out.append(encode(src, spec, progress=progress))
     return out
 
 
+_REF_CACHE_BUDGET = 512 * 1024 * 1024
+"""How much decoded reference imagery one compress() call may keep around.
+The same reference frames are read for every probe rung and again for every
+format, and at 4K each one costs a couple of seconds of tone mapping - so
+they are worth keeping. The budget stops an 8K `original` run from trading
+the time problem for a memory one."""
+
+
+def _cached_reference(cache, src, start, length, count, size, tone_map):
+    """The reference frames for one window, remembered across the search.
+
+    Safe to share because the reference depends only on the source, the
+    window and the comparison size - all fixed for the whole of one
+    compress() call - and the images are only ever read, never drawn on.
+    """
+    if cache is None:
+        return read_frames(src, start, length, count, size=size,
+                           tone_map=tone_map)
+    key = (round(start, 3), round(length, 3), count)
+    frames = cache.get(key)
+    if frames is None:
+        frames = read_frames(src, start, length, count, size=size,
+                             tone_map=tone_map)
+        cost = sum(f.width * f.height * 3 for f in frames)
+        if cache.get("_bytes", 0) + cost <= _REF_CACHE_BUDGET:
+            cache[key] = frames
+            cache["_bytes"] = cache.get("_bytes", 0) + cost
+    return frames
+
+
 def _score_windows(src, encoded, width, height, windows, per_window,
-                   tone_map=None):
+                   tone_map=None, ref_cache=None):
     """Compare each encoded window against the same seconds of the source.
 
     The reference is scaled to the candidate's frame size before comparison.
@@ -1616,8 +1844,8 @@ def _score_windows(src, encoded, width, height, windows, per_window,
 
     scores = []
     for (start, length), data in zip(windows, encoded):
-        reference = read_frames(src, start, length, per_window,
-                                size=(width, height), tone_map=tone_map)
+        reference = _cached_reference(ref_cache, src, start, length,
+                                      per_window, (width, height), tone_map)
         candidate = read_frames(data, 0.0, length, per_window,
                                 size=(width, height))
         for ref, cand in zip(reference, candidate):
@@ -1629,7 +1857,7 @@ def _score_windows(src, encoded, width, height, windows, per_window,
 
 
 def _search_quality(src, fmt, width, height, target, windows, fast, log=None,
-                    info=None, progress=None):
+                    info=None, progress=None, ref_cache=None):
     """Find the lowest-quality rung that still measures at or above `target`.
 
     Straight bisection over the CRF ladder, the same shape as the image tier's
@@ -1658,10 +1886,11 @@ def _search_quality(src, fmt, width, height, target, windows, fast, log=None,
                 )
             data = _encode_windows(src, fmt, width, height,
                                    fmt.levels[index], windows, fast=True,
-                                   info=info)
+                                   info=info, progress=progress)
             scores = _score_windows(src, data, width, height, windows,
                                     PROBE_FRAMES,
-                                    tone_map=getattr(info, "tone_map", None))
+                                    tone_map=getattr(info, "tone_map", None),
+                                    ref_cache=ref_cache)
             reported, _ = pooled(scores)
             memo[index] = (reported, sum(len(d) for d in data))
             if log is not None:
@@ -1686,6 +1915,42 @@ def _search_quality(src, fmt, width, height, target, windows, fast, log=None,
         else:
             lo = mid + 1
     return chosen, memo, True
+
+
+def measured_duration(source, info=None) -> float:
+    """How long the video actually runs, counted from its packets.
+
+    The container carries a duration label, and on real phone recordings the
+    label sometimes lies - a copy interrupted mid-transfer, a live photo's
+    sidecar, a muxer that wrote the header before it knew. Everything that
+    divides by the duration has to survive that: a one-second claim on a
+    ten-minute file aims six hundred times too many bits per second at a
+    size cap, and a zero refuses a perfectly encodable file outright.
+
+    Demuxes without decoding, so it costs one read of the file, and it is
+    only paid on the paths where a wrong duration writes a wrong file.
+    Falls back to the label when the packets cannot be read at all.
+    """
+    label = float(getattr(info, "duration", 0.0) or 0.0)
+    try:
+        with av.open(str(source)) as container:
+            vs = container.streams.video[0]
+            begin = end = None
+            for packet in container.demux(vs):
+                if packet.dts is None or packet.pts is None:
+                    continue
+                base = packet.time_base or vs.time_base
+                if base is None:
+                    continue
+                t = float(packet.pts * base)
+                span = float((packet.duration or 0) * base)
+                begin = t if begin is None else min(begin, t)
+                end = t + span if end is None else max(end, t + span)
+            if begin is not None and end is not None and end > begin:
+                return end - begin
+    except Exception:
+        pass
+    return label
 
 
 def _bitrate_for_cap(cap_bytes, duration, info, audio) -> int:
@@ -1760,6 +2025,12 @@ def compress(source, destination, *, fast=False, size_target=0,
         result.new_bytes = result.original_bytes
         return result
 
+    if info.probe_note:
+        result.warnings.append(
+            info.probe_note + " - if the result comes out sideways or with "
+            "odd colour, this file is why"
+        )
+
     result.duration = info.duration
     limit = entry.video_max_dimension if max_dimension is None else max_dimension
     shown = display_shape(info)
@@ -1797,9 +2068,22 @@ def compress(source, destination, *, fast=False, size_target=0,
             "this machine cannot write " + ", ".join(missing)
         )
 
-    windows = sample_windows(info.duration)
+    # The container's duration label steers everything that divides by time -
+    # the sample windows, and above all the bitrate a size cap aims. Labels
+    # lie on real files, so whenever the label is missing or a wrong label
+    # would write a wrong file, the packets are counted instead.
+    duration = info.duration
+    if cap_bytes or duration <= 0:
+        counted = measured_duration(source, info)
+        if counted > 0:
+            if duration <= 0 or abs(counted - duration) > 0.05 * counted:
+                duration = counted
+    result.duration = duration or info.duration
+
+    windows = sample_windows(duration)
     out_dir = Path(output_dir) if output_dir else source.parent
     probe_log = []
+    ref_cache = {}
     progress = Progress(on_progress, should_stop)
     progress.step("reading", 0.02, source.name)
 
@@ -1828,14 +2112,24 @@ def compress(source, destination, *, fast=False, size_target=0,
             # over and decide - and then it says so.
             candidate = _at_quality(source, fmt, width, height, info,
                                     target, entry.audio, windows, fast,
-                                    out_dir, probe_log, progress)
+                                    out_dir, probe_log, progress,
+                                    ref_cache=ref_cache)
             if cap_bytes and (candidate is None
                               or candidate["bytes"] > cap_bytes):
-                if candidate is not None:
-                    _unlink(candidate["path"])
+                over_cap = candidate
                 candidate = _under_cap(source, fmt, width, height, info,
-                                       cap_bytes, entry.audio, windows, fast,
-                                       out_dir, probe_log, progress)
+                                       cap_bytes, duration, entry.audio,
+                                       windows, fast, out_dir, probe_log,
+                                       progress, ref_cache=ref_cache)
+                if candidate is None:
+                    # The cap cannot be met at any usable rate - a corrupt
+                    # duration, or a limit no encode can reach. The honest
+                    # quality answer, over the cap and disclosed as over the
+                    # cap, beats "every encoder failed" on a file that
+                    # encodes fine.
+                    candidate = over_cap
+                elif over_cap is not None:
+                    _unlink(over_cap["path"])
         except Cancelled:
             # Stopping is not failing. Everything written so far is removed,
             # because a half-encoded file that looks finished is the one
@@ -1886,11 +2180,21 @@ def compress(source, destination, *, fast=False, size_target=0,
     result.suffix = FORMATS[best["fmt"]].extension
     result.audio_copied = best["audio_copied"]
     if info.has_audio:
-        result.audio_note = (
-            "Sound kept exactly as it was."
-            if best["audio_copied"]
-            else "Sound re-encoded to fit this format."
-        )
+        state = best.get("audio_state",
+                         "copied" if best["audio_copied"] else "encoded")
+        if state == "lost":
+            # The one thing worse than re-encoded sound is no sound at all
+            # presented as sound. Said twice on purpose: once where the
+            # facts live and once where warnings cannot be missed.
+            result.audio_note = ("This file has no sound - the original's "
+                                 "sound could not be carried over.")
+            result.warnings.append(
+                "the sound could not be converted, so the result is silent"
+            )
+        elif state == "copied":
+            result.audio_note = "Sound kept exactly as it was."
+        else:
+            result.audio_note = "Sound re-encoded to fit this format."
     result.witness = best.get("witness", 0.0)
     result.size_target = cap_bytes
 
@@ -1916,8 +2220,12 @@ def compress(source, destination, *, fast=False, size_target=0,
     progress.step("done", 1.0, result.fmt)
 
     # Never ship a bigger file than the one handed to us. A video already
-    # smaller than anything we can make is a video we leave alone.
-    if result.new_bytes >= result.original_bytes and not result.resized_from:
+    # smaller than anything we can make is a video we leave alone. No
+    # exception for resized output: this rule used to step aside whenever
+    # the destination's frame cap had fired, and a re-encode *larger* than
+    # its source shipped anyway, wearing "-0%". A limit on the frame is not
+    # a licence to hand back a worse file.
+    if result.new_bytes >= result.original_bytes:
         _unlink(result.output)
         result.output = None
         result.new_bytes = result.original_bytes
@@ -1939,8 +2247,17 @@ def compress(source, destination, *, fast=False, size_target=0,
         result.audio_note = ""
         result.capped = False
         result.missed_size = False
+        # The kept file is the source at its own size, so the resize facts
+        # describe nothing either.
+        result.resized_from = None
+        result.resized_to = None
+        # And so do the warnings about the deleted encode: the quality it
+        # fell short of, the limit it missed, the sound it lost. Only the
+        # facts about the *source* file survive.
+        stale = ("soundtrack", "subtitle", "could not reach a visual match",
+                 "could not get under the size limit", "sound could not be")
         result.warnings = [w for w in result.warnings
-                           if "soundtrack" not in w and "subtitle" not in w]
+                           if not any(marker in w for marker in stale)]
         if result.tone_mapped:
             # Nothing shipped, so nothing was converted, so the colour
             # disclosure has to go with it - it would otherwise describe a
@@ -1978,94 +2295,159 @@ def _beats(candidate, best, under_cap) -> bool:
     return candidate["score"] > best["score"]
 
 
+VERIFY_CLIMB_LIMIT = 2
+"""How many rungs the verify pass may climb when the finished file measures
+short of what the probes promised. Each climb is a full-file encode plus a
+full verify - minutes each on a long clip - and an unbounded loop here could
+re-encode the whole file nineteen times outside every budget the search
+respects. Two climbs recovers the probe-versus-verify optimism this exists
+for; a file still short after that is disclosed as short, which is the same
+contract the search itself has when the whole ladder cannot reach the floor."""
+
+
 def _at_quality(src, fmt, width, height, info, target, audio, windows, fast,
-                out_dir, probe_log, progress=None):
+                out_dir, probe_log, progress=None, ref_cache=None):
     """The ordinary case: smallest file that still measures close enough."""
     index, _memo, reached = _search_quality(src, fmt, width, height, target,
                                             windows, fast, probe_log,
-                                            info=info, progress=progress)
+                                            info=info, progress=progress,
+                                            ref_cache=ref_cache)
     if progress is not None:
         progress.step("compressing", PROBE_BUDGET + 0.05, fmt.name)
     crf = fmt.levels[index]
     path = _output_path(out_dir, src, fmt)
-    encode(src, EncodeSpec(fmt=fmt, width=width, height=height, crf=crf,
-                           fast=fast, audio=audio, with_audio=True,
-                           faststart=True, info=info), dest=path)
+    try:
+        spec = EncodeSpec(fmt=fmt, width=width, height=height, crf=crf,
+                          fast=fast, audio=audio, with_audio=True,
+                          faststart=True, info=info)
+        encode(src, spec, dest=path, progress=progress)
 
-    if progress is not None:
-        progress.step("checking the result", 0.9, fmt.name)
-    score, mean, copied = _verify(src, path, width, height, windows, audio,
-                                  info)
-    # Sampled probes can be optimistic - they look at three frames per window
-    # where the verify looks at eight. If the finished file misses, climb.
-    while score < target and index < len(fmt.levels) - 1:
-        index += 1
-        crf = fmt.levels[index]
-        encode(src, EncodeSpec(fmt=fmt, width=width, height=height, crf=crf,
-                               fast=fast, audio=audio, with_audio=True,
-                               faststart=True, info=info), dest=path)
-        score, mean, copied = _verify(src, path, width, height, windows,
-                                      audio, info)
+        if progress is not None:
+            progress.step("checking the result", 0.9, fmt.name)
+        score, mean, audio_state = _verify(src, path, width, height, windows,
+                                           audio, info, spec=spec,
+                                           ref_cache=ref_cache,
+                                           progress=progress)
+        # Sampled probes can be optimistic - they look at three frames per
+        # window where the verify looks at eight. If the finished file
+        # misses, climb - a bounded number of times, because each climb is a
+        # whole-file encode and the shortfall disclosure exists for the rest.
+        climbs = 0
+        while (score < target and index < len(fmt.levels) - 1
+               and climbs < VERIFY_CLIMB_LIMIT):
+            climbs += 1
+            index += 1
+            crf = fmt.levels[index]
+            if progress is not None:
+                progress.step("checking the result",
+                              min(0.97, 0.9 + 0.03 * climbs),
+                              f"{fmt.name}, one rung higher")
+            spec = EncodeSpec(fmt=fmt, width=width, height=height, crf=crf,
+                              fast=fast, audio=audio, with_audio=True,
+                              faststart=True, info=info)
+            encode(src, spec, dest=path, progress=progress)
+            score, mean, audio_state = _verify(src, path, width, height,
+                                               windows, audio, info,
+                                               spec=spec, ref_cache=ref_cache,
+                                               progress=progress)
+    except Cancelled:
+        # This format's own half-written file is this format's to remove.
+        # The caller only knows about finished candidates, so a file
+        # abandoned mid-encode would otherwise sit next to the person's
+        # source looking like a result.
+        _unlink(path)
+        raise
 
     return {
         "fmt": fmt.name, "crf": crf, "path": path,
         "bytes": path.stat().st_size, "score": score, "mean": mean,
-        "audio_copied": copied, "reached": reached, "capped": False,
+        "audio_state": audio_state,
+        "audio_copied": audio_state == "copied",
+        "reached": reached, "capped": False,
         "witness": xpsnr(src, path, width, height,
                          tone_mapped=getattr(info, "tone_map", None)
-                         is not None),
+                         is not None, info=info),
     }
 
 
-def _under_cap(src, fmt, width, height, info, cap_bytes, audio, windows, fast,
-               out_dir, probe_log, progress=None):
+def _under_cap(src, fmt, width, height, info, cap_bytes, duration, audio,
+               windows, fast, out_dir, probe_log, progress=None,
+               ref_cache=None):
     """The hard-ceiling case: the best this can look inside N bytes.
 
     Rate-targeted rather than quality-targeted, because you cannot promise
     both. One encode, one measurement, and one retry at a tighter rate if the
     first overshoots - which is the whole of the state of the art here, and is
     what every tool that reliably hits a chat app's limit actually does.
+
+    `duration` arrives measured from the packets, not read from the
+    container's label - see `measured_duration`. Trusting the label here once
+    turned a 10 MB cap into a 5,690 MB file, because the label claimed one
+    second of a ten-minute clip and the arithmetic dutifully aimed eighty
+    megabits at it.
     """
-    bitrate = _bitrate_for_cap(cap_bytes, info.duration, info, audio)
+    bitrate = _bitrate_for_cap(cap_bytes, duration, info, audio)
     if bitrate < MIN_BITRATE:
         return None
 
     path = _output_path(out_dir, src, fmt)
-    for attempt in range(2):
-        encode(src, EncodeSpec(fmt=fmt, width=width, height=height,
-                               bitrate=bitrate, fast=fast, audio=audio,
-                               with_audio=True, faststart=True, info=info),
-               dest=path)
-        size = path.stat().st_size
-        if size <= cap_bytes or attempt == 1:
-            break
-        # Overshot. Scale the rate by how much, with a little margin, and go
-        # again exactly once.
-        bitrate = int(bitrate * (cap_bytes / float(size)) * 0.95)
-        if bitrate < MIN_BITRATE:
-            break
+    try:
+        spec = None
+        for attempt in range(2):
+            spec = EncodeSpec(fmt=fmt, width=width, height=height,
+                              bitrate=bitrate, fast=fast, audio=audio,
+                              with_audio=True, faststart=True, info=info)
+            encode(src, spec, dest=path, progress=progress)
+            size = path.stat().st_size
+            if size <= cap_bytes or attempt == 1:
+                break
+            # Overshot. Scale the rate by how much, with a little margin, and
+            # go again exactly once.
+            bitrate = int(bitrate * (cap_bytes / float(size)) * 0.95)
+            if bitrate < MIN_BITRATE:
+                break
 
-    score, mean, copied = _verify(src, path, width, height, windows, audio,
-                                  info)
+        score, mean, audio_state = _verify(src, path, width, height, windows,
+                                           audio, info, spec=spec,
+                                           ref_cache=ref_cache,
+                                           progress=progress)
+    except Cancelled:
+        _unlink(path)
+        raise
     return {
         "fmt": fmt.name, "crf": 0, "path": path,
         "bytes": path.stat().st_size, "score": score, "mean": mean,
-        "audio_copied": copied, "reached": True, "capped": True,
+        "audio_state": audio_state,
+        "audio_copied": audio_state == "copied",
+        "reached": True, "capped": True,
         "witness": xpsnr(src, path, width, height,
                          tone_mapped=getattr(info, "tone_map", None)
-                         is not None),
+                         is not None, info=info),
     }
 
 
-def _verify(src, path, width, height, windows, audio, info):
-    """Measure the finished file properly, and report how the sound was kept."""
+def _verify(src, path, width, height, windows, audio, info, spec=None,
+            ref_cache=None, progress=None):
+    """Measure the finished file properly, and report what became of the sound.
+
+    The audio answer comes from what the encode *recorded doing* plus one
+    check that the finished file really carries a track. It used to be
+    inferred by comparing codec names on the finished file, which told two
+    lies: audio decoded and re-encoded back to its own codec read as "kept
+    exactly as it was", and audio that failed to open at all - a silent file -
+    read as "re-encoded". A fact about sound has to come from the moment the
+    sound was handled.
+    """
     from . import quality as _quality
 
     tone_map = getattr(info, "tone_map", None)
     scores = []
     for start, length in windows:
-        reference = read_frames(src, start, length, VERIFY_FRAMES,
-                                size=(width, height), tone_map=tone_map)
+        if progress is not None:
+            progress.check()
+        reference = _cached_reference(ref_cache, src, start, length,
+                                      VERIFY_FRAMES, (width, height),
+                                      tone_map)
         candidate = read_frames(path, start, length, VERIFY_FRAMES,
                                 size=(width, height))
         for ref, cand in zip(reference, candidate):
@@ -2075,17 +2457,21 @@ def _verify(src, path, width, height, windows, audio, info):
                 continue
     reported, mean = pooled(scores)
 
-    copied = False
+    audio_state = "absent"
     if info.has_audio:
+        carried = False
         try:
             with av.open(str(path)) as out:
-                if out.streams.audio:
-                    written = out.streams.audio[0].codec_context.name or ""
-                    copied = (audio == "copy"
-                              and written.lower() == info.audio_codec.lower())
+                carried = bool(out.streams.audio)
         except Exception:
-            copied = False
-    return reported, mean, copied
+            carried = False
+        if not carried:
+            audio_state = "lost"
+        elif spec is not None and spec.audio_copied:
+            audio_state = "copied"
+        else:
+            audio_state = "encoded"
+    return reported, mean, audio_state
 
 
 def _output_path(out_dir, src, fmt) -> Path:

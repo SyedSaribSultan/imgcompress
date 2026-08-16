@@ -179,6 +179,13 @@ excludes = [
     # this build also pulls in scipy and pywebview, and the exclusion should
     # not depend on which package happened to be analysed first.
     "tkinter",
+    # Decision V3: the installers must not bundle PyAV. Its wheels carry a
+    # complete FFmpeg with GPL x264/x265 inside, and *distributing* that in a
+    # shipped binary is a different legal act from depending on it via pip.
+    # The release runner does not install the video extra, so this exclude is
+    # defence in depth against a cached or transitive `av` being collected -
+    # and the release gate independently fails any bundle that carries it.
+    "av",
 ]
 
 a = Analysis(

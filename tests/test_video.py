@@ -146,6 +146,21 @@ class TheVideoArithmetic(unittest.TestCase):
     def test_pooling_an_empty_set_is_zero_not_a_crash(self):
         self.assertEqual(video.pooled([]), (0.0, 0.0))
 
+    def test_a_tiny_probe_is_not_hostage_to_one_unlucky_frame(self):
+        """Three frames is every probe of every clip under a minute, and the
+        raw minimum of three is whatever the unluckiest frame said - a cut, a
+        flash - which drove the search to a needlessly high rung and a
+        needlessly large file. The median is the estimate one bad draw cannot
+        own; the number a person sees still comes from the verify pass."""
+        reported, _ = video.pooled([90.0, 91.0, 40.0])
+        self.assertEqual(reported, 90.0)
+        # A pair reports its worse half - two frames cannot outvote each other.
+        reported, _ = video.pooled([90.0, 40.0])
+        self.assertEqual(reported, 40.0)
+        # One frame is its own answer.
+        reported, _ = video.pooled([77.0])
+        self.assertEqual(reported, 77.0)
+
     def test_frame_times_stay_inside_the_window(self):
         times = video.frame_times(10.0, 20.0, 8)
         self.assertEqual(len(times), 8)
@@ -448,6 +463,60 @@ class TheColourArithmetic(unittest.TestCase):
                 self.assertLess(worst, 0.05,
                                 f"{worst:.3f} code values apart")
 
+    def test_the_float32_path_stays_exact_at_the_gamut_boundary(self):
+        """The one place approximation can never be allowed back in. The
+        conversion ends in a 2.4 gamma whose slope is unbounded at black, and
+        the gamut matrix pushes saturated colours through black - so an error
+        of e in linear light becomes 255 * e^(1/2.4) code values on screen.
+        A 65-cube lookup table measured 14-19 code values wrong exactly here,
+        which is why there is no lookup table; float32 evaluation of the real
+        formulas has to stay under one code value on the same colours, and
+        does, with margin."""
+        import numpy as np
+
+        rng = np.random.default_rng(21)
+        edges = []
+        for ch in range(3):
+            plane = np.zeros((60_000, 3))
+            plane[:, ch] = rng.random(60_000)
+            other = (ch + 1) % 3
+            plane[:, other] = rng.random(60_000) * 0.2
+            edges.append(plane)
+        signal = np.vstack(edges)
+        nits = video.pq_nits(signal)
+        exact = video.sdr_from_nits(nits.astype(np.float64), 1000.0, True)
+        fast = video.sdr_from_nits(nits.astype(np.float32), 1000.0, True)
+        worst = float(np.abs(exact - fast).max()) * 255.0
+        self.assertLess(worst, 1.0,
+                        f"{worst:.2f} code values apart at the gamut edge")
+
+    def test_the_banded_path_agrees_with_the_plain_arithmetic(self):
+        """`to_frame` runs the conversion on row bands in parallel for speed.
+        Banding is only legitimate because every step is per-pixel, so the
+        result must match the plain functions composed by hand - within one
+        code value, which is the rounding slack of reordering float ops."""
+        import av
+        import numpy as np
+
+        rng = np.random.default_rng(31)
+        height, width = 500, 320   # tall enough to be split into bands
+        planes = np.empty((height, width, 3), np.uint16)
+        planes[..., 0] = (rng.random((height, width)) * 56064 + 4096)
+        planes[..., 1:] = (rng.random((height, width, 2)) * 28672 + 18000)
+        frame = av.VideoFrame.from_ndarray(planes, format="yuv444p16le")
+        tone = video.ToneMap(transfer="smpte2084", source_peak=1000.0)
+
+        got = tone.to_frame(frame).to_ndarray(format="yuv444p").astype(int)
+        code = video.sdr_from_nits(video.pq_nits(tone.signal(frame)),
+                                   1000.0, True)
+        ycc = code @ video._RGB_TO_BT709_YCBCR.T.astype(code.dtype)
+        want = np.empty((3, height, width), int)
+        want[0] = np.clip(ycc[..., 0] * 219.0 + 16.0, 0.0, 255.0).round()
+        want[1] = np.clip(ycc[..., 1] * 224.0 + 128.0, 0.0, 255.0).round()
+        want[2] = np.clip(ycc[..., 2] * 224.0 + 128.0, 0.0, 255.0).round()
+        self.assertLessEqual(int(np.abs(got.reshape(want.shape) - want).max()),
+                             1)
+
     def test_a_witness_that_cannot_see_the_source_reports_nothing(self):
         """The independent metric compares two files straight out of their
         containers, and nothing in this build can apply a PQ transfer inside a
@@ -635,6 +704,104 @@ class TheVideoEngine(unittest.TestCase):
         # is not is the one outcome worse than no file.
         self.assertEqual(list(self.out("stopped").glob("*.mp4")), [])
 
+    def already_small(self, name="already-small.mp4"):
+        """A file no honest re-encode can beat: the grainy fixture squeezed
+        to the bottom rung first. Grain is incompressible by construction, so
+        any near-lossless second encode of this file must come out bigger -
+        which makes the never-bigger passthrough reachable on purpose instead
+        of by luck."""
+        path = self.tmp / name
+        if not path.exists():
+            fmt = video.FORMATS["h264-mp4"]
+            info = video.probe(FIXTURES / "grain.mp4")
+            video.encode(
+                FIXTURES / "grain.mp4",
+                video.EncodeSpec(fmt=fmt, width=info.width, height=info.height,
+                                 crf=fmt.levels[0], fast=True, info=info),
+                dest=path,
+            )
+        return path
+
+    def test_leaving_a_file_alone_erases_every_fact_about_the_deleted_encode(self):
+        """The passthrough keeps the person's original, so every measurement
+        of the discarded encode has to go with it: the score, the format, the
+        sound claim - and the warning that the deleted encode fell short of a
+        floor, which stayed behind once and described a file that no longer
+        existed."""
+        result = video.compress(self.already_small(), "web", fast=True,
+                                quality_target=99.9, formats=["h264-mp4"],
+                                output_dir=self.out("left-alone"))
+        self.assertFalse(result.error, result.error)
+        self.assertTrue(result.skipped,
+                        "the fixture was beaten, so this test measured nothing")
+        self.assertEqual(result.new_bytes, result.original_bytes)
+        self.assertEqual(result.score, 0.0)
+        self.assertEqual(result.fmt, "")
+        self.assertEqual(result.audio_note, "")
+        self.assertFalse(result.capped)
+        self.assertFalse(result.missed_size)
+        self.assertFalse(
+            [w for w in result.warnings if "could not reach" in w],
+            f"a warning about the deleted encode survived: {result.warnings}")
+
+    def test_never_bigger_holds_even_when_the_frame_was_capped(self):
+        """This rule used to step aside whenever the destination had resized
+        the frame, so a re-encode *larger* than its source shipped anyway,
+        wearing a saving of nothing. A limit on the frame is not a licence to
+        hand back a worse file."""
+        source = self.already_small()
+        info = video.probe(source)
+        result = video.compress(source, "web", fast=True,
+                                quality_target=99.9, formats=["h264-mp4"],
+                                max_dimension=info.width // 2,
+                                output_dir=self.out("resized-bigger"))
+        self.assertFalse(result.error, result.error)
+        self.assertTrue(result.skipped,
+                        "the fixture was beaten, so this test measured nothing")
+        self.assertEqual(result.new_bytes, result.original_bytes)
+        self.assertIsNone(result.output)
+        # The kept file is the source at its own size, so no resize happened
+        # and no resize may be reported.
+        self.assertIsNone(result.resized_from)
+        self.assertIsNone(result.resized_to)
+
+    def test_stopping_reaches_inside_a_running_encode(self):
+        """The stages are where the engine talks; the encode loop is where
+        the minutes go. A stop that only lands between stages leaves a person
+        watching a half-hour encode they already cancelled."""
+        fmt = video.FORMATS["h264-mp4"]
+        info = video.probe(FIXTURES / "grain.mp4")
+        asked = [0]
+
+        def should_stop():
+            asked[0] += 1
+            return asked[0] > 3   # arm only once the loop is genuinely inside
+
+        progress = video.Progress(should_stop=should_stop)
+        dest = self.out("mid-encode") / "stopped.mp4"
+        with self.assertRaises(video.Cancelled):
+            video.encode(
+                FIXTURES / "grain.mp4",
+                video.EncodeSpec(fmt=fmt, width=info.width,
+                                 height=info.height, crf=fmt.levels[-1],
+                                 fast=True, info=info),
+                dest=dest, progress=progress,
+            )
+        self.assertGreater(asked[0], 3,
+                           "the encode loop never consulted should_stop")
+
+    def test_a_lying_duration_label_is_not_believed(self):
+        """A container's duration label steers the bitrate a size cap aims.
+        Trusting it once turned a 10 MB cap into a 5,690 MB file. The packets
+        are the only honest source, so the packets are what get counted."""
+        real = video.probe(FIXTURES / "motion.mp4").duration
+        liar = video.VideoInfo(duration=1.0)
+        counted = video.measured_duration(FIXTURES / "motion.mp4", liar)
+        self.assertAlmostEqual(counted, real, delta=0.25)
+        # And an unreadable file falls back to the label instead of crashing.
+        self.assertEqual(
+            video.measured_duration(self.tmp / "missing.mp4", liar), 1.0)
+
     def test_a_destination_that_takes_no_video_says_so_and_skips(self):
         result = video.compress(FIXTURES / "motion.mp4", "thumbnail",
                                 output_dir=self.out("thumb"))
@@ -750,6 +917,25 @@ class TheAwkwardInputs(unittest.TestCase):
                                 output_dir=self.out(folder), **kwargs)
         return result
 
+    def run_converted(self, name, folder):
+        """One HDR fixture, compressed so that something actually ships.
+
+        The colour tests need a finished file to look at, and the fixtures
+        are near-lossless on purpose - so at the destination's own floor the
+        smallest passing encode can come out *bigger* than the source, and
+        the never-bigger rule (correctly) hands the original back. These
+        tests measure the conversion, not the compression, so they ask for a
+        quality the fixture can beat and then insist the encode really did
+        ship. The passthrough side has its own test below.
+        """
+        result = self.run_one(name, folder, max_dimension=320,
+                              quality_target=70.0)
+        self.assertFalse(result.error, result.error)
+        self.assertFalse(result.skipped,
+                         f"nothing shipped, so nothing can be checked "
+                         f"({result.note})")
+        return result
+
     def test_a_phone_held_upright_does_not_come_out_sideways(self):
         """The most common consumer video shape there is: stored landscape
         with a rotation flag. Ignore the flag and every portrait clip a person
@@ -792,6 +978,70 @@ class TheAwkwardInputs(unittest.TestCase):
         self.assertGreater(bottom, top,
                            "the picture was not turned the right way up")
 
+    def test_the_witness_sees_the_straightened_picture(self):
+        """The second opinion used to compare the straightened output against
+        the sideways stored reference, and returned about 12 dB of catastrophe
+        that was not there - on exactly the most common consumer video shape.
+        The reference now goes through the same straightening the encoder
+        applied, so the witness measures the encode."""
+        if not video._has_filter("xpsnr"):
+            self.skipTest("this build carries no xpsnr filter")
+        result = self.run_one("portrait", "witness")
+        self.assertFalse(result.error, result.error)
+        self.assertFalse(result.skipped, result.note)
+        self.assertGreater(
+            result.witness, 20.0,
+            f"the witness scored {result.witness:.1f} dB - that is the "
+            "sideways comparison this test exists to forbid")
+
+    def test_the_sound_claim_comes_from_what_the_encode_did(self):
+        """The old claim was inferred afterwards by comparing codec names on
+        the finished file, which told two lies: sound decoded and re-encoded
+        back to its own codec read as "kept exactly as it was", and sound
+        that failed to open at all - a silent file - read as "re-encoded".
+        The claim now comes from the moment the sound was handled."""
+        src = REAL_WORLD / "multitrack.mp4"
+        info = video.probe(src)
+        self.assertTrue(info.has_audio)
+        fmt = video.FORMATS["h264-mp4"]
+        windows = [(0.0, min(2.0, info.duration or 2.0))]
+        folder = self.out("sound-claims")
+
+        # Re-encoded sound, even to the codec the source already used, is
+        # re-encoded sound.
+        spec = video.EncodeSpec(fmt=fmt, width=info.width, height=info.height,
+                                crf=fmt.levels[0], fast=True, audio="aac",
+                                info=info)
+        out = folder / "re-encoded.mp4"
+        video.encode(src, spec, dest=out)
+        self.assertTrue(spec.audio_written)
+        self.assertFalse(spec.audio_copied)
+        _, _, state = video._verify(src, out, info.width, info.height,
+                                    windows, "aac", info, spec=spec)
+        self.assertEqual(state, "encoded")
+
+        # Copied sound is copied sound.
+        spec = video.EncodeSpec(fmt=fmt, width=info.width, height=info.height,
+                                crf=fmt.levels[0], fast=True, audio="copy",
+                                info=info)
+        out = folder / "copied.mp4"
+        video.encode(src, spec, dest=out)
+        self.assertTrue(spec.audio_copied)
+        _, _, state = video._verify(src, out, info.width, info.height,
+                                    windows, "copy", info, spec=spec)
+        self.assertEqual(state, "copied")
+
+        # And a result with no soundtrack at all must never be described as
+        # having any kind of sound.
+        spec = video.EncodeSpec(fmt=fmt, width=info.width, height=info.height,
+                                crf=fmt.levels[0], fast=True,
+                                with_audio=False, info=info)
+        out = folder / "silent.mp4"
+        video.encode(src, spec, dest=out)
+        _, _, state = video._verify(src, out, info.width, info.height,
+                                    windows, "copy", info, spec=spec)
+        self.assertEqual(state, "lost")
+
     def test_non_square_pixels_are_not_left_squashed(self):
         """DV and many camera modes store a frame that is not the shape the
         picture should be. The stored frame is 320x176 with 4:3 pixels, so the
@@ -816,9 +1066,7 @@ class TheAwkwardInputs(unittest.TestCase):
         that no longer matches the one they shot, and a disclosure with no
         conversion behind it is a lie.
         """
-        result = self.run_one("hdr", "hdr", max_dimension=320)
-        self.assertFalse(result.error, result.error)
-        self.assertFalse(result.skipped, result.note)
+        result = self.run_converted("hdr", "hdr")
 
         # 1. the colour was converted, and the engine says so as a fact rather
         #    than leaving a surface to work it out from the tags.
@@ -847,8 +1095,7 @@ class TheAwkwardInputs(unittest.TestCase):
         come back with a cast on exactly its most common output."""
         import av
 
-        result = self.run_one("hdr", "hdr-tags", max_dimension=320)
-        self.assertFalse(result.error, result.error)
+        result = self.run_converted("hdr", "hdr-tags")
         with av.open(str(result.output)) as container:
             context = container.streams.video[0].codec_context
             self.assertEqual(int(context.color_trc), 1)          # BT.709
@@ -860,8 +1107,7 @@ class TheAwkwardInputs(unittest.TestCase):
         """The whole picture, not just its brightest corner. A conversion can
         be wrong in three directions at once - white grey, midtones lifted,
         colours tinted - and only the last of those is obvious in a still."""
-        result = self.run_one("hdr", "hdr-shape", max_dimension=320)
-        self.assertFalse(result.error, result.error)
+        result = self.run_converted("hdr", "hdr-shape")
         top, left, rest = self.bars_of(self.pixels_of(result.output))
 
         # The 1000-nit highlight is the brightest thing here and arrives at
@@ -892,10 +1138,8 @@ class TheAwkwardInputs(unittest.TestCase):
         """
         import numpy as np
 
-        pq = self.run_one("hdr", "pq-vs-hlg-a", max_dimension=320)
-        hlg = self.run_one("hlg", "pq-vs-hlg-b", max_dimension=320)
-        self.assertFalse(pq.error, pq.error)
-        self.assertFalse(hlg.error, hlg.error)
+        pq = self.run_converted("hdr", "pq-vs-hlg-a")
+        hlg = self.run_converted("hlg", "pq-vs-hlg-b")
         self.assertTrue(pq.tone_mapped and hlg.tone_mapped)
 
         left = self.pixels_of(pq.output)
@@ -915,8 +1159,7 @@ class TheAwkwardInputs(unittest.TestCase):
         the graph produces."""
         import numpy as np
 
-        result = self.run_one("phone", "phone", max_dimension=320)
-        self.assertFalse(result.error, result.error)
+        result = self.run_converted("phone", "phone")
         self.assertTrue(result.tone_mapped)
 
         width, height = self.shape_of(result.output)

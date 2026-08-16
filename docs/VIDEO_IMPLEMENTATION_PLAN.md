@@ -1,7 +1,12 @@
 # Video Implementation Plan — approved 2026-08-14
 
-> **Status: DESKTOP TIER, REAL-FOOTAGE CORRECTNESS AND RESKIN IMPLEMENTED
-> 2026-08-15. BROWSER TIER NOT STARTED** (scheduled second by decision V1).
+> **Status: BOTH TIERS IMPLEMENTED. 2026-08-16: all sixteen defects from the
+> correctness review and the honesty audit are resolved except C1, which is
+> improved and precisely bounded — see "Correctness review" below for the
+> per-defect record.** History of how it got here follows.
+>
+> **Status as of 2026-08-15: DESKTOP TIER, REAL-FOOTAGE CORRECTNESS AND RESKIN
+> IMPLEMENTED. BROWSER TIER NOT STARTED** (scheduled second by decision V1).
 > Verification: 162/162 Python tests including 44 video tests, `ruff` clean,
 > both generated-file checks current, design-system gate green in all 27
 > checks, and a contrast audit of the new palette passing AA on all twelve
@@ -161,7 +166,7 @@
 >   quality it was already a compressed file, so the engine correctly refused
 >   to beat it and the tests measured nothing but that the fixture was small.
 
-## Correctness review, 2026-08-16 — OPEN DEFECTS
+## Correctness review, 2026-08-16 — RESOLVED SAME DAY (C1 partially; see its record)
 
 An adversarial correctness review ran against commit `14239cd`. It verified the
 colour maths against BT.2100/BT.2408 and found it **right** (`pq_nits(0.5) =
@@ -170,35 +175,98 @@ rows sum to exactly 1.0), confirmed the tone map is applied symmetrically to
 both sides when scoring, confirmed 10-bit is not truncated, and confirmed
 `ToneMap` is thread-safe, the bisection correct over 4000 generated ladders,
 and `encode()`'s containers closed on every path. What follows is what it
-found wrong. **None of it is fixed.**
+found wrong, and what became of each.
 
-| # | Severity | Defect |
-| --- | --- | --- |
-| C1 | critical | **Tone mapping is per-frame full-frame numpy: 2.2 s per 4K frame**, measured. Four `np.power` sweeps over ~25M float32 elements per frame, no LUT, no cross-frame vectorisation — ~11 hours for a ten-minute 4K clip *per pass*, and the search runs many passes across two formats. A phone shoots 4K HDR by default, so this is the ordinary case, not an exotic one. `video.py` `ToneMap.display`/`to_frame`, called from `_pump`. Note the peak scan already shrinks to `PEAK_SCAN_SIZE`; the every-frame path was left at full resolution. |
-| C2 | critical | **Cancellation is unreachable during the parts that take minutes.** `progress.step()` is called at five places, all *between* stages; there is no check inside `encode()`, `_pump()`, `_verify()` or `_score_windows()`. `Progress.step`'s docstring claims otherwise. Worse, `server.py` never passes `should_stop` at all, so the desktop app cannot cancel a video; `/api/remove` and `/api/clear` drop the item while the worker encodes on. |
-| H3 | high | **Video temp directories are never deleted.** `server.py` writes to `%TEMP%/pocketsize-video/<item_id>/`; no `rmtree` exists anywhere. `remove()` ignores `output_path`, `_save_video` copies rather than moves, nothing runs at shutdown. Thirty phone clips silently leave several GB on the system drive, permanently. |
-| H4 | high | **A lying or missing duration breaks size caps both ways.** `_bitrate_for_cap` trusts container metadata: a 1 s claim on a 600 s file yields 79.5 Mbps and writes **5,690 MB for a 10 MB cap** (measured); the single retry starts three orders of magnitude wrong and ships anyway. `duration = 0` returns a rate below `MIN_BITRATE` for every format, so a perfectly encodable file reports `"every encoder failed on this file"`. |
-| H5 | high | **The browser worker never releases WebCodecs resources** and re-opens the whole file dozens of times. No `close()`/`dispose()` anywhere in `web/video-worker.js`; `framesAt` builds a new `Input` + `CanvasSink` per call. A 20-minute clip means ~48 full-file opens, a 4-hour clip ~480. `VideoFrame`s are non-GC'd platform memory — the tab dies partway through a long job. |
-| M6 | medium | **One format throwing kills the whole browser job.** The bake-off loop has no per-format try/catch, unlike `video.py:1850`. An AV1 encoder that passes `isConfigSupported` then fails at the real resolution takes H.264 down with it, and the person is told the browser cannot encode video. `best.format` can also dereference null. |
-| M7 | medium | **Cancelling mid-bake-off orphans the in-flight candidate.** `_at_quality` writes its file before returning, so `candidate` still points at the *previous* format's dict; the handler cleans that one and leaves the half-written file next to the person's source — precisely what the comment above it says must never happen. |
-| M8 | medium | **The verify-disagreement climb is unbounded**, doing a full-file encode *and* verify per rung, up to 19 per format, outside `PROBE_BUDGET`, with progress pinned at 0.9 throughout. |
-| M9 | medium | **`pooled()` returns the raw minimum, not a percentile, whenever there are fewer than four scores** — which is every probe of every clip under a minute (`windows = 1` × `PROBE_FRAMES = 3`). One unlucky frame misleads the search into a needlessly high rung, so the person gets a larger file than the honest answer. `VERIFY_FRAMES = 8` masks it in the reported score. |
-| L10 | low | The passthrough branch clears score, format and audio note but **leaves the quality-shortfall warning** describing the deleted encode. |
+| # | Severity | Defect | Resolution |
+| --- | --- | --- | --- |
+| C1 | critical | **Tone mapping is per-frame full-frame numpy: 2.2 s per 4K frame**, measured. ~11 hours for a ten-minute 4K clip *per pass*, and the search runs many passes across two formats. | **Improved, not closed** — see the C1 record below. Exact arithmetic now runs thread-banded (2.0 s → 1.23 s per 4K frame on a 4-core/8-thread laptop; scales with real cores), reference frames are cached across probe rungs and formats instead of being re-tone-mapped five to twelve times per file, and the verify climb is bounded. The lookup-table family is now *measured out* — the record below says why, so nobody spends a third day on it. |
+| C2 | critical | Cancellation unreachable during the minutes; `server.py` never passes `should_stop`; `/api/remove`//api/clear` drop the item while the worker encodes on. | **Fixed.** The encode and verify loops consult the stop flag every ~16 packets (`Progress.check`); the server registers a stop event per video, `remove`/`clear` set it, and the worker sweeps up. Gated by `test_stopping_reaches_inside_a_running_encode` and `test_removing_a_video_stops_the_encode_it_was_waiting_on`, both observed failing against `14239cd`. |
+| H3 | high | Video temp directories never deleted. | **Fixed.** `video_workdir()` owns the layout; `remove()` deletes the item's folder, the worker sweeps a folder whose item vanished mid-encode, and `serve()` registers a cleanup that runs on quit and at interpreter exit (upload dir included). Gated by `test_working_files_do_not_outlive_the_item`. |
+| H4 | high | A lying or missing duration breaks size caps both ways (10 MB cap → 5,690 MB file, measured). | **Fixed.** `measured_duration()` counts the packets whenever a cap is set or the label is missing, and `_under_cap` receives the counted number. When no usable rate exists at all, the quality-first candidate ships *over* the cap with `missed_size` disclosed instead of `"every encoder failed"`. Gated by `test_a_lying_duration_label_is_not_believed`, observed failing. |
+| H5 | high | Browser worker never releases WebCodecs resources; re-opens the whole file dozens of times. | **Fixed.** One reader per file per job (`makeReader`), disposed in `finally`; the original is opened once and its reference frames cached across rungs and formats. |
+| M6 | medium | One format throwing kills the whole browser job. | **Fixed.** Per-format try/catch mirroring the desktop loop; failures ride the result as warnings; `best` is null-guarded and the job only fails when every format failed. |
+| M7 | medium | Cancelling mid-bake-off orphans the in-flight candidate file. | **Fixed.** `_at_quality`/`_under_cap` unlink their own path on `Cancelled` before re-raising — whoever owns a half-written file removes it on the way out. |
+| M8 | medium | The verify-disagreement climb is unbounded (up to 19 whole-file encodes per format). | **Fixed.** `VERIFY_CLIMB_LIMIT = 2`, with progress reported per climb; a file still short after that is disclosed as short, which is the same contract the search itself has. |
+| M9 | medium | `pooled()` returns the raw minimum under four scores, so one unlucky frame drives the search to a needlessly large file. | **Fixed.** Tiny sets report their median (lower-middle for pairs); the ≥4 percentile path is unchanged. Gated by `test_a_tiny_probe_is_not_hostage_to_one_unlucky_frame`, observed failing (40.0 where 90.0 was the answer). |
+| L10 | low | The passthrough leaves the quality-shortfall warning describing the deleted encode. | **Fixed**, together with the cap-miss and lost-sound warnings, and folded into the passthrough gate `test_leaving_a_file_alone_erases_every_fact_about_the_deleted_encode`, observed failing. |
 
-**Fix order: C1 and C2 first** — together they make the desktop tier unusable
-on the input it was built for. Then H3/H4 (silent and cumulative), then the
-browser pair H5/M6.
+**The C1 record — why there is still no lookup table, with numbers.** The
+reverted 1-D attempt is recorded above; this pass built and measured the 3-D
+option the note suggested, and it is *mathematically excluded* by the
+one-code-value bar, not merely hard:
 
-**One attempted fix was reverted.** A 4096-entry lookup table for the transfer
-curve is the right idea — the transfer is a 1-D function of a scalar — but the
-attempt produced 185 code values of error and no speedup, because the HLG
-fixture takes the `wide_gamut` path that must stay exact and the table was
-indexed wrongly. Whoever picks this up: the gamut matrix has to be resolved in
-linear light before the tone curve, so a 1-D table can only carry the
-per-channel part, and the wide-gamut path needs either a 3-D table or genuine
-vectorisation instead. Verify against `sdr_from_nits` to under one 8-bit code
-value, and benchmark at 3840x2160 — the fixtures are 480x270 and hide all of
-this.
+- A straight 65³ tetrahedral table (the same interpolation `lut3d` uses) is
+  fine on the narrow-gamut path (worst 0.32–0.98 code values) and **14–19
+  code values wrong on the wide-gamut path** — measured on adversarial
+  gamut-edge colours, at every table size tried (33³/65³/97³, with and
+  without perceptual input shapers, split pipelines, and float inter-stages).
+- The reason is structural: the conversion ends in a 2.4 gamma whose slope is
+  unbounded at black, and the BT.2020→709 matrix pushes saturated colours
+  *through* black (negative linear light, clipped to zero). At that boundary
+  an error of *e* in linear light becomes `255·e^(1/2.4)` code values on
+  screen, so staying under one code value needs linear error below
+  `(1/255)^2.4 ≈ 1.7e-6`. A 65³ table leaves ~1e-3 there. Even float16
+  evaluation of the *exact formulas* fails (1.58 code values, measured);
+  float32 passes at ~0.19. Only near-exact evaluation clears the bar —
+  which is now pinned by
+  `test_the_float32_path_stays_exact_at_the_gamut_boundary`.
+- So the fix is the plan's other option, genuine vectorisation: the exact
+  float32 arithmetic runs on horizontal bands across a thread pool (numpy
+  releases the GIL inside each sweep; every step is per-pixel, so banding
+  changes nothing — pinned by
+  `test_the_banded_path_agrees_with_the_plain_arithmetic`), with the 3×3
+  matrices as explicit ufunc arithmetic because BLAS's own thread pool fights
+  the band pool (measured 5× *slower* at two workers with `@`).
+- Measured at 3840×2160 on this 4-core/8-thread laptop: `to_frame` 1993 ms →
+  1226 ms. The bigger wins are structural: reference frames for scoring are
+  now decoded and tone-mapped **once** per file instead of once per probe
+  rung per format (five to twelve times), and the climb bound removes up to
+  17 whole-file passes in the worst case.
+- **What remains open on C1:** a ten-minute 4K HDR final encode still spends
+  hours in Python-side per-pixel arithmetic. The two identified next steps,
+  neither taken here: encode both final formats in one pass over the
+  tone-mapped frames (halves the dominant cost; real surgery in `compress`),
+  and/or a compiled path (zimg-class C with SIMD does this exactly at
+  ~10–30 ms/frame — but no maintained wheel exists under the pip-only rule).
+  4K HDR is *usable* now for the probe-and-cap paths and honest throughout;
+  it is not yet fast, and the UI's expectations copy already says video
+  takes time.
+
+**Resolved alongside, from the same-day honesty audit:** the browser tier now
+receives and honours size caps (quality-first, then rate-targeted under the
+cap, `capped`/`missedSize` posted as flags — the old worker was measured
+handing back **1,986,165 bytes against a 92,160-byte cap** with nothing
+said); the browser bake-off uses the desktop's winner rule instead of
+smallest-bytes-wins; the desktop app renders the cap disclosure on the same
+line as the percentage and shows the audio note, running time and XPSNR
+witness in the facts panel; the sound claim comes from what the encode
+recorded doing rather than comparing codec names afterwards (which reported
+"kept exactly as it was" for re-encoded audio and "re-encoded" for *silent*
+files — silent output is now disclosed as silent); the XPSNR witness
+straightens the reference with the encoder's own transform chain, pairs
+frames by timestamp and pools worst-first (a rotated clip measured **−1.3 dB**
+under the old comparison); the never-bigger rule no longer steps aside for
+resized output; `probe()`'s first-frame decode failure is recorded as a
+warning instead of swallowed; and the benchmark's `vs best` column is blank
+on rows that missed the floor, because bytes are only comparable at equal
+quality.
+
+**Open beyond the defects (2026-08-16), for the owner:**
+
+1. **i18n.** The UI, all disclosure copy and number formatting are
+   English-only. Making the five-year-old-readable copy hold in other
+   languages is a copywriting project per locale, not a string swap, and it
+   needs owner decisions (which locales, who writes them) before any
+   scaffolding is worth building. Deliberately not started here.
+2. **Installer licence texts.** `docs/THIRD_PARTY_NOTICES.md` now records
+   every dependency tier and the two known metadata discrepancies; the
+   remaining step is embedding the bundled packages' full licence texts into
+   the installer artifacts. Decision V3's no-PyAV rule is now enforced twice
+   (spec exclude + release gate, both demonstrated red).
+3. **D5, the video accent colour,** approved with the reskin, has still not
+   shipped.
+4. **C1's remaining gap** and the two identified next steps, recorded in the
+   review section above.
 
 This is the canonical plan for adding video compression and for the
 PostHog-style reskin. It records what was approved, the exact copy, the

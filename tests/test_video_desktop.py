@@ -137,6 +137,70 @@ class TheDesktopVideoPath(unittest.TestCase):
         names = sorted(e["name"] for e in session.snapshot()["items"])
         self.assertEqual(names, ["one.mp4", "two.mp4"])
 
+    def test_removing_a_video_stops_the_encode_it_was_waiting_on(self):
+        """`/api/remove` used to drop the row while the worker encoded on for
+        minutes - the app had no way to cancel a video at all, because the
+        server never passed `should_stop` to the engine. Removing the item is
+        the person saying stop, and stop has to mean now."""
+        from pocketsize.server import video_workdir
+
+        session = Session(workers=1)
+        session.add_path(FIXTURES / "grain.mp4")
+        item_id = session.snapshot()["items"][0]["id"]
+
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            entries = session.snapshot()["items"]
+            if entries and entries[0]["status"] == "working":
+                break
+            time.sleep(0.05)
+        else:
+            self.fail("the encode never started")
+
+        session.remove([item_id])
+        # The engine checks the flag between frames, so the worker should be
+        # idle again far sooner than the encode would have taken.
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            with session.lock:
+                still_running = item_id in session.stops
+            if not still_running:
+                break
+            time.sleep(0.1)
+        self.assertFalse(still_running,
+                         "the worker was still encoding a removed video")
+        # And nothing of it is left on disk once the worker has let go.
+        deadline = time.time() + 10
+        while time.time() < deadline and video_workdir(item_id).exists():
+            time.sleep(0.1)
+        self.assertFalse(video_workdir(item_id).exists(),
+                         "the removed video's working folder was left behind")
+
+    def test_working_files_do_not_outlive_the_item(self):
+        """Thirty phone clips used to leave several gigabytes in the system
+        temp folder, permanently: nothing deleted a video's working directory,
+        ever. Removing the item removes its folder; cleanup sweeps the rest."""
+        from pocketsize.server import video_workdir
+
+        session = Session(workers=1)
+        session.add_path(FIXTURES / "still.mp4")
+        item_id = session.snapshot()["items"][0]["id"]
+        self.finish(session)
+        self.assertTrue(video_workdir(item_id).exists(),
+                        "the result should exist while the item is held")
+        session.remove([item_id])
+        self.assertFalse(video_workdir(item_id).exists(),
+                         "removing the item must remove its working folder")
+
+        # And whatever is still held when the app ends goes with the app.
+        session = Session(workers=1)
+        session.add_path(FIXTURES / "still.mp4")
+        item_id = session.snapshot()["items"][0]["id"]
+        self.finish(session)
+        session.cleanup()
+        self.assertFalse(video_workdir(item_id).exists(),
+                         "shutdown must sweep the session's working folders")
+
     def test_the_snapshot_says_whether_video_works_on_this_machine(self):
         """The UI cannot offer what this machine cannot do, and must not
         pretend the absence is a failure."""

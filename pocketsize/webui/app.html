@@ -720,6 +720,10 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
               <div class="v" id="s-floor">&mdash;</div></div>
             <div class="stat"><div class="k">Dimensions</div>
               <div class="v" id="s-dims">&mdash;</div></div>
+            <div class="stat" id="s-duration-row" hidden><div class="k">Running time</div>
+              <div class="v" id="s-duration">&mdash;</div></div>
+            <div class="stat" id="s-witness-row" hidden><div class="k">Second opinion</div>
+              <div class="v" id="s-witness">&mdash;</div></div>
           </div>
           <div class="note" id="s-note" hidden></div>
           <div class="warn" id="s-warn" hidden></div>
@@ -918,8 +922,23 @@ function statusLine(it) {
   if (it.status === "queued") return "waiting";
   if (it.status === "working") return "encoding…";
   const pct = it.saved_pct > 0 ? `−${it.saved_pct.toFixed(0)}%` : "no gain";
+  /* The cap disclosure rides on the SAME line as the percentage, at the same
+     size - never after, never smaller. `capped` is a flag the engine posts;
+     this line never infers it from the numbers. */
+  const capped = it.capped ? ", not as sharp to fit the size limit" : "";
   const tail = it.status === "saved" ? ` <span class="save">saved</span>` : "";
-  return `${human(it.original_bytes)} → ${human(it.new_bytes)} · ${pct}${tail}`;
+  return `${human(it.original_bytes)} → ${human(it.new_bytes)} · ${pct}${capped}${tail}`;
+}
+
+/* A running time as a clock writes it: 0:07, 2:31, 1:04:20. */
+function clockTime(seconds) {
+  if (!isFinite(seconds) || seconds <= 0) return "";
+  const whole = Math.round(seconds);
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const s = whole % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
@@ -1102,8 +1121,12 @@ function renderInspector(it) {
   $("s-size").innerHTML = ready
     ? `${human(it.new_bytes)} <small>from ${human(it.original_bytes)}</small>`
     : (it.status === "failed" ? "—" : "working…");
+  /* The engine's `capped` flag rides on the same line as the percentage, at
+     full size. A quality traded away to meet a byte limit is the least
+     trustworthy number on the page unless it says so where the number is. */
+  const cappedLine = it.capped ? ", not as sharp to fit the size limit" : "";
   $("s-saved").innerHTML = ready
-    ? (it.saved_pct > 0 ? `−${it.saved_pct.toFixed(0)}% <small>${human(it.original_bytes - it.new_bytes)}</small>`
+    ? (it.saved_pct > 0 ? `−${it.saved_pct.toFixed(0)}%${cappedLine} <small>${human(it.original_bytes - it.new_bytes)}</small>`
                         : "none")
     : "—";
   $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
@@ -1123,8 +1146,18 @@ function renderInspector(it) {
   $("s-floor").innerHTML = `${state.settings.metric === "ssim" ? Number(floor).toFixed(2) : floor}` +
     (it.override ? ' <small>override</small>' : "");
 
+  /* The video facts the engine already posts and this panel used to drop on
+     the floor: what happened to the sound, how long the clip runs, and the
+     second opinion from the independent metric. Facts, not inferences. */
+  $("s-duration-row").hidden = !(isVideo && it.duration > 0);
+  $("s-duration").textContent = clockTime(it.duration) || "—";
+  $("s-witness-row").hidden = !(isVideo && it.witness > 0);
+  $("s-witness").textContent = it.witness > 0
+    ? `${it.witness.toFixed(1)} dB (XPSNR)` : "—";
+
   const note = $("s-note");
-  note.hidden = !it.note; note.textContent = it.note || "";
+  const notes = [it.note, it.audio_note].filter(Boolean);
+  note.hidden = !notes.length; note.textContent = notes.join(" · ");
   const warn = $("s-warn");
   const messages = [...(it.warnings || [])];
   if (it.error) messages.unshift(it.error);

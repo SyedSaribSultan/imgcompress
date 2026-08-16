@@ -158,12 +158,17 @@ def render(name, info, rows, original):
     ]
     for row in rows:
         clears = row["score"] >= FLOOR
-        ratio = (row["bytes"] / best["bytes"]) if best else 0.0
+        # `vs best` only means something between files at comparable quality.
+        # A failing row's bytes against the passing best is a smaller file at
+        # a lower score - a different setting, not a better result - so the
+        # ratio is only printed where the floor was cleared.
+        comparable = best is not None and clears
+        ratio = (row["bytes"] / best["bytes"]) if comparable else 0.0
         mark = " **<-**" if best is not None and row is best else ""
         lines.append(
             f"| {row['label']}{mark} | {row['setting']} | "
             f"{row['bytes']:,} | "
-            + (f"{ratio:.2f}x" if best else "-")
+            + (f"{ratio:.2f}x" if comparable else "-")
             + f" | {row['score']:.1f} | "
             + (f"{row['witness']:.1f} dB" if row["witness"] else "-")
             + " | " + ("yes" if clears else "**no**") + " |"
@@ -195,12 +200,17 @@ def main() -> int:
         "",
         "Every strategy that can be searched is searched for the **smallest "
         f"file that still scores SSIMULACRA 2 >= {FLOOR:g}** against the same "
-        "source, so the comparison is bytes-at-equal-quality rather than "
-        "bytes alone. The fixed-setting rows are *not* searched: they are "
-        "what taking the internet's advice costs on content it does not "
-        "happen to suit.",
+        "source. Among the rows that clear that floor, and only among those, "
+        "the comparison is bytes-at-equal-quality - which is why `vs best` "
+        "is blank on every row that missed it: a smaller file at a lower "
+        "score is not a better result, it is a different setting. On a clip "
+        "where nothing clears the floor there is no equal-quality comparison "
+        "to make, and the table says so on every row rather than implying "
+        "one. The fixed-setting rows are *not* searched: they are what "
+        "taking the internet's advice costs on content it does not happen "
+        "to suit.",
         "",
-        "SSIMULACRA 2 is pooled worst-first (the low percentile, not the "
+        "Both metrics are pooled worst-first (the low percentile, not the "
         "mean), because a per-frame metric cannot see time and an average "
         "hides exactly the moments a person notices. **XPSNR is reported as a "
         "second witness** - it comes from a different family and carries a "
