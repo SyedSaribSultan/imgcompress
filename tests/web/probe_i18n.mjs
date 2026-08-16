@@ -44,10 +44,16 @@ const CASES = [
 
 try {
   for (const [locale, wantSize, wantScore] of CASES) {
+    /* `--lang` alone is not enough. On Windows and macOS Chrome honours it,
+       but on a Linux runner the ICU default comes from the environment - so
+       CI saw "1.4 MB" for de-DE and this probe passed locally while failing
+       there. Both are set, which is what makes the answer the same on every
+       platform this project builds on. */
     const browser = await puppeteer.launch({
       executablePath: CHROME,
       headless: "new",
       args: ["--no-sandbox", `--lang=${locale}`],
+      env: { ...process.env, LANG: `${locale}.UTF-8`, LC_ALL: `${locale}.UTF-8` },
     });
     try {
       const page = await browser.newPage();
@@ -61,8 +67,23 @@ try {
           /* A clock stays digits in every locale - 2:31 is not localised, and
              pretending otherwise would be worse than leaving it alone. */
           clock: m.clock(151),
+          /* What the browser ACTUALLY resolved to. Without this the probe
+             cannot tell "the code ignores the locale" from "the runner never
+             applied the locale", and the second one would quietly turn every
+             assertion below into a comparison of en-US against itself. */
+          resolved: Intl.NumberFormat().resolvedOptions().locale,
         };
       });
+      const applied = got.resolved.toLowerCase()
+        .startsWith(locale.split("-")[0].toLowerCase());
+      check(`${locale}: the browser really is in this locale`,
+        applied, `resolved to ${got.resolved}`);
+      if (!applied) {
+        // Everything below would be vacuous. Say so instead of printing
+        // three passes that measured nothing.
+        console.log("       skipping the formatting checks for this locale");
+        continue;
+      }
       check(`${locale}: a size reads the way that reader writes one`,
         got.size === wantSize, `${got.size} (want ${wantSize})`);
       check(`${locale}: the visual-match score too`,
