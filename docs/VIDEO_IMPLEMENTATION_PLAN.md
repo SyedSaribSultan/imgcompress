@@ -271,12 +271,20 @@ quality.
    installed at build time, and the release workflow writes
    `THIRD-PARTY.txt` into the payload each installer packages. Runs
    `--strict`, so a wheel yielding no text fails the release rather than
-   shipping a notices file quietly missing an entry. Decision V3's no-PyAV
-   rule is enforced twice (spec exclude + release gate, both demonstrated
-   red). **One question is now answered and open:** `imagequant` ships a
-   compiled `_libimagequant` with only its Python binding's BSD text, and
-   the C library's own terms are absent from the wheel — stated as a gap in
-   the shipped notices instead of letting the BSD label cover it.
+   shipping a notices file quietly missing an entry.
+
+   **And the imagequant question is now answered, not merely disclosed.**
+   Upstream states it plainly: libimagequant is GPL v3-or-later for
+   open-source use, or a paid commercial licence — the wheel's BSD text
+   covers only Wanadev's Python binding. So it joins `av` as pip-only and is
+   excluded from the installers, because distributing GPL code inside this
+   MIT bundle would put the whole bundle under GPL. Measured before
+   deciding: **0.5%** end to end on the benchmark corpus (461,500 → 463,830
+   bytes), since the bake-off almost always ships WebP-lossless or JPEG over
+   PNG-8. Enforced in three places — the PyInstaller `excludes`, the release
+   gate (which also fails if `--check` stops *naming* the excluded engines,
+   because an absence nobody can see cannot be distinguished from a
+   violation), and `tests/test_installer_licensing.py`.
 3. **D5, the video accent — shipped.** Purple for video, the brand accent
    for images, in both interfaces. Two values rather than one because a
    single purple cannot clear AA on both grounds (PostHog's own `#B62AD9` is

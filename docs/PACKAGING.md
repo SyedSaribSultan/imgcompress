@@ -45,7 +45,16 @@ that is quietly worse than the one that was tested.
 (`pocketsize/cli.py`). The zero is right for a diagnostic — a machine without
 zopfli is not in an error state — and useless for a release, so
 `.github/workflows/release.yml` runs the frozen binary, captures the output, and
-parses it. Any `[ ]` fails the build.
+parses it. Any unexpected `[ ]` fails the build.
+
+**Two engines are the exception, and their `[ ]` is the requirement.** `av`
+and `imagequant` both ship compiled GPL code inside an otherwise-permissive
+wheel, so they are excluded from the installers — see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The gate therefore fails a
+build where either is **present**, and also fails if `--check` stops naming
+them at all: an engine that is not reported cannot be gated, and an absence
+nobody can see is indistinguishable from a violation. That is why the video
+row reads `[ ] pyav (not installed)` rather than just `[ ] not installed`.
 
 This is not a theoretical risk. Removing one line from the spec and rebuilding
 produced this, from a real Windows x64 bundle:
@@ -167,10 +176,14 @@ Verified against PyPI metadata for cp313:
 
 | Engine | macOS universal2 | macOS arm64 | macOS x86_64 | Windows x64 | Windows arm64 |
 | --- | --- | --- | --- | --- | --- |
-| imagequant 1.1.5 | yes | yes | yes | yes | **yes** |
+| imagequant 1.1.5 *(pip only — GPL)* | yes | yes | yes | yes | **yes** |
 | zopflipy 1.13 | **only** | no | no | yes | **no** |
 | mozjpeg 1.3.2 | **no** | yes | yes | yes | **no** |
 | ssimulacra2 0.3.0 | pure Python, `py3-none-any` | | | | |
+
+(imagequant's wheel coverage is listed because it still matters for the pip
+install. It is **not** in the installers — libimagequant is GPL v3-or-later,
+so it is excluded, and the release gate refuses a bundle that carries it.)
 
 Read the two bold columns:
 

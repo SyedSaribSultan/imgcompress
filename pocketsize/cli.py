@@ -244,7 +244,11 @@ def report_capabilities() -> int:
     print("\nvideo")
     vcaps = video.capabilities()
     if not vcaps.get("pyav"):
-        print("  [ ] not installed")
+        # Named even when absent. The release gate reads these rows to prove
+        # the GPL-carrying engines are NOT in an installer, and a row that
+        # omits the engine's name leaves it unable to tell "correctly absent"
+        # from "no longer reported at all".
+        print("  [ ] pyav (not installed)")
         print(f"      add it with:  {video.INSTALL_HINT}")
     else:
         print(f"  [x] pyav {vcaps.get('version', '?')}")

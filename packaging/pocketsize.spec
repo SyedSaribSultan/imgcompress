@@ -147,13 +147,15 @@ hiddenimports = [
     # palette quantizer falls back to Pillow's (which scored 87 against
     # libimagequant's 90 in a *larger* file) and the mozjpeg pass disappears.
     "_cffi_backend",
-    # The four engines are all imported inside `try: ... except Exception:` in
+    # The engines are all imported inside `try: ... except Exception:` in
     # encoders.py and quality.py, so a build that fails to collect one produces
     # a working application rather than an error. Naming them here does not by
     # itself make the build fail - PyInstaller only warns about a hidden import
     # it cannot find - which is precisely why the release workflow runs
     # `pocketsize --check` against the built binary and reads the answer.
-    "imagequant",
+    #
+    # `imagequant` is NOT in this list, and its absence is deliberate - see the
+    # excludes below.
     "mozjpeg_lossless_optimization",
     "zopfli",
     "ssimulacra2",
@@ -186,6 +188,27 @@ excludes = [
     # defence in depth against a cached or transitive `av` being collected -
     # and the release gate independently fails any bundle that carries it.
     "av",
+    # And the same act for the same reason. `imagequant`'s wheel ships a
+    # compiled libimagequant, which upstream states plainly is dual-licensed:
+    # GPL v3-or-later for open-source use, or a paid commercial licence. Its
+    # own text is not in the wheel - only the BSD licence of Wanadev's Python
+    # binding - which is what made this look permissive for so long.
+    #
+    # Depending on it through pip is untouched and remains the default: the
+    # user's own package manager fetches it, we distribute nothing, and
+    # `pip install "pocketsize[full]"` still gets the better quantizer. What
+    # is forbidden is putting that binary INSIDE a downloadable installer,
+    # because then we are the distributor and GPL's terms attach to the whole
+    # bundle - which would mean relicensing this MIT project as GPL.
+    #
+    # The measured cost of leaving it out is 0.5% across the benchmark corpus
+    # (461,500 -> 463,830 bytes end to end), because the bake-off almost
+    # always ships WebP-lossless or JPEG rather than PNG-8 anyway. Trading an
+    # MIT licence for half a percent would be a bad deal in both directions.
+    # `Png8Encoder` already falls back to Pillow's quantizer when the import
+    # is absent, so the installers keep working and simply choose PNG-8 less
+    # often. See docs/THIRD_PARTY_NOTICES.md.
+    "imagequant",
 ]
 
 a = Analysis(

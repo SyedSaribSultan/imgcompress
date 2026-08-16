@@ -109,6 +109,14 @@ Windows wheels:
 | `zopflipy` | zopflipng-grade deflate | ~10% off any PNG, lossless |
 | `mozjpeg-lossless-optimization` | mozjpeg's lossless pass | ~1%, free, never changes a pixel |
 
+`imagequant` is a pip-only engine: libimagequant is GPL v3-or-later, so it is
+excluded from the downloadable installers, which would otherwise put this
+MIT-licensed application under the GPL. Installing with pip is unaffected —
+your own package manager fetches the wheel. Measured cost of its absence:
+0.5% across the benchmark corpus, since the bake-off usually ships
+WebP-lossless or JPEG over PNG-8. Same reasoning as video; see
+`docs/THIRD_PARTY_NOTICES.md`.
+
 ### `pocketsize/core.py` — the engine
 
 The pipeline per image:

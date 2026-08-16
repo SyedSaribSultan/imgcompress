@@ -338,6 +338,15 @@ there is nothing to compile and no binaries to install:
 `pocketsize --check` reports what's active. Without them the tool still runs,
 with weaker built-ins.
 
+**The downloadable installers ship without `imagequant` and without video.**
+Both carry GPL-licensed compiled code — libimagequant, and the FFmpeg inside
+PyAV — and putting either in a binary we hand out would place this MIT
+project under the GPL. Installing with `pip` is unaffected: your own package
+manager fetches them, so `pip install "pocketsize[full,video]"` gets
+everything. The installer difference is measured at 0.5% on the benchmark
+corpus, because the comparison usually ships WebP or JPEG rather than PNG-8
+anyway. See [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md).
+
 ---
 
 ## What it does to each image

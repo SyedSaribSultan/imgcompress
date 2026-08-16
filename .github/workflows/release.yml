@@ -187,41 +187,65 @@ jobs:
                   "its format; fix whichever it is, do not relax this."
               )
 
-          wanted = ("imagequant", "zopfli", "mozjpeg", "ssimulacra2")
+          # imagequant is deliberately NOT here: its compiled libimagequant is
+          # GPL v3-or-later, so it is excluded from the installers and its
+          # absence is the requirement, checked below. It stays available
+          # through pip, where we distribute nothing.
+          wanted = ("zopfli", "mozjpeg", "ssimulacra2")
           labels = [label for _mark, label in rows]
           unreported = [name for name in wanted if not any(name in label for label in labels)]
 
-          # Video is the one engine whose ABSENCE is the requirement here.
-          # Decision V3: PyAV's wheels carry GPL x264/x265 inside a complete
-          # FFmpeg, and bundling that into a shipped installer is a different
-          # legal act from depending on it via pip - so until the licence
-          # question is resolved, a bundle that contains PyAV is a broken
-          # release, not a fuller one. The absence must also be *reported*:
-          # a --check that stopped mentioning video would leave this gate
-          # unable to see a violation.
-          bundled_video = [label for mark, label in rows
-                           if mark == "x" and "pyav" in label.lower()]
-          video_reported = any("pyav" in label.lower()
-                               or "not installed" in label.lower()
-                               for label in labels)
+          # Two engines whose ABSENCE is the requirement, for one reason.
+          #
+          # PyAV's wheels carry GPL x264/x265 inside a complete FFmpeg
+          # (decision V3), and imagequant's wheel carries a compiled
+          # libimagequant that upstream dual-licenses as GPL v3-or-later or
+          # paid-commercial. Depending on either through pip is untouched -
+          # the user's own package manager fetches it and we distribute
+          # nothing. Putting either INSIDE a downloadable installer makes us
+          # the distributor, and GPL's terms would then attach to this whole
+          # MIT-licensed bundle. So a build that contains one is a broken
+          # release, not a fuller one.
+          #
+          # Absence must also be REPORTED. A --check that quietly stopped
+          # mentioning one of them would leave this gate unable to see a
+          # violation, which is the failure mode CONTRIBUTING.md calls green
+          # while checking nothing.
+          gpl_free = {"pyav": "PyAV's FFmpeg includes GPL x264/x265 (V3)",
+                      "imagequant": "libimagequant is GPL v3-or-later"}
+          bundled_gpl = [label for mark, label in rows if mark == "x"
+                         and any(k in label.lower() for k in gpl_free)]
+          unreported_gpl = [k for k in gpl_free
+                            if not any(k in label.lower() for label in labels)]
+          # An engine that is merely absent is fine only if it is one of the
+          # two above; anything else going quiet means the build lost an
+          # engine and would ship larger files while looking healthy.
           inactive = [label for mark, label in rows
-                      if mark != "x" and "not installed" not in label.lower()]
+                      if mark != "x"
+                      and "not installed" not in label.lower()
+                      and not any(k in label.lower() for k in gpl_free)]
 
           if unreported:
               sys.exit(
                   f"--check no longer reports on {unreported}. An engine that is "
                   f"not reported cannot be gated. Reported: {labels}"
               )
-          if bundled_video:
-              sys.exit(
-                  f"The bundle carries {bundled_video} - PyAV's FFmpeg includes "
-                  "GPL x264/x265, and decision V3 forbids shipping it in the "
-                  "installers until that is resolved. Video stays a pip extra."
+          if bundled_gpl:
+              reasons = "; ".join(
+                  f"{label.strip()} - {why}"
+                  for label in bundled_gpl
+                  for k, why in gpl_free.items() if k in label.lower()
               )
-          if not video_reported:
               sys.exit(
-                  "--check no longer reports the video engine at all, so this "
-                  "gate cannot verify decision V3. Fix the report, not the gate."
+                  f"The bundle carries GPL-licensed code: {reasons}. Shipping "
+                  "it inside an installer would put this MIT project under "
+                  "GPL. Both stay pip-only; see docs/THIRD_PARTY_NOTICES.md."
+              )
+          if unreported_gpl:
+              sys.exit(
+                  f"--check no longer reports {unreported_gpl} at all, so this "
+                  "gate cannot verify they are absent. Fix the report, not the "
+                  "gate."
               )
           if inactive:
               sys.exit(
@@ -229,7 +253,8 @@ jobs:
                   "application would run and quietly produce larger files. See "
                   "docs/PACKAGING.md for what usually causes each one."
               )
-          print(f"All {len(rows)} engines active; video correctly absent (V3).")
+          print(f"{len(rows)} engine rows checked; "
+                "GPL-licensed engines correctly absent.")
           PY
 
       - name: The built application must compress a real folder

@@ -21,7 +21,7 @@ self-description is worse than none.
 | numpy | BSD-3-Clause and permissive others | arithmetic |
 | scipy | BSD-3-Clause | one gaussian filter in the metric |
 | ssimulacra2 | BSD | the perceptual metric |
-| imagequant | BSD-3-Clause (binding) | palette quantisation |
+| imagequant (pip only — **GPL inside**, see below) | BSD-3-Clause (binding) | palette quantisation |
 | zopflipy | Apache-2.0 | PNG recompression |
 | mozjpeg-lossless-optimization | BSD-3-Clause | JPEG optimisation |
 | pywebview | BSD | the desktop window |
@@ -33,20 +33,37 @@ binding, not everything inside it. As a pip dependency this is the accepted
 posture and Pocketsize's own licence is unaffected. It is why decision V3
 exists (see below).
 
-**Open question — imagequant.** Checked, and the answer is "the wheel does
-not say". `imagequant` 1.1.5 ships `imagequant/_libimagequant.pyd` — the
-compiled C library — alongside its Python binding, and the only licence text
-in the wheel is the binding's (BSD-3-Clause, Wanadev, 2021). libimagequant
-itself has used different terms across its major versions, including
-GPLv3-or-commercial, and its own text is not present.
+**Resolved — imagequant is GPL, and is no longer bundled.** The wheel's own
+licence text is the binding's (BSD-3-Clause, Wanadev), which is why this
+looked permissive for a long time. The compiled `_libimagequant` inside it is
+a different thing, and upstream states its terms plainly:
 
-This matters because the installers **do** bundle it. It does not affect the
-pip posture, where the user's own package manager fetches the wheel under
-whatever terms it carries. Before the next signed release, somebody should
-establish which libimagequant version is inside that wheel and under what
-licence, and record the answer here. Until then `tools/collect_licences.py`
-states the gap in the shipped notices file rather than letting the BSD label
-stand for the whole thing.
+> **Libimagequant** is dual-licensed:
+> - For Free/Libre Open Source Software it's available under GPL v3 or later…
+> - For use in closed-source software, AppStore distribution, and other
+>   non-GPL uses, you can obtain a commercial license.
+
+— [wanadev/imagequant-python](https://github.com/wanadev/imagequant-python),
+which vendors [libimagequant at `b075eb0`](https://github.com/ImageOptim/libimagequant/tree/b075eb0aecfdd552adcab30b549feee9d3aacbe6)
+as a submodule.
+
+So it is excluded from the installers, exactly like PyAV and for exactly the
+same reason: distributing GPL code inside this MIT-licensed bundle would put
+the whole bundle under GPL. **The pip path is untouched** — the user's own
+package manager fetches the wheel, this project distributes nothing, and
+`pip install "pocketsize[full]"` still gets the better quantizer.
+
+The cost was measured before deciding rather than assumed. Dropping it changes
+the end-to-end result on the benchmark corpus by **0.5%** (461,500 → 463,830
+bytes), because the bake-off almost always ships WebP-lossless or JPEG rather
+than PNG-8 anyway. The alarming figure — PNG-8 quality falling from 83.4 to
+53.5 on a gradient — is real but applies to a *candidate the engine rejects*.
+`Png8Encoder` already falls back to Pillow's quantizer when the import is
+absent, so an installer build simply chooses PNG-8 less often.
+
+Enforced in three independent places, because one of them is a YAML file that
+only runs on a tag: the PyInstaller `excludes` list, the release gate reading
+`pocketsize --check`, and `tests/test_installer_licensing.py`.
 
 ## 2. Vendored web assets (redistributed in this repository)
 
@@ -59,14 +76,27 @@ encoding, which is also the patent posture.
 
 ## 3. Installer bundles (binaries redistributed by us)
 
-The standalone installers bundle the packages from tier 1 **except `av`**.
-That exclusion is decision V3 in `docs/VIDEO_IMPLEMENTATION_PLAN.md`:
-*distributing* GPL x264/x265 inside a shipped binary carries obligations the
-pip posture does not, so the installers ship without video until either
-custom LGPL wheels exist (no x264/x265; `ae-ffmpeg` is precedent) or the
-obligations are deliberately accepted. Enforced twice: `packaging/
-pocketsize.spec` excludes `av` from collection, and the release gate fails
-any bundle whose `--check` reports PyAV present.
+The standalone installers bundle the packages from tier 1 **except `av` and
+`imagequant`** — the two whose compiled payload is GPL. This is the whole of
+the difference between the two ways to get Pocketsize, and it exists for one
+reason: *distributing* GPL code inside a shipped binary makes us the
+distributor and would put this MIT-licensed bundle under GPL, whereas
+depending on it through pip means the user's own package manager fetches it
+and we distribute nothing.
+
+- **`av`** — decision V3 in `docs/VIDEO_IMPLEMENTATION_PLAN.md`. The wheel
+  carries a complete FFmpeg including GPL x264/x265. Video therefore stays a
+  pip extra until either custom LGPL wheels exist (no x264/x265;
+  `ae-ffmpeg` is precedent) or the obligations are deliberately accepted.
+- **`imagequant`** — libimagequant is GPL v3-or-later for open-source use,
+  per upstream. Costs 0.5% end to end to leave out; see §1.
+
+Enforced in three places, because the release gate is YAML that runs only on
+a tag and nothing else would notice it being weakened:
+`packaging/pocketsize.spec` excludes both from collection; the release gate
+fails any bundle whose `--check` reports either as active, *and* fails if
+`--check` stops naming them at all; and `tests/test_installer_licensing.py`
+checks the first two are still in place on every ordinary test run.
 
 **The notices now travel with the binary.** `tools/collect_licences.py`
 gathers the full licence text of every bundled package from the metadata of

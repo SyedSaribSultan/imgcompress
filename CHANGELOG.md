@@ -180,6 +180,18 @@ This project follows [Semantic Versioning](https://semver.org/).
   generated `THIRD-PARTY.txt` beside the application, collected from the wheels
   actually installed at build time rather than from a list somebody maintains
   by hand. The build fails rather than shipping one with a gap in it.
+- **The downloadable installers ship without `imagequant`**, and Pocketsize
+  stays MIT. Its wheel declares BSD, but that covers only the Python binding —
+  the compiled libimagequant inside is GPL v3-or-later for open-source use,
+  per upstream. Handing that out inside our binary would have put this whole
+  MIT project under the GPL. Installing with pip is untouched, since your own
+  package manager fetches the wheel and we distribute nothing. The cost was
+  measured before the decision, not assumed: **0.5%** across the benchmark
+  corpus (461,500 → 463,830 bytes), because the comparison almost always ships
+  WebP-lossless or JPEG rather than PNG-8 anyway. Enforced in three places, one
+  of which is a release gate that also fails if `--check` stops naming the
+  excluded engines at all — an absence nobody can see is indistinguishable
+  from a violation.
 
 ### Changed
 - **Both interfaces wear a new skin, and not one line of it is a new colour in
