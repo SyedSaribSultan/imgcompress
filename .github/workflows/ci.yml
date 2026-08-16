@@ -214,6 +214,19 @@ jobs:
         # between that worker and the person. This one drops a file into the
         # real page and asks the app what it believes.
         run: node tests/web/probe_video_ui.mjs
+      - name: Numbers follow the reader, not the author
+        # Launches real Chrome in three locales rather than stubbing Intl,
+        # because the thing under test is whether the code asks the platform
+        # at all - a formatter pinned to en-US passes a mocked test and fails
+        # every German user. "90,5" read as "905" is a different claim about
+        # the same file, on a page whose whole argument is a measured number.
+        run: node tests/web/probe_i18n.mjs
+      - name: The use-case pages set the plan their copy promises
+        # A page that opens with "already set for Discord" and does not set it
+        # is a promise the product breaks in the first second. Asserted from
+        # the settings the app ADOPTED, never from the attribute in the HTML,
+        # which being present proves nothing about anything consuming it.
+        run: node tests/web/probe_video_pages.mjs
 
   minimal:
     name: without optional engines

@@ -160,6 +160,26 @@ This project follows [Semantic Versioning](https://semver.org/).
   applied before first paint. The default remains following the device.
 - **The web page finally mentions the CLI** — one line in the sidebar. Same
   engine, for folders and scripts.
+- **A video reads as a video at a glance.** Purple where a picture takes the
+  brand accent, on a badge that already says "Video" and how long the clip runs
+  — so the colour is a second, faster signal in a mixed queue and never the only
+  one. Two purples rather than one, because a single value cannot clear the
+  contrast floor on both the light and the dark ground. The desktop queue drew
+  no badge at all before this, so a clip was a row with an empty thumbnail
+  square and nothing saying why.
+- **Numbers follow the reader.** Sizes, scores, percentages and times are
+  written in the notation of whoever is looking, taken from their own browser.
+  The words are still English — that needs a person who speaks the language,
+  not a machine translation, and the literal register this product is written
+  in is the whole reason.
+- **Three pages for people who arrive looking for video**: compressing a video
+  at all, fitting one under Discord's 10 MB limit, and getting one small enough
+  to email. Same machinery as the existing use-case pages, and the plan is set
+  before the person does anything.
+- **The licences of everything an installer bundles now travel with it.** A
+  generated `THIRD-PARTY.txt` beside the application, collected from the wheels
+  actually installed at build time rather than from a list somebody maintains
+  by hand. The build fails rather than shipping one with a gap in it.
 
 ### Changed
 - **Both interfaces wear a new skin, and not one line of it is a new colour in
@@ -244,10 +264,79 @@ This project follows [Semantic Versioning](https://semver.org/).
   re-stamps live when the OS preference changes.
 
 ### Fixed
-Building video turned over fifteen defects. The five the awkward-input corpus
-found were each observed failing before they were fixed; most of the rest were
-turned up by a benchmark, a probe or a corpus rather than by reading the code,
-which is the point of building all three.
+Building video turned over fifteen defects, and an adversarial review of the
+finished tier turned over sixteen more. The five the awkward-input corpus found
+were each observed failing before they were fixed; most of the rest were turned
+up by a benchmark, a probe, a corpus or an audit rather than by reading the
+code, which is the point of building all four.
+
+- **The browser silently ignored size limits.** The page computed the byte
+  ceiling for a destination and then dropped it before the worker saw it, and
+  the worker had no cap logic at all — so somebody choosing "Discord or group
+  chat", whose help text says *"Fits Discord's free 10 MB limit"*, could be
+  handed a file several times that with nothing said. Measured: 1,986,165 bytes
+  against a 92,160-byte cap. The browser now runs the same quality-first hybrid
+  the desktop engine does, and posts the same `capped` / `missedSize` flags the
+  result line repeats.
+- **The desktop app rendered neither the size-limit disclosure nor the sound
+  note**, though the engine had been sending both all along. A quality traded
+  away to meet a byte limit is exactly the kind of fact that has to ride on the
+  same line as the saving, at the same size.
+- **A video's sound could be described two ways that were not true.** The claim
+  was worked out after the fact by comparing codec names on the finished file,
+  so audio decoded and re-encoded back to its own codec read as "kept exactly as
+  it was" — and a file whose sound failed to open at all, which is a *silent*
+  result, read as "re-encoded". The claim now comes from what the encode
+  recorded doing, and a silent result says so twice.
+- **The second opinion was wrong on every rotated video.** XPSNR compared the
+  straightened output against the sideways stored reference and reported about
+  −1.3 dB — a catastrophe that was not there, on the single most common shape of
+  consumer video. It now straightens the reference through the encoder's own
+  transform chain, pairs frames by timestamp, and pools worst-first like every
+  other score here.
+- **A resized video could ship larger than its source, wearing "−0%".** The
+  never-bigger rule stepped aside whenever the frame had been resized. A limit
+  on the frame is not a licence to hand back a worse file.
+- **Cancelling a video did nothing for minutes.** The stop flag was only checked
+  between stages, and the desktop app never passed one at all — so removing a
+  clip from the queue dropped the row while the worker encoded on. Stopping is
+  now checked inside the encode and verify loops, and whoever owns a
+  half-written file removes it on the way out.
+- **Video working files were never deleted.** Thirty phone clips quietly left
+  several gigabytes in the system temp folder, permanently. They are now removed
+  with their item, swept if the item vanishes mid-encode, and cleared when the
+  app closes.
+- **A lying duration label could turn a 10 MB limit into a 5,690 MB file.**
+  Container metadata is not always honest — a copy interrupted mid-transfer, a
+  muxer that wrote the header early — and everything that divides by duration
+  inherited the lie. The packets are counted instead whenever a cap is set.
+- **The browser worker leaked decoder resources and re-opened the whole file for
+  every read** — about 480 full-file opens on a four-hour clip, with WebCodecs
+  frames that the garbage collector cannot see. The tab died partway through
+  exactly the long jobs the tier exists for.
+- **4K HDR was unusably slow**, at 2.2 seconds of per-pixel arithmetic per
+  frame. Now ~1.2 s through thread-banded evaluation, with reference frames
+  converted once per file instead of up to twelve times, and a two-format
+  bake-off no longer converting every frame twice for identical pixels. A
+  lookup table was measured and *rejected*: the conversion ends in a gamma whose
+  slope is unbounded at black, so an interpolated table is 14–19 code values
+  wrong at the gamut boundary. Long 4K HDR clips remain slow, which the plan
+  document states plainly rather than hiding.
+- **The desktop interface shipped with no Content-Security-Policy** while
+  holding the API token that drives every local route. Nothing was exploitable,
+  but the blast radius of any future slip was total.
+- **Videos over 512 MB were refused as "file too large"** on the tier built for
+  phone video, which routinely exceeds it: the separate video limit was defined
+  and then referenced by nothing. Uploads also now stream to disk instead of
+  being read whole into memory first.
+- **Every machine-readable description of this app said "images only"** after
+  video had shipped — the title, the description, the social cards, the
+  structured data, and the only crawlable prose on the page. The installed app
+  also could not *open* a video from the file manager.
+- **Numbers were written the author's way, not the reader's.** Sizes and scores
+  were hard-coded with a point decimal, so most of the world saw "1.4 MB" and
+  "90.5" where they write "1,4 MB" and "90,5" — and on a product whose whole
+  argument is a measured number, "90,5" read as "905" is a different claim.
 
 - **A portrait video came out sideways.** A phone held upright records a
   landscape frame and attaches a rotation flag; the engine passed the flag along

@@ -251,22 +251,56 @@ warning instead of swallowed; and the benchmark's `vs best` column is blank
 on rows that missed the floor, because bytes are only comparable at equal
 quality.
 
-**Open beyond the defects (2026-08-16), for the owner:**
+**The open items, and what became of them (2026-08-16, later the same day):**
 
-1. **i18n.** The UI, all disclosure copy and number formatting are
-   English-only. Making the five-year-old-readable copy hold in other
-   languages is a copywriting project per locale, not a string swap, and it
-   needs owner decisions (which locales, who writes them) before any
-   scaffolding is worth building. Deliberately not started here.
-2. **Installer licence texts.** `docs/THIRD_PARTY_NOTICES.md` now records
-   every dependency tier and the two known metadata discrepancies; the
-   remaining step is embedding the bundled packages' full licence texts into
-   the installer artifacts. Decision V3's no-PyAV rule is now enforced twice
-   (spec exclude + release gate, both demonstrated red).
-3. **D5, the video accent colour,** approved with the reskin, has still not
-   shipped.
-4. **C1's remaining gap** and the two identified next steps, recorded in the
-   review section above.
+1. **i18n — half done, and the half that was possible.** Every *number* in
+   both interfaces now follows the reader's own locale through `Intl`: a
+   German reader sees `1,4 MB` and `90,5` where the code used to hard-code
+   `1.4 MB` and `90.5`. On a product whose whole argument is a measured
+   number this was a correctness bug, not a nicety — `90,5` read as `905` is
+   a different claim. Gated by `tests/web/probe_i18n.mjs`, which launches
+   real Chrome in three locales rather than stubbing `Intl`, because the
+   thing under test is whether the code asks the platform at all.
+   **The copy is still English, deliberately.** Hitting this product's
+   five-year-old-readable register in another language is work for a person
+   who speaks it; a machine translation would be technically correct and
+   break the one rule the writing exists to keep. That still needs owner
+   decisions — which locales, and who writes them.
+2. **Installer licence texts — done.** `tools/collect_licences.py` collects
+   the full text of all eight bundled packages from the wheels actually
+   installed at build time, and the release workflow writes
+   `THIRD-PARTY.txt` into the payload each installer packages. Runs
+   `--strict`, so a wheel yielding no text fails the release rather than
+   shipping a notices file quietly missing an entry. Decision V3's no-PyAV
+   rule is enforced twice (spec exclude + release gate, both demonstrated
+   red). **One question is now answered and open:** `imagequant` ships a
+   compiled `_libimagequant` with only its Python binding's BSD text, and
+   the C library's own terms are absent from the wheel — stated as a gap in
+   the shipped notices instead of letting the BSD label cover it.
+3. **D5, the video accent — shipped.** Purple for video, the brand accent
+   for images, in both interfaces. Two values rather than one because a
+   single purple cannot clear AA on both grounds (PostHog's own `#B62AD9` is
+   4.76:1 on light and 3.11:1 on dark). The desktop queue had the worse half
+   of the problem and drew no kind badge at all, so a clip was a row with an
+   empty thumbnail square. Gated by reading the *computed* colour off the
+   painted badge in both themes.
+4. **C1's remaining gap** — narrowed again, not closed. A two-format HDR
+   bake-off used to convert every frame twice for identical pixels;
+   `ToneCache` means the second format pays nothing for colour. What is
+   still true: a ten-minute 4K HDR clip is hours of Python-side per-pixel
+   arithmetic, and the honest fix is a compiled path, which conflicts with
+   the pip-only rule. That is an owner decision, recorded in the review
+   section above with its measurements.
+
+**Found and fixed alongside, from an adversarial security and SEO audit:**
+the desktop UI shipped with no CSP while holding the API token;
+`MAX_VIDEO_BODY` was defined and referenced by nothing, so every upload was
+capped at the 512 MB *picture* limit on the tier built for phone video, and
+uploads were read whole into memory rather than streamed; the entire SEO
+surface (title, description, OG/Twitter, JSON-LD, and the only crawlable
+prose) said "images only" after video had shipped; the installed PWA could
+not *open* a video from the file manager; and `LICENSES.md` pinned SHA-256
+hashes that nothing ever recomputed.
 
 This is the canonical plan for adding video compression and for the
 PostHog-style reskin. It records what was approved, the exact copy, the

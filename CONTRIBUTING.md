@@ -153,6 +153,22 @@ node tests/web/verify_desktop.mjs    # runtime: the desktop app in real Chrome
 node tests/web/shoot_both.mjs        # screenshots, both apps, both themes
 ```
 
+Four more run the parts of the product that only exist in a browser:
+
+```bash
+node tests/web/probe_video.mjs        # the engine: Mediabunny + WebCodecs, real CSP
+node tests/web/probe_video_ui.mjs     # the product: a file dropped into the real page
+node tests/web/probe_i18n.mjs         # numbers in three locales, real Chrome each time
+node tests/web/probe_video_pages.mjs  # each use-case page sets the plan it promises
+```
+
+`probe_i18n.mjs` launches the browser in a different locale per case rather
+than stubbing `Intl`, because the thing being tested is whether the code asks
+the platform at all — a formatter pinned to `en-US` passes a mocked test and
+fails every German user. `probe_video_pages.mjs` reads the settings the app
+**adopted**, never the `data-preset-*` attribute in the HTML: an attribute
+being present proves nothing about anything consuming it.
+
 `verify_tokens.mjs` fails on a hand-typed colour, a hand-typed duration or
 easing curve, `transition: all`, and — the one that costs users something real
 — **any transition of a layout property**. `width`, `height`, `top`, `left`,
