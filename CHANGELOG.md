@@ -6,6 +6,120 @@ This project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Video, answering the same one question.** A video answers "where is this
+  going?" exactly the way a picture does, so it lives in the same destination
+  table rather than a parallel one, goes in the same folder, and comes out the
+  same way: several settings tried, every result opened back up and measured
+  against the source, and the smallest one that still looks close enough kept.
+  Video adds **zero required decisions**.
+
+  | `--for` | Formats | Frame | Visual match | Size limit | Sound |
+  | --- | --- | --- | --- | --- | --- |
+  | `web` | AV1 / H.264 MP4 | 1920px | 92 | — | kept as it was |
+  | `email` | H.264 MP4 | 1920px | 90 | 18 MB | kept as it was |
+  | `chat` | H.264 / AV1 MP4 | 1280px | 88 | 10 MB | AAC |
+  | `social` | H.264 MP4 | 1920px | 90 | 500 MB | AAC |
+  | `documents` | H.264 MP4 | 1920px | 90 | — | AAC |
+  | `original` | AV1 / H.264 MP4 | never resized | 96 | — | kept as it was |
+
+  `thumbnail` takes no video and says so rather than inventing an answer.
+  `pip install "pocketsize[video]"` — Python 3.11+, deliberately not part of
+  `full`, because PyAV needs 3.11 and the rest of the package still runs on 3.9.
+  Without it a video is reported and skipped with the install command in the
+  message, never a crash.
+
+  Four things about the engine are worth stating because they are the
+  difference between this and a tool that guesses. The search runs on **sampled
+  20-second windows** rather than the whole file, because a ten-minute clip
+  takes minutes per attempt and the search needs several; only the winning
+  setting is applied to the whole file. The reported score is the **low
+  percentile of the sampled frames, not their mean** — a per-frame metric cannot
+  see time, and an average calls "perfect for four seconds, falls apart for one"
+  fine. A **size limit is a limit, not an instruction to spend it**: quality is
+  searched first even under a cap, and the cap only decides when the honest
+  quality answer will not fit, which the result line then says. And **rotation
+  and pixel shape are baked into the output**, because a flag is advice and
+  plenty of players, upload forms and editors ignore it.
+- **HDR video is tone mapped rather than flattened.** A clip with a PQ or HLG
+  transfer — what a modern phone records by default — is detected and converted
+  properly: inverse transfer to linear light, BT.2020 primaries to BT.709, a
+  documented tone curve, and the result says the colour was converted. The
+  arithmetic is pinned by tests against the standards rather than against
+  itself. A transfer that cannot be named is refused rather than guessed at,
+  and the browser tier, which has no tone mapper, leaves HDR alone and says so.
+- **A second, unrelated measurement on every video result.** XPSNR is recorded
+  alongside the score the search optimised, because a number the search was
+  steering on is a claim rather than evidence — encoders now ship modes tuned to
+  score well on named metrics. Where the build has no `xpsnr` filter the result
+  carries one number instead of two, which is a missing second opinion and not a
+  failure. This inverts the roles the plan proposed (steer on XPSNR, certify
+  with SSIMULACRA 2): the destination targets are numbers on the SSIMULACRA 2
+  scale, the same scale the picture tier reports, and steering on XPSNR would
+  have meant mapping "visual match 92" onto a dB figure, which is
+  content-dependent and has no principled conversion. The rule the plan exists
+  to protect is intact — the number the search optimises is never the only
+  number reported.
+- **A long job says what it is doing, and can be stopped.** A video encode is
+  the first thing this project does that can run for minutes, and silence for
+  minutes is indistinguishable from a hang. The command line draws a live bar on
+  a terminal and stays quiet when redirected, Ctrl-C stops cleanly, and nothing
+  half-written is left behind.
+- **A `chat` destination** ("Discord or group chat"): H.264 first then AV1,
+  1280px, match 88, a hard 10 MB ceiling, AAC sound. Discord's 10 MB and a mail
+  server's 25 MB are one destination for a picture and two for a video, and the
+  numbers come from different companies.
+- **The desktop app compresses and compares video.** The same stage gained a
+  second pair of layers, so the split, the divider and the zoom keep working
+  unchanged, with the compressed player following the original's clock — two
+  free-running players drift apart within seconds, and a split showing second 3
+  against second 5 is not a comparison. Preview is served with byte-range
+  support and streamed off disk in chunks: the whole point of this tier is that
+  the files are large, and a player that cannot seek cannot be compared against
+  anything. Saving moves the file the engine already wrote instead of encoding
+  twice, and never writes over a file already sitting there.
+- **`tests/VIDEO_BENCHMARK.md`**, with `tests/bench_video.py` to reproduce it:
+  every strategy that can be searched, searched to the same visual match of 92,
+  scored by two metric families. On the near-static clip the searched AV1 encode
+  ships 9,952 bytes at 94.8 and **every fixed-quality default misses the floor
+  outright**, including two AV1 ones that produce *smaller* files (7,258 and
+  8,701 bytes, at 90.5 and 91.2). On the screen recording it ships 3,379 bytes
+  where x264 at the internet's usual CRF 23 needs 8,503. It is equally plain
+  where nothing wins: the `motion` and `grain` fixtures are written near-lossless
+  on purpose, no strategy clears 92 on either, and the rows say so rather than
+  quietly lowering the bar.
+- **Two video fixture corpora, for two different jobs.**
+  `tests/make_video_fixtures.py` varies the *content* — motion, screen
+  recording, heavy grain, near-static — which is what decides how well anything
+  compresses. `tests/make_real_world_fixtures.py` varies the *container and
+  metadata* — a phone held upright, one held upside down, non-square pixels,
+  HDR, variable frame rate, two soundtracks — which is where a video compressor
+  silently produces wrong output rather than merely a large file. Building the
+  second one found five defects, each observed failing before it was fixed.
+- **A browser video engine, proven on the device.**
+  `web/video-worker.js` compresses video entirely on the device: Mediabunny
+  (MPL-2.0, vendored and hash-pinned) reads and writes the containers, and every
+  frame goes through the browser's own WebCodecs. Verified in real Chrome
+  against the real CSP by `tests/web/probe_video.mjs` — an 18 KB clip to 6.9 KB
+  as AV1, measured at 74.7 by the same SSIMULACRA 2 port the picture tier uses,
+  with progress reported throughout and no console errors. No codec ships with
+  the page, so it stays small and carries no patent licence; and because nothing
+  needs threads, the site keeps its existing CSP with **no cross-origin
+  isolation** — the ffmpeg.wasm route would have forced COEP across the whole
+  site, run 12–25× slower, and shipped GPL-linked x264. `media-src 'self' blob:`
+  was added to the CSP so a result can be played back, and the service worker
+  went to `v3`. Stated plainly because it is the honest part: a browser's
+  encoder is tuned for video calls, and gives up something like 10–30% of the
+  file size a patient desktop encoder finds. What this entry covers is the
+  engine; the page's own queue, settings panel and split-compare view are a
+  separate piece of work.
+- **`tools/gen_ss2_module.py`**, which writes `web/ss2.module.js` from
+  `web/ss2.js`. The image worker is a classic worker and reads the metric with
+  `importScripts`; the video worker is a module worker, which has none, and the
+  CSP rules out every runtime escape hatch (`eval`, `new Function`, `data:`).
+  Rather than keep a second hand-written copy of a validated metric, the module
+  form is generated and CI checks it — exactly how the destinations table is
+  handled. Drift there would mean the browser's two engines quietly disagreeing
+  about what "looks the same" means.
 - **Fifty small rights.** The principled-improvements round, everywhere at
   once: the caliper grew a visible grip and recentres on double-click; fit
   places the image between the floating bars instead of under them; the side
@@ -48,6 +162,30 @@ This project follows [Semantic Versioning](https://semver.org/).
   engine, for folders and scripts.
 
 ### Changed
+- **Both interfaces wear a new skin, and not one line of it is a new colour in
+  a component sheet.** The palette is PostHog's — a warm eggshell ground in
+  light, deliberately cool blue-charcoal in dark, never white-on-black — and the
+  patterns that come with it: the accent swaps hue between themes (orange in
+  light, yellow in dark), buttons sit on a hard 3px plate rather than a soft
+  shadow, depth comes from surface steps and border promotion instead of glows,
+  every number renders in the mono face with tabular figures, and section
+  headers are uppercase micro-labels. Mechanically it is a **re-valuing of the
+  existing `--oz-*` vocabulary inside the existing theme blocks**: no sheet
+  outside `heyoz-tokens.css` and `base.css` gained a colour literal, the desktop
+  app received its copies from `tools/sync_webui_assets.py`, and
+  `tests/test_design_system.py` held all 27 of its checks throughout. Two of
+  PostHog's numbers were overridden on purpose — their 12px table headers and
+  14px body lose to this project's 13px legibility floor and 15–16px body, which
+  is a binding constraint and outranks a reference. The new palette was audited
+  for contrast and passes AA on all twelve text pairs in both themes. This makes
+  Pocketsize PostHog-*flavoured*, never PostHog-branded: no marks, mascots,
+  illustrations or wordmarks are imitated. Details and the full value mapping:
+  `docs/POSTHOG_DESIGN_SPEC.md`.
+- **`email` is labelled "Email" rather than "Email or chat".** It has to be: an
+  email attachment and a Discord message are one destination for a picture and
+  two for a video, and 18 MB and 10 MB are numbers chosen by different
+  companies. The chat half is now its own destination rather than a promise the
+  label could not keep.
 - **The project is renamed from imgcompress to Pocketsize.** The package, the
   `pocketsize` and `pocketsize-gui` commands, the installers and the repository
   slug all carry the new name, and the web app now lives at
@@ -106,6 +244,81 @@ This project follows [Semantic Versioning](https://semver.org/).
   re-stamps live when the OS preference changes.
 
 ### Fixed
+Building video turned over fifteen defects. The five the awkward-input corpus
+found were each observed failing before they were fixed; most of the rest were
+turned up by a benchmark, a probe or a corpus rather than by reading the code,
+which is the point of building all three.
+
+- **A portrait video came out sideways.** A phone held upright records a
+  landscape frame and attaches a rotation flag; the engine passed the flag along
+  and a 270×480 clip arrived as 480×270. Rotation is now baked into the pixels,
+  because a flag is advice — some players honour it, plenty of upload forms and
+  editors do not, and the person who compressed the video finds out which kind
+  they had when it is already sideways in front of an audience. The direction is
+  pinned by a pixel assertion, not just by dimensions: a picture turned the
+  wrong way and one turned the right way have identical dimensions.
+- **A non-square-pixel video came out squashed.** Sample aspect ratio was
+  ignored, so a clip whose picture is 2.37 wide came out at the stored frame's
+  1.78. Everything downstream now works in the shape a player actually shows,
+  and the output is always square-pixel.
+- **HDR video was silently flattened.** A PQ or HLG clip passed through with no
+  mention of colour at all. It is now refused with an explanation: this wheel
+  ships no `zscale` and the colour filters it does ship cannot read those
+  transfers, so the only available re-encode would have produced a washed-out
+  grey video.
+- **A second soundtrack was dropped without a word.** Both that and dropped
+  subtitle tracks are now disclosed. One soundtrack is a defensible choice;
+  losing the other one in silence is not.
+- **Scoring compared a straightened output against a sideways source**, which
+  would have reported a catastrophic quality loss that was not there. The
+  comparison straightens the source too — our output carries no rotation flag
+  because it no longer needs one.
+- **Frames were paired by position instead of by timestamp.** Two encodes of one
+  source do not necessarily hold the same number of frames, so frame 40 was
+  scored against frame 39 and reported as SSIMULACRA 2 of −295 where the truth
+  was about 72. Both files are now asked what they were showing at a given
+  second, which cannot drift.
+- **The demuxer's flush packet was skipped**, which silently truncated every
+  encode by however many frames the decoder was still holding. That was the
+  cause of the frame-count mismatch above, and it is what the usual "ignore
+  packets with no dts" idiom does to a video.
+- **Every resize failed**, reported as "every encoder failed on this file". PyAV
+  looks the resampler up in an enum by name, and `"lanczos"` raises `KeyError`
+  where `"LANCZOS"` does not.
+- **A size cap inflated files that already fit.** `--for chat` on a 4 MB clip
+  encoded *up* toward 10 MB, and then the never-bigger rule discarded the result
+  and shipped nothing at all. A limit is not an instruction to spend it: quality
+  is searched first even when a cap exists, and the cap only takes over when the
+  honest quality answer does not fit.
+- **A video could ship below its destination's quality floor in silence.** The
+  shortfall warning hung off the `else` of the size-cap branch, and most video
+  destinations carry a cap, so the disclosure almost never fired. A disclosure
+  that only speaks up when nothing else went wrong is not a disclosure. Pinned
+  by `test_falling_short_of_the_floor_is_disclosed_even_under_a_cap`.
+- **Every multi-format destination deleted its own output.** AV1 and H.264 both
+  live in `.mp4`, so both candidates were written to the same path, overwrote
+  each other, and the loser's cleanup removed the winner — leaving the engine
+  reporting a size for a file that was no longer there. `web`, `chat` and
+  `original` all allow two formats, so this was most of them. It survived the
+  whole suite because nearly every engine test pinned a single format. Pinned
+  now by `test_a_bake_off_between_two_formats_leaves_a_real_file`.
+- **The video benchmark's combined strategy silently produced no row.** It named
+  its working folders after its own row labels, which carry markdown and
+  punctuation Windows refuses in a path, so the strategy failed and simply did
+  not appear in the table — the worst way for a benchmark to be wrong, because a
+  missing row looks like a tidy result.
+- **A folder of videos added nothing at all to the desktop app.** Folder intake
+  listed pictures only, so the filter that accepted videos never saw one. A
+  folder of holiday clips is exactly what a person drags in.
+- **A finished video reported its shape as `0×0`** whenever it had not been
+  resized, because "not resized" was being stored as "no dimensions" — which is
+  what the UI would have drawn.
+- **The video fixture corpus measured nothing but its own smallness.** Written at
+  an ordinary quality it was already a compressed file, so the engine correctly
+  refused to beat it and every test passed for the wrong reason. It is rebuilt
+  near-lossless, which also makes the benchmark's hard clips genuinely hard —
+  and `tests/VIDEO_BENCHMARK.md` says so in place rather than letting the
+  numbers imply a compressor is worse than it is.
 - **The sidebar no longer collapses or clips at any width.** Two structural
   bugs, found by a new width-sweep probe (`tests/web/probe_widths.mjs`,
   320–1920px × two heights × empty/populated): on one-column layouts the

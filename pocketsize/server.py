@@ -17,6 +17,8 @@ import os
 import queue
 import re
 import secrets
+import shutil
+import tempfile
 import threading
 import time
 import traceback
@@ -30,6 +32,7 @@ from PIL import Image
 from . import __version__
 from . import destinations as dest
 from . import encoders as enc
+from . import video as vid
 from .core import (
     DIMENSION_MODES,
     SUPPORTED_SUFFIXES,
@@ -44,9 +47,11 @@ from .quality import HAVE_SSIMULACRA2
 WEBUI = Path(__file__).resolve().parent / "webui"
 PREVIEW_MAX = 2800
 
-# Uploads land fully in memory before hitting the temp dir; no legitimate
-# design asset justifies more than this.
+# Uploads land fully in memory before hitting the temp dir. A design asset has
+# no business being larger than this; a phone video routinely is, which is why
+# the two limits are separate numbers rather than one generous one.
 MAX_BODY = 512 * 1024 * 1024
+MAX_VIDEO_BODY = 4 * 1024 * 1024 * 1024
 
 # Characters Windows refuses in filenames, plus control characters.
 _BAD_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -94,8 +99,27 @@ class Item:
     temporary: bool = False
     """True when the bytes were uploaded rather than read from a real path."""
 
+    kind: str = "image"
+    """`image` or `video`. The UI needs this before anything has been measured
+    - a video shows a player where a picture shows a picture - so it is set at
+    intake from the filename, not filled in later from a result."""
+
+    duration: float = 0.0
+    capped: bool = False
+    """A size limit, not the quality floor, decided the answer - so the result
+    line has to say the picture is less sharp than the original."""
+    audio_note: str = ""
+    witness: float = 0.0
+    """The second opinion, in dB, from a different family of metric."""
+    stage: str = ""
+    fraction: float = 0.0
+    """Where a long encode has got to. An image is quick enough to say nothing;
+    a video is not, and silence for minutes reads as a hang."""
+    output_path: str = ""
+
     def public(self) -> dict:
         out = asdict(self)
+        out["is_video"] = self.kind == "video"
         out["saved_pct"] = (
             100.0 * (self.original_bytes - self.new_bytes) / self.original_bytes
             if self.original_bytes and self.new_bytes
@@ -178,7 +202,13 @@ class Session:
                 ],
                 "watch_folder": self.watch_folder,
                 "last_folder": self.last_folder,
-                "engines": {**enc.capabilities(), "ssimulacra2 (perceptual metric)": HAVE_SSIMULACRA2},
+                "engines": {**enc.capabilities(),
+                            "ssimulacra2 (perceptual metric)": HAVE_SSIMULACRA2},
+                "video": {
+                    "available": vid.available(),
+                    "install": vid.INSTALL_HINT,
+                    "destinations": dest.video_names(),
+                },
                 "busy": active > 0,
                 "totals": {
                     "count": len(items),
@@ -192,24 +222,53 @@ class Session:
 
     def add_path(self, path: Path, temporary: bool = False) -> list[str]:
         added = []
-        paths = [path] if path.is_file() else list(iter_images(path))
+        if path.is_file():
+            paths = [path]
+        else:
+            # `iter_images` yields only pictures, so a folder dropped on the
+            # app used to lose every video in it silently - the filter below
+            # never even saw them. A folder of holiday clips is exactly the
+            # thing a person drags in.
+            paths = list(iter_images(path))
+            seen = {str(p) for p in paths}
+            paths += sorted(
+                p for p in path.rglob("*")
+                if p.is_file() and vid.is_video_path(p) and str(p) not in seen
+            )
         with self.lock:
             existing = {self.items[i].path for i in self.order if i in self.items}
             for p in paths:
-                if p.suffix.lower() not in SUPPORTED_SUFFIXES:
+                if (p.suffix.lower() not in SUPPORTED_SUFFIXES
+                        and not vid.is_video_path(p)):
                     continue
                 if str(p) in existing:
                     continue
+                is_video = vid.is_video_path(p)
                 item = Item(
                     id=secrets.token_hex(8),
                     path=str(p),
                     name=p.name,
                     temporary=temporary,
+                    kind="video" if is_video else "image",
                 )
                 try:
                     item.original_bytes = p.stat().st_size
-                    with Image.open(p) as im:
-                        item.width, item.height = im.size
+                    if is_video:
+                        if not vid.available():
+                            item.status = "failed"
+                            item.error = ("video needs an extra install - "
+                                          + vid.INSTALL_HINT)
+                        else:
+                            # The shape shown, not the shape stored: a phone
+                            # held upright records a landscape frame and flags
+                            # it, and the queue has to say what the person will
+                            # actually see.
+                            info = vid.probe(p)
+                            item.width, item.height = vid.display_shape(info)
+                            item.duration = info.duration
+                    else:
+                        with Image.open(p) as im:
+                            item.width, item.height = im.size
                 except Exception as exc:
                     item.status = "failed"
                     item.error = f"{type(exc).__name__}: {exc}"
@@ -299,6 +358,10 @@ class Session:
             settings = self.settings_for(item)
         self.touch()
 
+        if item.kind == "video":
+            self._run_video(item_id, settings)
+            return
+
         result = compress(Path(item.path), settings)
 
         with self.lock:
@@ -327,6 +390,100 @@ class Session:
                     item.out_width, item.out_height = item.width, item.height
         self.touch()
 
+    def _run_video(self, item_id: str, settings) -> None:
+        """One video, through the video engine, reporting as it goes.
+
+        The progress channel is the reason this is not folded into `_run_one`:
+        an image is quick enough to say nothing until it is finished, and a
+        video is not. The callback writes straight onto the item and bumps the
+        revision, so the UI's ordinary polling shows the bar without a second
+        mechanism for it.
+        """
+        with self.lock:
+            item = self.items.get(item_id)
+            if item is None:
+                return
+            source = Path(item.path)
+
+        def on_progress(stage, fraction, detail):
+            with self.lock:
+                live = self.items.get(item_id)
+                if live is not None:
+                    live.stage, live.fraction = stage, fraction
+            self.touch()
+
+        out_dir = Path(tempfile.gettempdir()) / "pocketsize-video" / item_id
+        result = vid.compress(
+            source, settings.target,
+            fast=settings.fast,
+            size_target=settings.size_target or 0,
+            max_dimension=(settings.max_dimension
+                           if settings.max_dimension else None),
+            output_dir=out_dir,
+            on_progress=on_progress,
+        )
+
+        with self.lock:
+            item = self.items.get(item_id)
+            if item is None:
+                return
+            item.stage, item.fraction = "", 0.0
+            if result.error:
+                item.status = "failed"
+                item.error = result.error
+                self.touch()
+                return
+            # A skipped video is not a compressed video. The engine keeps the
+            # original and clears what it measured, so the app must not dress
+            # the result up as an encode that happened: no score, no format
+            # claim, no candidate list - just the note saying what was done
+            # and why. The command line has always returned early here; the
+            # app used to fall straight through and report the numbers from a
+            # file it had just deleted.
+            if result.skipped:
+                item.status = "done"
+                item.new_bytes = result.original_bytes
+                item.note = result.note
+                item.score = None
+                item.fmt = source.suffix.lstrip(".")
+                item.level = None
+                item.capped = False
+                item.audio_note = ""
+                item.witness = 0.0
+                item.candidates = []
+                item.warnings = list(result.warnings)
+                item.output_path = ""
+                self.touch()
+                return
+
+            item.status = "done"
+            item.new_bytes = result.new_bytes
+            item.fmt = result.fmt or source.suffix.lstrip(".")
+            item.level = result.level
+            item.score = result.score
+            item.metric = result.metric
+            item.note = result.note
+            item.duration = result.duration
+            item.capped = result.capped
+            item.audio_note = result.audio_note
+            item.witness = result.witness
+            item.warnings = list(result.warnings)
+            item.output_path = str(result.output) if result.output else ""
+            item.candidates = [
+                {"format": c[0], "bytes": c[1], "score": c[2]}
+                for c in result.candidates
+            ]
+            if result.resized_to:
+                item.out_width, item.out_height = result.resized_to
+            else:
+                # Not resized means it came out the shape it went in, not that
+                # it came out nothing by nothing - which is what the UI was
+                # being told, and what it would have drawn.
+                item.out_width, item.out_height = item.width, item.height
+            if result.resized_from:
+                item.width, item.height = result.resized_from
+        self.touch()
+
     # -- folder watching --------------------------------------------------- #
 
     def _watcher(self) -> None:
@@ -337,7 +494,8 @@ class Session:
                 continue
             try:
                 found = [p for p in Path(folder).iterdir()
-                         if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES]
+                         if p.is_file() and (p.suffix.lower() in SUPPORTED_SUFFIXES
+                                             or vid.is_video_path(p))]
             except OSError:
                 continue
             fresh = [p for p in found if str(p) not in self.watch_seen]
@@ -356,7 +514,8 @@ class Session:
                 # Everything already there is "old" - only react to new arrivals.
                 self.watch_seen = {
                     str(p) for p in Path(folder).iterdir()
-                    if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES
+                    if p.is_file() and (p.suffix.lower() in SUPPORTED_SUFFIXES
+                                        or vid.is_video_path(p))
                 }
             except OSError:
                 pass
@@ -406,7 +565,21 @@ class Session:
             with self.lock:
                 result = self.results.get(item_id)
                 item = self.items.get(item_id)
-            if not result or not item:
+            if not item:
+                continue
+            if item.kind == "video":
+                # The video engine has already written its answer; saving is
+                # moving it where the person asked for it, not encoding again.
+                try:
+                    out = self._save_video(item, destination)
+                    with self.lock:
+                        item.status = "saved"
+                        item.saved_to = str(out)
+                    written.append(str(out))
+                except Exception as exc:
+                    failed.append(f"{item.name}: {exc}")
+                continue
+            if not result:
                 continue
             try:
                 out = write_result(result, destination)
@@ -422,6 +595,24 @@ class Session:
             else "Nothing to save"
         )
         return {"written": written, "failed": failed}
+
+    def _save_video(self, item: Item, destination: Path) -> Path:
+        destination.mkdir(parents=True, exist_ok=True)
+        source = Path(item.output_path)
+        if not source.exists():
+            raise FileNotFoundError("the compressed video is no longer there")
+        out = destination / source.name
+        if out.resolve() == source.resolve():
+            return out
+        # Never quietly write over something already sitting there.
+        if out.exists():
+            stem, suffix = out.stem, out.suffix
+            index = 2
+            while out.exists():
+                out = destination / f"{stem}-{index}{suffix}"
+                index += 1
+        shutil.copy2(source, out)
+        return out
 
 
 # --------------------------------------------------------------------------- #
@@ -540,6 +731,65 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- routes ------------------------------------------------------------ #
 
+    def _serve_video(self, route: str):
+        """Hand back a video so the app can play the before and the after.
+
+        Streamed straight off disk in chunks rather than read into memory:
+        the whole point of the video tier is that the files are large, and an
+        app that loads a 2 GB clip into RAM to show it a preview has solved
+        nothing. Range requests are answered because that is what a `<video>`
+        element uses to seek, and a player that cannot seek is a player that
+        cannot be compared against anything.
+        """
+        parts = route.split("/")
+        if len(parts) != 5:
+            return self._json({"error": "bad path"}, 404)
+        item_id, which = parts[3], parts[4]
+        with self.session.lock:
+            item = self.session.items.get(item_id)
+            if item is None or item.kind != "video":
+                return self._json({"error": "no such video"}, 404)
+            path = Path(item.path if which == "before" else item.output_path)
+        if not path or not path.exists():
+            return self._json({"error": "not ready"}, 404)
+
+        size = path.stat().st_size
+        start, end = 0, size - 1
+        header = self.headers.get("Range", "")
+        partial = False
+        match = re.match(r"bytes=(\d*)-(\d*)", header or "")
+        if match:
+            partial = True
+            if match.group(1):
+                start = min(int(match.group(1)), size - 1)
+            if match.group(2):
+                end = min(int(match.group(2)), size - 1)
+            if end < start:
+                start, end = 0, size - 1
+        length = end - start + 1
+
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        remaining = length
+        with path.open("rb") as handle:
+            handle.seek(start)
+            while remaining > 0:
+                chunk = handle.read(min(1024 * 512, remaining))
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return None   # the player seeked away; not an error
+                remaining -= len(chunk)
+        return None
+
     def do_GET(self):  # noqa: N802
         if not self._host_ok():
             return self._json({"error": "forbidden host"}, 403)
@@ -578,6 +828,8 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/state":
             return self._json(self.session.snapshot())
 
+        if route.startswith("/api/video/"):
+            return self._serve_video(route)
         if route.startswith("/api/image/"):
             parts = route.split("/")
             if len(parts) != 5:

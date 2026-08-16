@@ -100,6 +100,21 @@
 }
 .row .name-tail { flex: none; }
 
+/* What this row is holding, when that is not obvious from the thumbnail: a
+   video, and how long it runs. It sits after the name and never gives way to
+   truncation, because "why is this one taking two minutes" is answered here
+   and nowhere else on the row. */
+.row .kind {
+  flex: none;
+  margin-left: var(--s-2);
+  padding: 0 var(--s-1);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--c-ink-3);
+}
+
 /* The row's own actions, revealed by attention: hover or focus on a pointer,
    always present where there is no hover to have. They sit over the size
    column so nothing jumps when they appear. */

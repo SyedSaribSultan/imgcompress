@@ -22,13 +22,13 @@ import {
 } from "./settings.js";
 import {
   startEngine, dispatch, requeue, removeItems, cancelAll, setBatchEndHandler, pool,
-  holdWork, warmCodecs,
+  holdWork, warmCodecs, probeVideoSupport,
 } from "./engine.js";
 import { addFiles, filesFromDataTransfer } from "./intake.js";
 import { chooseCandidate, previewCandidate, endPreview } from "./views.js";
 import {
   setMode, getMode, applySplit, applyZoom, zoomAt, stepZoom, resetZoom, panBy,
-  onSelectionChanged, getZoom, getPan, setView,
+  onSelectionChanged, getZoom, getPan, setView, bindPlayers, togglePlay, seekTo,
 } from "./compare.js";
 import { readOverride, invalidateRedo } from "./facts.js";
 import { downloadAll, downloadOne, copyImage } from "./save.js";
@@ -192,9 +192,18 @@ function bindIntake() {
     if (!e.dataTransfer?.types?.includes("Files")) return;
     dragDepth++;
     document.body.dataset.drag = "1";
-    const n = [...(e.dataTransfer.items || [])].filter((i) => i.kind === "file").length;
-    setText($("drop-say"), n > 1 ? `Drop to add ${n} pictures`
-      : n === 1 ? "Drop to add this picture" : "Drop to add pictures");
+    const dragged = [...(e.dataTransfer.items || [])].filter((i) => i.kind === "file");
+    const n = dragged.length;
+    /* The noun follows what is actually in the drag. A clip announced as "this
+       picture" is the interface mis-naming the thing being held over it -
+       feedforward that is wrong is worse than none. Types are not always
+       exposed during a drag, so anything unrecognised keeps the old wording
+       rather than guessing. */
+    const clips = dragged.filter((i) => (i.type || "").startsWith("video/")).length;
+    const noun = clips === n ? (n === 1 ? "this video" : `${n} videos`)
+      : clips ? `${n} files`
+      : (n === 1 ? "this picture" : `${n} pictures`);
+    setText($("drop-say"), n ? `Drop to add ${noun}` : "Drop to add pictures");
     show($("drop-say"), true);
   });
   addEventListener("dragover", (e) => {
@@ -360,6 +369,16 @@ function bindStage() {
   addEventListener("pointerup", () => { dragging = null; delete view.dataset.panning; });
 
   $("stop-btn").addEventListener("click", cancelAll);
+
+  /* The video transport. One button and one scrubber, both acting on the
+     ORIGINAL - the compressed side follows its clock, so there is exactly one
+     thing to drive and the two can never be showing different seconds.
+     bindPlayers attaches the clock-following itself; it is called from here so
+     that every listener in the app is still attached exactly once, from one
+     place, at boot. */
+  bindPlayers();
+  $("vid-play").addEventListener("click", togglePlay);
+  $("vid-seek").addEventListener("input", (e) => seekTo(Number(e.target.value) / 1000));
 
   /* Renaming is an edit, not a fact about the result, which is why it is a field
      on the stage rather than a line in the details. The extension stays the
@@ -529,6 +548,10 @@ window.imgc = {
   zoom: getZoom, pan: getPan, setView, mode: getMode, setMode, applyZoom, resetZoom,
   // Pause the run, so the anchor frame is observable. See engine.holdWork.
   holdWork,
+  /* Ask the video worker what this browser can encode. The app asks once at
+     boot; the harness asks explicitly so it can wait for a real answer instead
+     of sleeping and hoping. */
+  probeVideoSupport,
   /* Reconciling the hidden floor back into the words. The harness drives this
      directly to guard the floor-99 bug: a floor the words disagree with is a
      control displaying one thing while the engine runs another. */
@@ -558,8 +581,11 @@ setBatchEndHandler(() => {
   const t = totals();
   if (!t.ready) return;
   /* The outcome, framed as the person's own gain - this is the moment the
-     product's value is remembered by. */
-  toast(`Done — ${t.ready} picture${t.ready === 1 ? "" : "s"} ready, saved you `
+     product's value is remembered by. The noun follows what was actually in
+     the run: a batch of clips announced as "pictures" is the interface not
+     having noticed what it just spent two minutes on. */
+  const noun = state.items.some((i) => i.isVideo && isReady(i)) ? "file" : "picture";
+  toast(`Done — ${t.ready} ${noun}${t.ready === 1 ? "" : "s"} ready, saved you `
     + `${human(t.saved)}. Drag the line to check any of them.`);
   /* And the product's superpower, taught exactly once, at the first moment it
      is usable. */
@@ -614,11 +640,23 @@ if ("serviceWorker" in navigator) {
      timer and RACED the install's own download of the same files - a first
      visit could fetch the 3.5 MB AVIF codec twice. Repeat visits are
      controlled immediately, so they warm immediately. */
-  if (navigator.serviceWorker.controller) warmCodecs();
-  else navigator.serviceWorker.addEventListener("controllerchange", () => warmCodecs(), { once: true });
+  if (navigator.serviceWorker.controller) warmVideo();
+  else navigator.serviceWorker.addEventListener("controllerchange", () => warmVideo(), { once: true });
 } else {
   // No offline layer to wait for - warm once the first paint is out the door.
-  setTimeout(warmCodecs, 1000);
+  setTimeout(warmVideo, 1000);
+}
+
+/* The codecs, and the question only the video worker can answer.
+ *
+ * Both wait for the same moment and for the same reason: the offline copy is
+ * ready, so this reads the cache instead of racing the install's own download
+ * of the very same files. The video probe matters before anyone drops
+ * anything - a browser that cannot re-encode video has to be able to say so at
+ * the moment a video is handed over, not after a queue row and a wait. */
+function warmVideo() {
+  warmCodecs();
+  probeVideoSupport();
 }
 
 /* Installed as an app, the OS can hand files straight here - right-click an

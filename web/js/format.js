@@ -13,6 +13,19 @@ export function human(n) {
   return `${i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
 }
 
+/** A running time as a clock writes it: 0:07, 2:31, 1:04:20. Not `duration`
+ *  below, which reports how long the machine worked - this is how long the
+ *  video is, and those are two different facts about the same row. */
+export function clock(seconds) {
+  if (seconds == null || !isFinite(seconds) || seconds < 0) return "—";
+  const whole = Math.round(seconds);
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const s = whole % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
 /** Elapsed time at a precision a person can use. Sub-second work is reported in
  *  milliseconds because "0.1 s" reads as a rounding artefact, and anything past
  *  a minute gets minutes because "83.4 s" does not. */
@@ -29,6 +42,11 @@ export function duration(ms) {
 const FORMAT_LABEL = {
   jpeg: "JPEG", png8: "PNG-8", png8x: "PNG-8 exact", png: "PNG",
   webp: "WebP", "webp-lossless": "WebP lossless", avif: "AVIF", gif: "GIF",
+  /* Video. The container is the same for both and is already on screen as the
+     file's extension, so the label names only the part that differs. These
+     appear in the evidence panel, never in the plan - the plan asks where the
+     video is going and nothing about codecs. */
+  "av1-mp4": "AV1", "h264-mp4": "H.264",
   // Not an encoder: the choice to keep the file exactly as it arrived, which is a
   // real candidate and the one the "Original" chip stands for. Underscored so it
   // cannot collide with an encoder key - see ORIGINAL_PICK in state.js.
@@ -65,6 +83,50 @@ export function mimeFor(file) {
 }
 
 export const SUPPORTED = /\.(png|jpe?g|webp|bmp|tiff?|gif|avif)$/i;
+
+/* Video, by name.
+ *
+ * This is the one table in the browser app that is restated rather than
+ * generated: its reference is VIDEO_SUFFIXES in pocketsize/video.py, and
+ * nothing carries that list across the way tools/gen_destinations.py carries
+ * the destination table. Keep the two in step by hand until it does - every
+ * destination NUMBER a video uses is read from the generated file, so this is
+ * the only thing written twice. */
+export const VIDEO_SUFFIXES =
+  /\.(mp4|m4v|mov|webm|mkv|avi|wmv|flv|mpe?g|m2ts|mts|ts|3gp|ogv)$/i;
+
+/** Is this a video? The browser's own type first, the name as the fallback -
+ *  a drag out of some file managers arrives with no type at all. */
+export function isVideoFile(file) {
+  if ((file.type || "").startsWith("video/")) return true;
+  return VIDEO_SUFFIXES.test(file.name || "");
+}
+
+/** The result line for a video, in the approved words.
+ *
+ *  One function, used by the row in the queue AND by the stage, so the two can
+ *  never word the same fact differently. Everything the line has to disclose
+ *  rides on the SAME line as the percentage, never after it and never smaller:
+ *  a saving that quietly includes a resize, or a quality traded away to meet a
+ *  byte limit, is the least trustworthy number on the page.
+ *
+ *  Both disclosures come from flags, not from comparing numbers. `outW/outH`
+ *  against `width/height` is what the engine reported it actually wrote, and
+ *  `videoCapped` is a flag the engine posts - the UI never infers "the cap did
+ *  this" from a size and a score. */
+export function videoResultLine(it) {
+  const pct = it.originalBytes && Number.isFinite(it.newBytes)
+    ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
+  let line = `${human(it.originalBytes)} → ${human(it.newBytes)} — `
+    + (pct > 0 ? `${pct}% smaller` : "no smaller");
+  if (it.outW && it.width && (it.outW !== it.width || it.outH !== it.height)) {
+    line += `, and made smaller on screen (${Math.max(it.outW, it.outH)} across)`;
+  }
+  if (it.videoCapped && it.sizeTarget) {
+    line += `, and not as sharp as the original to fit ${human(it.sizeTarget)}`;
+  }
+  return line;
+}
 
 /** The MIME types intake may admit when the extension check fails (a paste, a
  *  drag from a file manager that renames). Deliberately the same set as

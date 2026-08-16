@@ -33,6 +33,33 @@ must update this table in the same commit.
 | `d9f2a95164362af48558d176e619becfd49dd97b50b86c679b47100860522b3d` | `avif_enc.wasm` |
 | `ed231f933ddaa112b51ee4df8117b5fa4245ce1b370be0b2f8ef688f1f36c9e1` | `webp.js` |
 | `39c279269ec1163b987b6d69749458e3d5b03b9585f58b6ca5455b76b504a305` | `webp_enc_simd.wasm` |
+| `5881915aa16d4a45b9eac06e3826e1ef10f10ae5d09499c13f235d56f8f4f7ab` | `mediabunny.min.js` |
+| `3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04` | `mediabunny-LICENSE.txt` |
+
+# Mediabunny
+
+`mediabunny.min.js` is [Mediabunny](https://mediabunny.dev) 1.54.0 by
+Vanilagy and contributors, **MPL-2.0**, copied from the npm package unmodified
+(`npm pack mediabunny@1.54.0`, `dist/bundles/mediabunny.min.mjs`),
+renamed to `.js` because a module served as `application/octet-stream` under
+`nosniff` is refused outright, and `.mjs` is missing from more static hosts'
+MIME tables than is comfortable. Module-ness comes from the worker's
+`type: "module"`, never from the extension. The full
+licence text sits beside it in `mediabunny-LICENSE.txt`.
+
+It reads and writes the containers - MP4, QuickTime, WebM, Matroska - and does
+nothing else here: every frame is decoded and encoded by the browser's own
+WebCodecs, so no codec ships in this file and none is bundled with the site.
+MPL-2.0 is file-level copyleft, which is satisfied by shipping this file
+unmodified alongside its licence; the rest of the site stays MIT.
+
+The alternative was compiling FFmpeg to WebAssembly, and it was rejected on
+three counts, each sufficient: it runs roughly twelve to twenty-five times
+slower than native, its default build links x264 and x265 and is therefore
+GPL, and its threaded build needs cross-origin isolation - which would mean
+setting COEP across the whole site and breaking any cross-origin resource that
+does not opt in. Reading containers in JavaScript and encoding with the
+browser's codecs needs none of that.
 
 # Icons
 

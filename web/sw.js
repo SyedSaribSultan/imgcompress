@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 
@@ -38,7 +38,9 @@ const PRECACHE = [
   "/js/state.js", "/js/views.js", "/js/render.js", "/js/settings.js",
   "/js/intake.js", "/js/engine.js", "/js/queue.js", "/js/compare.js",
   "/js/facts.js", "/js/save.js", "/js/panels.js", "/js/main.js",
-  "/worker.js", "/ss2.js",
+  "/worker.js",
+  "/video-worker.js",
+  "/ss2.module.js", "/ss2.js",
   "/site.webmanifest", "/favicon.svg", "/favicon.ico",
   "/icon-192.png", "/icon-512.png",
 ];
@@ -49,6 +51,7 @@ const HEAVY_PRECACHE = [
   "/vendor/mozjpeg.js", "/vendor/mozjpeg_enc.wasm",
   "/vendor/oxipng.js", "/vendor/squoosh_oxipng_bg.wasm",
   "/vendor/webp.js", "/vendor/webp_enc_simd.wasm",
+  "/vendor/mediabunny.min.js",
   "/vendor/avif.js", "/vendor/avif_enc.wasm",
   "/fonts/geist-latin.woff2", "/fonts/geist-latin-ext.woff2",
   "/fonts/geist-mono-latin.woff2", "/fonts/geist-mono-latin-ext.woff2",

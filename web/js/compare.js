@@ -19,7 +19,9 @@
 
 import { $, setText, show } from "./dom.js";
 import { state, current, isReady } from "./state.js";
-import { human, fmtLabel, splitName } from "./format.js";
+import {
+  human, fmtLabel, splitName, clock, videoResultLine,
+} from "./format.js";
 
 let mode = "split";
 let zoom = 0;                 // 0 means "fit"; any other number is explicit
@@ -173,8 +175,12 @@ export function applySplit() {
   if (!frame.width) return;
   const dividerX = view.left + (view.width * pct) / 100;
   const inFrame = ((dividerX - frame.left) / frame.width) * 100;
-  document.querySelector(".after").style.setProperty(
-    "--clip", `${Math.max(0, Math.min(100, inFrame))}%`);
+  /* Written on the FRAME, not on a layer. There are two `.after` layers now -
+     one for pictures, one for video - and a custom property set on the first
+     one found would clip that one and leave the other showing whole. Setting
+     it on their common parent lets it inherit into both, which is what a
+     custom property is for. */
+  $("frame").style.setProperty("--clip", `${Math.max(0, Math.min(100, inFrame))}%`);
 
   /* The side labels ride the caliper, but they must never ride it off the
      stage - a label that has left the viewport stops orienting anyone. Pushed
@@ -190,6 +196,10 @@ export function applySplit() {
 /* ---------------------------------- mode --------------------------------- */
 
 export function setMode(next) {
+  /* The heatmap is built from two decoded stills, and a video has no single
+     "the picture" to decode - so Diff is not offered on one, and asking for it
+     lands on the split rather than on a blank canvas. */
+  if (next === "diff" && current()?.isVideo) next = "split";
   mode = next;
   $("view").dataset.mode = next;
   for (const m of ["split", "after", "diff"]) {
@@ -201,7 +211,7 @@ export function setMode(next) {
   const badge = $("mode-badge");
   show(badge, next !== "split" && !!current());
   setText(badge, next === "after"
-    ? "Showing the compressed picture"
+    ? (current()?.isVideo ? "Showing the compressed video" : "Showing the compressed picture")
     : "Difference — brighter means more change");
   if (next === "diff") ensureDiff();
   applySplit();
@@ -270,6 +280,119 @@ async function ensureDiff() {
   }
 }
 
+/* --------------------------------- video --------------------------------- */
+
+/* Two players, one clock.
+ *
+ * Comparing video means the same instant on both sides: a split showing second
+ * 3 against second 5 is not a comparison, it is two videos. So the compressed
+ * side FOLLOWS the original rather than both running free - two independent
+ * players drift apart within seconds, and no amount of starting them together
+ * fixes it. The same approach the desktop app uses, deliberately, so the two
+ * interfaces behave identically.
+ *
+ * Bound once, at boot, from main.js - like every other listener in this app.
+ * These are the media's own mechanics rather than interface handlers, but they
+ * still get attached exactly once, in one place, for the same reason: the
+ * renderers run several times a second. */
+export function bindPlayers() {
+  const before = $("vid-before");
+  const after = $("vid-after");
+
+  const follow = () => {
+    if (!after.getAttribute("src") || after.readyState < 1) return;
+    // A tolerance, not an assignment on every tick: writing currentTime on a
+    // playing element re-seeks it, which stutters the very thing being judged.
+    if (Math.abs(after.currentTime - before.currentTime) > 0.08) {
+      after.currentTime = before.currentTime;
+    }
+  };
+  before.addEventListener("timeupdate", () => { follow(); paintTransport(); });
+  before.addEventListener("seeked", follow);
+  before.addEventListener("play", () => { follow(); after.play().catch(() => {}); });
+  before.addEventListener("pause", () => { after.pause(); paintTransport(); });
+  before.addEventListener("loadedmetadata", paintTransport);
+  before.addEventListener("play", paintTransport);
+  before.addEventListener("ended", paintTransport);
+}
+
+/** Play, or stop. One button, and it says which of the two it is about to do. */
+export function togglePlay() {
+  const before = $("vid-before");
+  if (!before.getAttribute("src")) return;
+  if (before.paused) before.play().catch(() => {});
+  else before.pause();
+  paintTransport();
+}
+
+/** Move both players to a point in the clip. The original is the one moved;
+ *  the compressed side follows it, as it does everywhere else. */
+export function seekTo(fraction) {
+  const before = $("vid-before");
+  if (!before.duration || !isFinite(before.duration)) return;
+  before.currentTime = Math.max(0, Math.min(1, fraction)) * before.duration;
+}
+
+function paintTransport() {
+  const before = $("vid-before");
+  const playing = !before.paused && !before.ended;
+  const btn = $("vid-play");
+  setText(btn, playing ? "Pause" : "Play");
+  btn.setAttribute("aria-label", playing ? "Pause the video" : "Play the video");
+  const total = isFinite(before.duration) ? before.duration : 0;
+  setText($("vid-time"), `${clock(before.currentTime || 0)} / ${clock(total)}`);
+  const seek = $("vid-seek");
+  // Never fight a finger already on the scrubber.
+  if (document.activeElement !== seek && total) {
+    seek.value = String(Math.round((before.currentTime / total) * 1000));
+  }
+}
+
+/* Which pair of layers is live, and what they are showing. The picture layers
+ * and the video layers are the same two positions in the same frame, so
+ * everything downstream - the clip, the zoom, the pan - is unchanged. */
+function paintMedia(it, hasResult) {
+  const video = !!it.isVideo;
+  const vBefore = $("vid-before"), vAfter = $("vid-after");
+
+  show($("img-before"), !video);
+  show($("img-after-wrap"), !video);
+  show(vBefore, video);
+  show($("vid-after-wrap"), video);
+  show($("transport"), video);
+  /* A heatmap of one frame of a clip would be a true picture of something
+     nobody asked about. The button says why rather than going quiet. */
+  const diffBtn = $("mode-diff");
+  diffBtn.disabled = video;
+  diffBtn.title = video ? "The difference view is for pictures" : "";
+
+  if (!video) {
+    // Release the decoders, and the file behind them, when a picture is picked.
+    if (vBefore.getAttribute("src")) { vBefore.pause(); vBefore.removeAttribute("src"); vBefore.load(); }
+    if (vAfter.getAttribute("src")) { vAfter.pause(); vAfter.removeAttribute("src"); vAfter.load(); }
+    if (it.beforeURL && $("img-before").getAttribute("src") !== it.beforeURL) {
+      $("img-before").src = it.beforeURL;
+    }
+    if (hasResult && $("img-after").getAttribute("src") !== it.afterURL) {
+      $("img-after").src = it.afterURL;
+      diffFor = null;
+    }
+    return;
+  }
+
+  if (it.beforeURL && vBefore.getAttribute("src") !== it.beforeURL) {
+    vBefore.src = it.beforeURL;
+    paintTransport();
+  }
+  const want = hasResult ? it.afterURL : "";
+  if ((vAfter.getAttribute("src") || "") !== want) {
+    if (want) vAfter.src = want;
+    else { vAfter.removeAttribute("src"); vAfter.load(); }
+    // A result that arrives mid-playback starts where the original already is.
+    if (want) vAfter.currentTime = vBefore.currentTime || 0;
+  }
+}
+
 /* --------------------------------- render -------------------------------- */
 
 export function renderStage() {
@@ -280,6 +403,11 @@ export function renderStage() {
      bake-off has already produced, or the previous result held on screen while
      its replacement is computed. All three carry honest numbers. */
   const hasResult = !!(it && it.afterURL && it.fmt);
+
+  /* Arriving at a video with the heatmap on screen: the mode goes back to the
+     split rather than leaving a canvas showing the difference between two
+     pictures nobody is looking at any more. */
+  if (it && it.isVideo && mode === "diff") setMode("split");
 
   show($("stage-hero"), !it);
   show($("stage-empty"), !it);
@@ -306,7 +434,8 @@ export function renderStage() {
     show($("stage-hero"), true);
     show($("stage-empty"), true);
     show($("stage-choose"), false);
-    setText($("stage-empty"), `Could not compress this image — ${it.error || "unknown reason"}.`);
+    setText($("stage-empty"),
+      `Could not compress this ${it.isVideo ? "video" : "image"} — ${it.error || "unknown reason"}.`);
     return;
   }
 
@@ -319,13 +448,7 @@ export function renderStage() {
 
   // The original is on screen from the moment the file is read, including while
   // the work is still running: the untouched picture is what is true right now.
-  if (it.beforeURL && $("img-before").getAttribute("src") !== it.beforeURL) {
-    $("img-before").src = it.beforeURL;
-  }
-  if (hasResult && $("img-after").getAttribute("src") !== it.afterURL) {
-    $("img-after").src = it.afterURL;
-    diffFor = null;
-  }
+  paintMedia(it, hasResult);
 
   if (working || it.stale) {
     setText($("work-say"), it.stale
@@ -339,24 +462,36 @@ export function renderStage() {
     // Never write over what is being typed.
     if (document.activeElement !== nameField) nameField.value = base;
     setText($("out-ext"), it.ext || splitName(it.name).ext);
-    setText($("s-size"), human(it.newBytes));
-    /* A saving of zero is reported as no saving, not as "−0%". Rounding a result
-       that got no smaller into a percentage claims a win of nothing, which is worse
-       than saying plainly that nothing was gained.
+    /* A video's result line carries both sizes itself, in the approved words,
+       so the standalone size would be the same number twice on one bar. The
+       clipboard takes no video either - the button goes rather than sitting
+       there disabled with no explanation. */
+    show($("s-size"), !it.isVideo);
+    show($("copy-one"), !it.isVideo);
+    if (it.isVideo) {
+      /* One line, and every disclosure it owes is on it: the resize and the
+         byte ceiling ride with the percentage, never after it. */
+      setText($("s-saved"), videoResultLine(it));
+    } else {
+      /* A saving of zero is reported as no saving, not as "−0%". Rounding a
+         result that got no smaller into a percentage claims a win of nothing,
+         which is worse than saying plainly that nothing was gained.
 
-       And if pixels were removed, the line that says the % says so - at the
-       same size, in the same breath. A headline number that quietly includes a
-       resize is the least trustworthy number on the page. */
-    const pct = it.originalBytes
-      ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
-    const shrunk = it.outW && (it.outW !== it.width || it.outH !== it.height)
-      ? ` · shrunk to ${it.outW}×${it.outH}` : "";
-    setText($("s-saved"), (pct > 0
-      ? `−${pct}% · ${fmtLabel(it.fmt)}`
-      : `no saving · ${fmtLabel(it.fmt)}`) + shrunk);
+         And if pixels were removed, the line that says the % says so - at the
+         same size, in the same breath. A headline number that quietly includes
+         a resize is the least trustworthy number on the page. */
+      setText($("s-size"), human(it.newBytes));
+      const pct = it.originalBytes
+        ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
+      const shrunk = it.outW && (it.outW !== it.width || it.outH !== it.height)
+        ? ` · shrunk to ${it.outW}×${it.outH}` : "";
+      setText($("s-saved"), (pct > 0
+        ? `−${pct}% · ${fmtLabel(it.fmt)}`
+        : `no saving · ${fmtLabel(it.fmt)}`) + shrunk);
+    }
   }
 
-  if (mode === "diff") ensureDiff();
+  if (mode === "diff" && !it.isVideo) ensureDiff();
   applyZoom();
 }
 

@@ -426,6 +426,8 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 /* The viewport is sized in JS to the image's fitted box, so the split divider
    lines up with the visible edges instead of with a letterboxed container. */
 .viewport { position: relative; line-height: 0; touch-action: none; }
+.viewport video { display: block; width: 100%; height: auto; }
+.viewport .after video { position: absolute; inset: 0; width: 100%; height: 100%; }
 .viewport img {
   display: block; width: 100%; height: 100%; object-fit: contain;
   user-select: none; -webkit-user-drag: none;
@@ -612,6 +614,12 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
       <div class="viewport" id="viewport">
         <img id="img-before" alt="Original image">
         <div class="after"><img id="img-after" alt="Compressed image"></div>
+        <video id="vid-before" hidden muted playsinline loop
+               aria-label="Original video"></video>
+        <div class="after" id="vid-after-wrap" hidden>
+          <video id="vid-after" muted playsinline loop
+                 aria-label="Compressed video"></video>
+        </div>
         <input class="split-input" type="range" id="split" min="0" max="100" value="50"
                aria-label="Comparison split position">
         <div class="divider" id="divider">
@@ -841,6 +849,26 @@ async function api(path, body, opts = {}) {
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 }
 const imgURL = (id, which) => `/api/image/${id}/${which}?token=${encodeURIComponent(TOKEN)}`;
+const vidURL = (id, which) => `/api/video/${id}/${which}?token=${encodeURIComponent(TOKEN)}`;
+
+/* Two players, one clock. Comparing video means the same instant on both
+   sides - a split that shows second 3 against second 5 is not a comparison,
+   it is two videos. The compressed side follows the original rather than both
+   running free, because two independent players drift apart within seconds. */
+function syncPlayers(before, after) {
+  if (before.dataset.bound === "1") return;
+  before.dataset.bound = "1";
+  const follow = () => {
+    if (!after.src || after.readyState < 1) return;
+    if (Math.abs(after.currentTime - before.currentTime) > 0.08) {
+      after.currentTime = before.currentTime;
+    }
+  };
+  before.addEventListener("timeupdate", follow);
+  before.addEventListener("seeked", follow);
+  before.addEventListener("play", () => { follow(); after.play().catch(() => {}); });
+  before.addEventListener("pause", () => after.pause());
+}
 
 /* ------------------------------- helpers -------------------------------- */
 function human(n) {
@@ -1037,11 +1065,32 @@ function renderInspector(it) {
   if (!it) return;
   $("insp-name").textContent = it.name;
 
+  const isVideo = it.is_video === true;
+  const vBefore = $("vid-before"), vAfter = $("vid-after");
+  const vWrap = $("vid-after-wrap");
+  $("img-before").hidden = isVideo;
+  $("img-before").nextElementSibling.hidden = isVideo;
+  vBefore.hidden = !isVideo;
+  vWrap.hidden = !isVideo;
+  if (isVideo) {
+    const wantV = vidURL(it.id, "before");
+    if (vBefore.dataset.src !== wantV) {
+      vBefore.dataset.src = wantV; vBefore.src = wantV; vBefore.controls = true;
+    }
+    const readyV = it.status === "done" || it.status === "saved";
+    const wantVA = readyV ? vidURL(it.id, "after") + `&v=${it.new_bytes}` : "";
+    if (vAfter.dataset.src !== wantVA) {
+      vAfter.dataset.src = wantVA; vAfter.src = wantVA || "";
+    }
+    syncPlayers(vBefore, vAfter);
+  }
+
   const before = $("img-before"), after = $("img-after");
-  const wantBefore = imgURL(it.id, "before");
+  const wantBefore = isVideo ? "" : imgURL(it.id, "before");
   if (before.dataset.src !== wantBefore) { before.dataset.src = wantBefore; before.src = wantBefore; }
   const ready = it.status === "done" || it.status === "saved";
-  const wantAfter = ready ? imgURL(it.id, "after") + `&v=${it.new_bytes}` : "";
+  const wantAfter = (ready && !isVideo)
+    ? imgURL(it.id, "after") + `&v=${it.new_bytes}` : "";
   if (after.dataset.src !== wantAfter) { after.dataset.src = wantAfter; after.src = wantAfter || ""; }
   $("viewport").classList.toggle("solo", mode === "after" || !ready);
   $("divider").style.display = mode === "split" && ready ? "" : "none";

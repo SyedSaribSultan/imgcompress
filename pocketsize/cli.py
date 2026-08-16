@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, video
 from . import destinations as dest
 from . import encoders as enc
 from .core import CompressionResult, Settings, compress_tree
@@ -76,6 +76,57 @@ def describe(res: CompressionResult, verbose: bool = False) -> str:
     for warning in res.warnings:
         line += f"\n     ! {warning}"
     return line
+
+
+def describe_video(res, verbose: bool = False) -> str:
+    """One line for one video, in the same shape as the image line.
+
+    The differences are the ones a person would ask about: how long it was,
+    whether the sound was touched, and - when a size limit is what decided the
+    answer - that the picture is not as sharp as the original. That last one
+    goes on this line and not a later one, for the same reason resizing does:
+    a disclosure that arrives after the number has already been read is not a
+    disclosure.
+    """
+    name = res.source.name
+    if res.error:
+        return f"  !  {name}  ({res.error})"
+    if res.skipped:
+        return f"  =  {name}  {human(res.original_bytes)}  ({res.note})"
+
+    bits = [f"{human(res.original_bytes)} -> {human(res.new_bytes)}",
+            f"-{res.saved_pct:.0f}%", res.fmt]
+    if res.resized_to:
+        bits.append(f"{res.resized_from[0]}x{res.resized_from[1]}"
+                    f" -> {res.resized_to[0]}x{res.resized_to[1]}")
+    if verbose and res.level:
+        bits.append(f"crf{res.level}")
+    bits.append(f"visual match {res.score:.1f}")
+    if verbose and res.witness:
+        bits.append(f"xpsnr {res.witness:.1f}dB")
+    line = f"  ok {name}  " + "  ".join(bits)
+    if res.capped:
+        line += "\n       not as sharp as the original, to fit the size limit"
+    if res.audio_note:
+        line += f"\n       {res.audio_note}"
+    if verbose and res.candidates:
+        losers = "   ".join(
+            f"{c}={human(s)}" for c, s, _ in sorted(res.candidates,
+                                                    key=lambda x: x[1])
+        )
+        line += f"\n       versions tried: {losers}"
+    for warning in res.warnings:
+        line += f"\n     ! {warning}"
+    return line
+
+
+def iter_videos(root: Path, recursive: bool = True):
+    if root.is_file():
+        return [root] if video.is_video_path(root) else []
+    walk = root.rglob("*") if recursive else root.glob("*")
+    return sorted(
+        p for p in walk if p.is_file() and video.is_video_path(p)
+    )
 
 
 def destination_help() -> str:
@@ -189,10 +240,26 @@ def report_capabilities() -> int:
     caps["ssimulacra2 (perceptual metric)"] = HAVE_SSIMULACRA2
     for label, ok in caps.items():
         print(f"  [{'x' if ok else ' '}] {label}")
+
+    print("\nvideo")
+    vcaps = video.capabilities()
+    if not vcaps.get("pyav"):
+        print("  [ ] not installed")
+        print(f"      add it with:  {video.INSTALL_HINT}")
+    else:
+        print(f"  [x] pyav {vcaps.get('version', '?')}")
+        for key in ("h264-mp4", "av1-mp4", "aac", "libopus"):
+            if key in vcaps:
+                print(f"  [{'x' if vcaps[key] else ' '}] {key}")
+        # The second opinion is optional and its absence is not a fault: it
+        # means this build has no independent witness to offer, and the
+        # result carries one number instead of two.
+        print(f"  [{'x' if vcaps.get('xpsnr') else ' '}] xpsnr (second opinion)")
+
     if not all(caps.values()):
         print("\nMissing engines fall back to weaker built-ins.")
         print("Install everything with:  pip install -r requirements.txt")
-    else:
+    elif vcaps.get("pyav"):
         print("\nAll engines active.")
     return 0
 
@@ -318,16 +385,75 @@ def main(argv=None) -> int:
         on_result=lambda r: print(describe(r, args.verbose), flush=True),
     )
 
-    if not results:
-        print("No supported images found.")
+    # Videos travel through the same run, answer the same question, and land in
+    # the same folder. They take a different engine because encoding one is a
+    # different job, not because it is a different product.
+    clips = iter_videos(source, recursive=not args.no_recursive)
+    video_results = []
+    if clips and not dest.takes_video(going_to.name):
+        print(f"\n{len(clips)} video(s) skipped: {going_to.name} is for "
+              f"pictures. Try --for web, email, chat, social or original.")
+    elif clips and not video.available():
+        print(f"\n{len(clips)} video(s) skipped: video needs an extra install.")
+        print(f"           {video.INSTALL_HINT}")
+    elif clips:
+        print()
+        # A video can take minutes, so it says what it is doing while it does
+        # it. Written over one line and cleared when the result lands, so a
+        # piped or redirected run is not full of half-drawn bars.
+        live = sys.stderr.isatty()
+
+        def show(name):
+            def step(stage, fraction, detail):
+                if not live:
+                    return
+                bar = "#" * int(fraction * 20)
+                sys.stderr.write(
+                    f"\r     {name[:28]:<28} [{bar:<20}] {fraction * 100:3.0f}%"
+                    f"  {stage}   "
+                )
+                sys.stderr.flush()
+            return step
+
+        for clip in clips:
+            try:
+                res = video.compress(
+                    clip, going_to.name,
+                    fast=args.fast,
+                    size_target=size_target or 0,
+                    max_dimension=args.max_dimension,
+                    output_dir=out_dir,
+                    on_progress=show(clip.name),
+                )
+            except KeyboardInterrupt:
+                if live:
+                    sys.stderr.write("\r" + " " * 78 + "\r")
+                print("\nStopped. Nothing half-written was kept.")
+                return 130
+            if live:
+                sys.stderr.write("\r" + " " * 78 + "\r")
+                sys.stderr.flush()
+            video_results.append(res)
+            print(describe_video(res, args.verbose), flush=True)
+
+    if not results and not video_results:
+        print("No supported images or videos found.")
         return 1
 
-    before = sum(r.original_bytes for r in results)
-    after = sum(r.new_bytes for r in results if not r.error)
-    failed = [r for r in results if r.error]
+    everything = list(results) + list(video_results)
+    before = sum(r.original_bytes for r in everything)
+    after = sum(r.new_bytes for r in everything if not r.error)
+    failed = [r for r in everything if r.error]
 
     print()
-    print(f"{len(results) - len(failed)} image(s) processed")
+    counts = []
+    if results:
+        counts.append(f"{len(results) - len([r for r in results if r.error])} image(s)")
+    if video_results:
+        counts.append(
+            f"{len(video_results) - len([r for r in video_results if r.error])} video(s)"
+        )
+    print(" and ".join(counts) + " processed")
     pct = 100.0 * (before - after) / before if before else 0
     print(f"{human(before)} -> {human(after)}   saved {human(before - after)} ({pct:.1f}%)")
     if failed:

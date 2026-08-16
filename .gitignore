@@ -18,6 +18,8 @@ output/*
 
 # generated benchmark corpus
 tests/fixtures/
+tests/video_fixtures/
+tests/real_world_fixtures/
 
 # vercel
 .vercel/

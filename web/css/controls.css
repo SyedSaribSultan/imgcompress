@@ -23,7 +23,9 @@
   border-radius: var(--radius);
   background: var(--c-raised);
   color: var(--c-ink);
-  box-shadow: var(--elev-1);
+  /* A hard plate, not a soft shadow: zero blur, one flat colour, so the edge
+     reads as the side of a physical key rather than a glow under a card. */
+  box-shadow: 0 3px 0 -1px var(--c-line-hover);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -35,30 +37,41 @@
 .btn:hover:not(:disabled) {
   background: var(--c-raised-hover);
   border-color: var(--c-line-hover);
+  box-shadow: 0 4px 0 -1px var(--c-line-hover);
+  transform: translateY(calc(-1px * var(--motion-scale)));
 }
-/* The press is the state: a touch of squash, through the spatial scale so a
-   reduced-motion preference collapses it. */
+/* The press is the state: the key travels down and its edge shortens by the
+   same amount, so the top face lands where the plate was. Both values move
+   through the spatial scale, so a reduced-motion preference collapses the
+   travel without flattening the button. */
 .btn:active:not(:disabled) {
   background: var(--c-raised-active);
-  transform: scale(calc(1 - 0.03 * var(--motion-scale)));
+  box-shadow: 0 1px 0 -1px var(--c-line-hover);
+  transform: translateY(calc(2px * var(--motion-scale)));
 }
 .btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
 .btn > svg { flex: none; width: 16px; height: 16px; }
 
 .btn.primary {
-  background: var(--c-accent);
-  border-color: var(--c-accent);
-  color: var(--c-accent-ink);
+  background: var(--c-chrome-face);
+  border-color: var(--c-chrome-edge);
+  color: var(--c-chrome-ink);
+  box-shadow: 0 3px 0 -1px var(--c-chrome-shadow);
   font-weight: 600;
 }
+/* The face keeps its colour through hover and press - what changes is the
+   edge and the travel, which is what makes it feel like a key rather than a
+   rectangle that lights up. */
 .btn.primary:hover:not(:disabled) {
-  background: var(--c-accent-hover);
-  border-color: var(--c-accent-hover);
+  background: var(--c-chrome-face);
+  border-color: var(--c-chrome-edge);
+  box-shadow: 0 4px 0 -1px var(--c-chrome-shadow);
 }
 .btn.primary:active:not(:disabled) {
-  background: var(--c-accent-active);
-  border-color: var(--c-accent-active);
+  background: var(--c-chrome-face);
+  border-color: var(--c-chrome-edge);
+  box-shadow: 0 1px 0 -1px var(--c-chrome-shadow);
 }
 
 .btn.sm { padding: var(--s-1) var(--s-2); font-size: 14px; }

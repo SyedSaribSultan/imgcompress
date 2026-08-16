@@ -147,6 +147,10 @@ class DestinationTests(unittest.TestCase):
         # somebody explicitly asks for more. Two numbers, two jobs.
         "documents":   (("jpeg", "png8", "png"), 2560, 4096, 90.0),
         "email":       (("jpeg", "png8", "png"), 1920, 0, 88.0),
+        # Split from `email` when video arrived: both carry attachments, but
+        # the numbers that define them are different by a factor of two and
+        # come from different companies. For an image they behave alike.
+        "chat":        (("jpeg", "png8", "png"), 1920, 0, 88.0),
         # Platforms re-encode uploads, so modern formats buy nothing here.
         # 2048 covers Instagram's 1080 display size at 2x.
         "social":      (("jpeg", "png8", "png"), 2048, 0, 88.0),

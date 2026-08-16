@@ -11,9 +11,23 @@
  */
 
 import { $, setText, show } from "./dom.js";
-import { state, current, isReady, ORIGINAL_PICK, effectiveSettings, D } from "./state.js";
-import { human, duration, fmtLabel, scoreText, signedPct } from "./format.js";
+import {
+  state, current, isReady, ORIGINAL_PICK, effectiveSettings, videoPlan, D,
+} from "./state.js";
+import {
+  human, duration, clock, fmtLabel, scoreText, signedPct,
+} from "./format.js";
 import { currentPick } from "./views.js";
+
+/** The floor this item was actually run against. A video reads the video
+ *  column of the destination table and a picture reads the picture one, and
+ *  showing a video's result against a picture's floor would be the panel
+ *  reporting a promise nobody made. */
+function floorFor(it) {
+  return it.isVideo
+    ? (it.videoFloor ?? videoPlan(it)?.qualityTarget ?? effectiveSettings(it).qualityTarget)
+    : effectiveSettings(it).qualityTarget;
+}
 
 /* -------------------------------- versions ------------------------------- */
 
@@ -54,7 +68,7 @@ function chipRows(it, ready) {
 function renderChips(it, ready) {
   const box = $("cands");
   const pick = ready ? currentPick(it) : (it.fmt || "");
-  const floor = effectiveSettings(it).qualityTarget;
+  const floor = floorFor(it);
   box.textContent = "";
 
   for (const row of chipRows(it, ready)) {
@@ -90,8 +104,13 @@ function renderChips(it, ready) {
       : (row.score == null ? "" : `match ${scoreText(row.score, false)}`);
 
     /* Mid-run the chips are informational, not yet controls: choosing among
-       candidates that are still arriving is a race the person cannot win. */
-    b.disabled = !ready;
+       candidates that are still arriving is a race the person cannot win.
+       On a video they are informational for good: a run of encodes of a
+       picture all fit in memory and every one of them is kept, so tapping is a
+       swap - a run of encodes of a video does not, so only the winner exists
+       and a chip that promised a swap would be a control that lies. The
+       sentence under the row says exactly that. */
+    b.disabled = !ready || !!it.isVideo;
     b.innerHTML =
       `<span class="cf">${fmtLabel(row.format)}</span>` +
       `<span class="cb num">${human(row.bytes)}</span>` +
@@ -121,7 +140,8 @@ function whyLine(it, ready) {
     return `Still working: ${tried} of ${total} version${total === 1 ? "" : "s"} `
          + `tried so far. Every one shown here is finished and real.`;
   }
-  const floor = effectiveSettings(it).qualityTarget;
+  const floor = floorFor(it);
+  if (it.isVideo) return videoWhyLine(it, floor);
   if (it.pick) {
     const chosen = it.candidates.find((c) => c.format === it.pick);
     const under = chosen && !chosen.lossless && chosen.score != null && chosen.score < floor;
@@ -149,6 +169,31 @@ function whyLine(it, ready) {
          `${tried} tried. Tap any other one to keep it instead.`;
 }
 
+/** Why this video came out the way it did.
+ *
+ *  Deliberately not the picture sentence with a noun swapped: the two tiers
+ *  differ in a way the person can act on. Every version tried is listed with
+ *  what it weighed and what it measured, but only the one that shipped still
+ *  exists, so there is nothing to tap - and saying so is better than a row of
+ *  dead chips with no explanation. */
+function videoWhyLine(it, floor) {
+  if (it.auto?.passthrough) {
+    return it.note || "This video was kept exactly as it arrived.";
+  }
+  const tried = it.candidates?.length || 0;
+  const short = it.score != null && it.score < floor;
+  const ranking = tried > 1
+    ? `${fmtLabel(it.auto.fmt)} came out smallest of the ${tried} ways this browser tried. `
+    : `${fmtLabel(it.auto.fmt)} is the one way this browser could write this video. `;
+  const measured = short
+    ? `It measured ${scoreText(it.score, false)} against your floor of ${floor}, `
+      + `so it did not reach it — the desktop app searches harder and can. `
+    : `It measured ${scoreText(it.score, false)} against your floor of ${floor}. `;
+  return ranking + measured
+    + "Only the version that shipped is kept — a video is too big to hold every "
+    + "attempt — so these are a record rather than something to swap between.";
+}
+
 /* -------------------------------- measured ------------------------------- */
 
 function renderMeasured(it) {
@@ -160,6 +205,15 @@ function renderMeasured(it) {
         : `${it.width}×${it.height} → ${it.outW}×${it.outH}`)
     : "—");
   setText($("s-time"), duration(it.elapsedMs));
+
+  /* How long the clip runs - the fact that explains why this one took minutes
+     where a picture took a second. Video only: a still has no length, and a
+     stat reading "0:00" on every picture would be four characters of noise on
+     every row of the panel. */
+  show($("s-length-cell"), !!it.isVideo);
+  if (it.isVideo) setText($("s-length"), clock(it.duration));
+
+  const noun = it.isVideo ? "video" : "picture";
 
   /* Resizing and compressing are different things, and adding their savings
      together hides which one did the work. Said apart - and said FIRST, at
@@ -173,8 +227,8 @@ function renderMeasured(it) {
       ? Math.round((1 - it.newBytes / it.originalBytes) * 100) : 0;
     setText(resizeLine,
       (pct > 0
-        ? `Part of the −${pct}% comes from shrinking the picture from `
-        : `The picture was shrunk from `)
+        ? `Part of the −${pct}% comes from shrinking the ${noun} from `
+        : `The ${noun} was shrunk from `)
       + `${it.width}×${it.height} to ${it.outW}×${it.outH}`
       + (pct > 0 ? ` — not just from compressing it` : "")
       + `. The visual match below was measured on the compression alone.`);
@@ -185,13 +239,21 @@ function renderMeasured(it) {
      can zero. When the destination's own ceiling did it (the limit is already
      zero and the ceiling fired anyway), pretending otherwise would be worse
      than the shrink. */
-  show($("keep-size"), !!resized && effectiveSettings(it).maxDimension > 0);
+  const limit = it.isVideo
+    ? (videoPlan(it)?.maxDimension || 0) : effectiveSettings(it).maxDimension;
+  show($("keep-size"), !!resized && limit > 0);
+  setText($("keep-size"), `Keep full size for this ${noun}`);
 
   const notes = [];
   if (it.note) notes.push(it.note);
   if (it.lossless && !it.passthrough) {
     notes.push("This one is lossless — the pixels are identical, not merely close.");
   }
+  /* Whether the sound was copied or made again. Shown only when the engine
+     says so: the container, the codec and whether a copy was even possible are
+     the engine's facts, and a panel that guessed at them would be guessing
+     about the half of the file it never measured. */
+  if (it.isVideo && it.audioNote) notes.push(it.audioNote);
   const note = $("s-note");
   show(note, notes.length > 0);
   setText(note, notes.join(" "));
@@ -203,6 +265,29 @@ function renderMeasured(it) {
   if (it.missedSize && it.sizeTarget) {
     warns.unshift(`Could not get under ${human(it.sizeTarget)} without visible damage. ` +
                   `This is the smallest version still worth keeping.`);
+  }
+  if (it.isVideo && !it.passthrough) {
+    /* Two things a video can owe an explanation for, both of them comparisons
+       of numbers the engine reported against numbers the plan asked for -
+       never a guess about what the engine did internally.
+
+       The floor first: the browser's encoder is tuned for video calls rather
+       than for archives, so a clip can finish honestly short of the mark. It
+       says so rather than letting a measured number sit there looking like a
+       pass. */
+    const floor = floorFor(it);
+    if (it.score != null && floor && it.score < floor) {
+      warns.unshift(`This reached a visual match of ${scoreText(it.score, false)}, `
+        + `under the ${floor} this destination asks for. It is a real file and a `
+        + `real measurement — the desktop app searches harder and gets closer.`);
+    }
+    // And the destination's own byte ceiling, which the browser tier does not
+    // search against. A result over it would not do the job the destination
+    // exists for, so it is said here instead of being discovered by Discord.
+    if (it.sizeTarget && it.newBytes > it.sizeTarget) {
+      warns.unshift(`This is still over the ${human(it.sizeTarget)} that this `
+        + `destination is for. The desktop app can search for a file that fits.`);
+    }
   }
   if (it.hardCapped && !effectiveSettings(it).maxDimension) {
     const cap = D.DOCUMENTS_MAX_DIMENSION;
@@ -227,6 +312,10 @@ function renderRedo(it) {
     $("ov-format").value = it.override?.formats?.[0] || "";
     $("ov-quality").value = it.override?.qualityTarget ?? "";
   }
+  /* The format override lists picture formats, and a video cannot be a PNG.
+     Hidden rather than left offering choices that would be ignored - the
+     quality override beside it applies to both and stays. */
+  show($("ov-format").closest(".field"), !it.isVideo);
   show($("ov-reset"), !!it.override);
 }
 
@@ -247,6 +336,7 @@ export function renderFacts() {
   if (!ready && !live) {
     $("cands").textContent = "";
     for (const id of ["s-format", "s-score", "s-dims", "s-time"]) setText($(id), "—");
+    show($("s-length-cell"), false);
     show($("s-resize"), false);
     show($("keep-size"), false);
     show($("s-note"), false);

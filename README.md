@@ -105,6 +105,106 @@ browser otherwise. Both are the same full application.
 
 ---
 
+## Video
+
+The same idea, and the same one question. Videos go in the same folder as the
+images and come out the same way: several settings tried, every result opened
+back up and measured against the original, and the smallest one that still
+looks close enough is what you get.
+
+```bash
+pip install "pocketsize[video]"       # needs Python 3.11+
+pocketsize clips/ --for chat          # fits Discord's free 10 MB limit
+pocketsize clips/ --for email         # small enough to attach
+pocketsize holiday.mov --for web      # AV1 where it helps, H.264 where it must
+```
+
+| `--for` | Formats | Frame | Visual match | Size limit | Sound |
+| --- | --- | --- | --- | --- | --- |
+| `web` | AV1 / H.264 MP4 | 1920px | 92 | — | kept as it was |
+| `email` | H.264 MP4 | 1920px | 90 | 18 MB | kept as it was |
+| `chat` | H.264 / AV1 MP4 | 1280px | 88 | 10 MB | AAC |
+| `social` | H.264 MP4 | 1920px | 90 | 500 MB | AAC |
+| `documents` | H.264 MP4 | 1920px | 90 | — | AAC |
+| `original` | AV1 / H.264 MP4 | never resized | 96 | — | kept as it was |
+
+`thumbnail` is a place to send a picture and not a place to send a video, so a
+video sent there is reported and left exactly as it is rather than guessed at.
+
+A few things are worth knowing, because they are the difference between this
+and a tool that guesses:
+
+**A size limit is a limit, not an instruction to spend it.** If the smallest
+version that still looks right is 3 MB, that is what you get — `--for chat`
+does not inflate it to fill 10 MB. Only when the honest quality answer will not
+fit does the limit take over and decide, and then the result line says so:
+*not as sharp as the original, to fit the size limit.*
+
+**The score you see is the worst part of the clip, not the average.** Frames are
+sampled through the whole runtime and pooled worst-first, so the number you read
+is the low percentile rather than the mean. A video that is perfect for four
+seconds and falls apart for one is not a good video, and an average says it is.
+Where the build can, the result also carries a second, unrelated measurement
+(XPSNR), because a number the search was steering on is a claim rather than
+evidence. Two exceptions, stated rather than hidden: a build without that
+filter reports one number, and a tone-mapped HDR file reports one too — the
+witness compares like with like, and a converted picture is not like its
+original.
+
+**It comes out the right way up, and the right shape.** A phone held upright
+records a landscape frame with a "turn this" flag attached, and a flag is only
+advice — plenty of players, upload forms and editors ignore it. The rotation is
+baked into the pixels instead. Non-square pixels are resolved the same way, so
+the output is always square-pixel and never squashed.
+
+**Sound is kept exactly as it was where the destination allows it** — `web`,
+`email` and `original` copy the original track untouched whenever the container
+can carry it, because re-encoding audio that is already compressed only ever
+loses and it is a small share of the bytes. `documents`, `chat` and `social`
+re-encode to AAC, because that is what the players they are named after reliably
+accept. Either way the result says which happened, and a second soundtrack or a
+subtitle track that could not come along is reported rather than dropped in
+silence.
+
+**HDR video is converted, not flattened.** A clip with a PQ or HLG transfer —
+what a modern phone records by default — cannot simply be re-encoded: strip the
+wide colour without converting it and you get a washed-out grey video. So the
+desktop tier tone maps it properly — the standard transfer curves, wide
+primaries brought back to ordinary ones, a documented tone curve — and says on
+the result that the colour was converted. A transfer it cannot name is still
+refused rather than guessed at. **The browser tier has no tone mapper**, so an
+HDR clip there is left alone with an explanation; that is the one job the
+desktop app does that the page cannot.
+
+**A video takes minutes, and it says so while it runs.** The command line draws
+a live progress bar on a terminal, stays quiet when its output is redirected,
+and stops cleanly on Ctrl-C without leaving a half-written file behind.
+
+HEVC is decoded but never written: its patent position is three licensing pools
+deep with no exemption for ordinary use, which is why no free tool emits it.
+AV1 and Opus are royalty-free, and H.264 is the one that plays literally
+everywhere.
+
+[tests/VIDEO_BENCHMARK.md](tests/VIDEO_BENCHMARK.md) is the reproducible
+version of all of that: every strategy that *can* be searched, searched to the
+same visual match of 92 and scored by two metric families, against fixed-setting
+rows that are what taking the internet's advice costs on content it does not
+happen to suit. On the near-static clip the searched AV1 encode ships 9,952
+bytes at a measured 94.8, and **every fixed-quality default misses the floor
+outright** — including two AV1 ones that produce *smaller* files (7,258 and
+8,701 bytes, at 90.5 and 91.2). On the screen recording it ships 3,379 bytes
+where x264 at the internet's usual CRF 23 needs 8,503. The report is equally
+plain about where nothing wins: the `motion` and `grain` fixtures are written
+near-lossless on purpose, no strategy in the table clears 92 on either, and the
+rows say **no** rather than quietly lowering the bar.
+
+Video runs on the desktop tier today — the command line and the app. The browser
+has an engine of its own, built and measured in a real browser, but the page
+around it is still being wired up; until that lands,
+[pocketsize.vercel.app](https://pocketsize.vercel.app) is pictures only.
+
+---
+
 ## Command line
 
 ```bash
@@ -129,10 +229,16 @@ to look.
 | --- | --- | --- | --- | --- |
 | `web` | **Default.** Anything that loads in a browser | all, incl. WebP + AVIF | 2560px | 90 |
 | `documents` | Design tools, office suites, docs | JPEG / PNG only | 2560px, hard ceiling 4096px | 90 |
-| `email` | Attachments and chat | JPEG / PNG only | 1920px | 88 |
+| `email` | Attachments | JPEG / PNG only | 1920px | 88 |
+| `chat` | Discord and group chats | JPEG / PNG only | 1920px | 88 |
 | `social` | Instagram, X, Facebook posts | JPEG / PNG only | 2048px | 88 |
 | `thumbnail` | Avatars, list icons, previews | all | 512px | 80 |
 | `original` | Print, masters, archives | all | never resized | 95 |
+
+`email` and `chat` do the same thing to a picture and different things to a
+video — one is defined by a mail server's limit and the other by Discord's, and
+those two numbers come from different companies. They were one destination
+until video needed them to be two.
 
 There is also `--lossless` (the same thing as `--for lossless`): never change a
 pixel — only pixel-exact formats, never resized. Files come out larger this
@@ -143,7 +249,7 @@ still resolve, so existing scripts keep working.
 
 | Flag | What it does |
 | --- | --- |
-| `--for web \| documents \| email \| thumbnail \| original` | Where the image is going (default: `web`) |
+| `--for web \| documents \| email \| chat \| social \| thumbnail \| original` | Where the file is going (default: `web`) |
 | `-m, --max-dimension 1920` | Cap the longest edge. `0` keeps original dimensions |
 | `-q, --quality-target 95` | Minimum visual match, 0–100 (100 = indistinguishable) |
 | `--metric ssimulacra2 \| ssim` | `ssim` is ~5× faster and cruder |
@@ -205,8 +311,15 @@ default: the restriction is a fact about design tools, not about images.
 
 ```bash
 pip install "pocketsize[full,app]"     # everything
+pip install "pocketsize[video]"        # add video (needs Python 3.11+)
 pip install pocketsize                 # core only, weaker fallbacks
 ```
+
+`video` is a separate extra rather than part of `full`, for two reasons that are
+both real. PyAV needs Python 3.11 and the rest of this package still runs on
+3.9, so folding it in would drop two interpreter versions to add a feature most
+people installing an image compressor did not ask for. And its wheel carries a
+whole FFmpeg, x264 and x265 included.
 
 Or from a checkout — on Windows, double-click **`run.bat`** for the app or
 **`compress.bat`** for the command line; on macOS and Linux run `./run.sh`.
@@ -252,11 +365,13 @@ survives in most hand-rolled compressors.
 
 ```bash
 git clone https://github.com/SyedSaribSultan/pocketsize && cd pocketsize
-pip install -e ".[full,app,dev]"
-python -m unittest discover -s tests     # 110 tests, ~2.5 min
+pip install -e ".[full,app,video,dev]"
+python -m unittest discover -s tests     # 201 tests, ~6 min
 python tests/make_fixtures.py            # build the benchmark corpus
 python tests/bench_formats.py            # the format table above
 python tests/bench_versions.py           # matched-quality comparison vs v1
+python tests/make_video_fixtures.py      # the video corpus
+python tests/bench_video.py              # the video table above
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). The one rule worth stating up front: any

@@ -135,6 +135,26 @@ def render() -> str:
         for d in dest.visible()
     }
 
+    # Video travels as its own map rather than more keys on `numbers`, because
+    # a destination that takes no video has no video numbers at all and an
+    # entry of zeroes would read as "no limit" to anything that forgot to
+    # check. Absent means absent.
+    video_formats = {
+        name: list(d.video_formats)
+        for name, d in dest.DESTINATIONS.items()
+        if d.video_formats
+    }
+    video_numbers = {
+        d.name: {
+            "maxDimension": d.video_max_dimension,
+            "qualityTarget": d.video_target,
+            "sizeCapMb": d.size_cap_mb,
+            "audio": d.audio,
+        }
+        for d in dest.visible()
+        if d.video_formats
+    }
+
     aliases = dict(dest.ALIASES)
     aliases.update(BROWSER_ONLY_ALIASES)
 
@@ -150,6 +170,13 @@ def render() -> str:
         "",
         "/* Frame size and minimum visual match. Offered destinations only. */",
         f"const DESTINATION_NUMBERS = {_js(numbers)};",
+        "",
+        "/* Which video formats each destination may write, as codec+container",
+        " * pairs. A destination missing from this map takes no video. */",
+        f"const DESTINATION_VIDEO_FORMATS = {_js(video_formats)};",
+        "",
+        "/* Video's own frame size, visual match, byte ceiling and sound rule. */",
+        f"const DESTINATION_VIDEO_NUMBERS = {_js(video_numbers)};",
         "",
         "/* Pre-2.7 names, so a saved setting still lands somewhere real. */",
         f"const OLD_TARGET_NAMES = {_js(aliases)};",

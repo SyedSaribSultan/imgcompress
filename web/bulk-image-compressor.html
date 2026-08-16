@@ -6,8 +6,8 @@
 <title>Compress many images at once, free — Pocketsize</title>
 <meta name="description" content="Drop a whole folder: every picture compressed in parallel on your own device, measured against its original, zipped with a written report. No upload, no queue, no account.">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FFFFFF">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070605">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#EEEFE9">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191B21">
 <link rel="canonical" href="https://pocketsize.vercel.app/bulk-image-compressor">
 
 <!-- The social card. og.png is the one asset with words baked in; the alt
@@ -185,7 +185,7 @@
     <span id="save-label">Download</span>
   </button>
 
-  <input type="file" id="file-input" multiple accept="image/*" hidden>
+  <input type="file" id="file-input" multiple accept="image/*,video/*" hidden>
 
   <div id="batch" role="progressbar" aria-label="Batch progress"
        aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="batch-bar"></i></div>
@@ -367,7 +367,16 @@
     <div id="view" data-mode="split">
       <div id="frame">
         <img id="img-before" alt="Original image" decoding="async">
-        <div class="after"><img id="img-after" alt="Compressed image" decoding="async"></div>
+        <div class="after" id="img-after-wrap"><img id="img-after" alt="Compressed image" decoding="async"></div>
+        <!-- The same two layers again, for video. One #frame, one transform,
+             so the split, the divider and the zoom keep working unchanged -
+             and the compressed player follows the original's clock, because
+             two free-running players drift apart within seconds and a split
+             showing second 3 against second 5 is not a comparison. -->
+        <video id="vid-before" playsinline preload="metadata" hidden></video>
+        <div class="after" id="vid-after-wrap" hidden>
+          <video id="vid-after" playsinline preload="metadata" muted></video>
+        </div>
         <canvas id="img-diff" aria-label="Difference heatmap"></canvas>
       </div>
 
@@ -386,7 +395,23 @@
       <div class="segmented" role="group" aria-label="Comparison mode">
         <button id="mode-split" aria-pressed="true">Split</button>
         <button id="mode-after" aria-pressed="false">After</button>
+        <!-- Disabled on a video, with the reason in the title: the heatmap is
+             built from two decoded still frames, and a frame of a clip is not
+             the clip. A control that stayed live and drew nothing would be
+             worse than one that says what it is for. -->
         <button id="mode-diff" aria-pressed="false">Diff</button>
+      </div>
+      <!-- The video's own transport. It lives up here rather than on the
+           player because the invisible split slider covers the whole stage,
+           so native controls would be unreachable exactly when the comparison
+           is being used - and because a person can watch the original while
+           the compressed one is still being made. Pressing play moves both
+           sides; the compressed one follows. -->
+      <div class="transport" id="transport" hidden>
+        <button class="btn quiet sm" id="vid-play" aria-label="Play the video">Play</button>
+        <input type="range" id="vid-seek" class="scrub" min="0" max="1000" value="0"
+               aria-label="Position in the video">
+        <span class="z num" id="vid-time">0:00 / 0:00</span>
       </div>
       <span class="spacer"></span>
       <div class="zoom" role="group" aria-label="Zoom">
@@ -473,6 +498,9 @@
           <div><div class="k">Format</div><div class="v" id="s-format">—</div></div>
           <div><div class="k">Visual match</div><div class="v num" id="s-score">—</div></div>
           <div><div class="k">Dimensions</div><div class="v num" id="s-dims">—</div></div>
+          <!-- Video only: how long the clip runs, which is the fact that
+               explains why this one took minutes. -->
+          <div id="s-length-cell" hidden><div class="k">Length</div><div class="v num" id="s-length">—</div></div>
           <div><div class="k">Time</div><div class="v num" id="s-time">—</div></div>
         </div>
         <p class="note" id="s-note" hidden></p>

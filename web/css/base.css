@@ -38,6 +38,16 @@
   --c-warn: var(--oz-color-content-warning);
   --c-bad: var(--oz-color-content-critical);
 
+  /* The button's physical edge: a face on a hard plate, no blur and no
+     gradient, which presses when clicked. The face is deliberately not the
+     brand colour - brand red on a warm ground is a shout - and the ink on it
+     is near-black in both themes, because the accent swaps to yellow in dark
+     and white text on yellow is not text. */
+  --c-chrome-face: var(--oz-color-chrome-face);
+  --c-chrome-edge: var(--oz-color-chrome-edge);
+  --c-chrome-shadow: var(--oz-color-chrome-shadow);
+  --c-chrome-ink: var(--oz-color-chrome-ink);
+
   /* Over the photograph. These sit on top of an arbitrary image, not on a
      themed surface, so they deliberately do NOT move with the theme: the
      white checkerboard is the one universal sign for transparency, and the
