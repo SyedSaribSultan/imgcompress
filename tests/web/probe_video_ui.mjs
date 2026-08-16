@@ -104,6 +104,31 @@ try {
   check("the original is on the stage as a video, with a way to play it",
     landed.beforeShown && landed.imgHidden && landed.transport);
 
+  /* Decision D5: a video is purple where a picture is the brand accent. Read
+     from the painted element rather than from the stylesheet, because a token
+     that never reaches the badge is a decision that did not ship - and read in
+     both themes, since one purple cannot clear contrast on both grounds and
+     the two values are the whole reason this is a pair. */
+  const accent = await page.evaluate(async () => {
+    const read = async (theme) => {
+      document.documentElement.dataset.theme = theme;
+      await new Promise((r) => requestAnimationFrame(r));
+      const badge = document.querySelector('.row[data-kind="video"] .kind');
+      if (!badge) return null;
+      const seen = getComputedStyle(badge);
+      return { colour: seen.color, border: seen.borderTopColor };
+    };
+    const light = await read("light");
+    const dark = await read("dark");
+    return { light, dark };
+  });
+  const painted = (v) => v && v.colour && v.colour === v.border
+    && v.colour !== "rgb(0, 0, 0)";
+  check("the video badge carries the media accent (D5), in both themes",
+    painted(accent.light) && painted(accent.dark)
+    && accent.light.colour !== accent.dark.colour,
+    `light ${accent.light?.colour} / dark ${accent.dark?.colour}`);
+
   /* ---- 3. it reports what it is doing, for as long as it takes ------------ */
 
   const sawWork = await page.evaluate(async () => {

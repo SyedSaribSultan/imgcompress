@@ -29,6 +29,10 @@
 <link rel="icon" href="/webui/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/webui/heyoz-tokens.css">
 <link rel="stylesheet" href="/webui/fonts.css">
+<!-- The one named colour the token layer does not carry: the video accent
+     (D5). Shared with the browser app rather than retyped here, because this
+     file is not allowed to name a colour and two copies of a value drift. -->
+<link rel="stylesheet" href="/webui/media-accent.css">
 <style>
 /* ---------------------------------------------------------------------------
    The interface is chrome around photographs, so it stays achromatic. Exactly
@@ -322,6 +326,25 @@ input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .row .fmt {
   font-family: var(--oz-font-mono); font-size: var(--oz-text-body-xs);
   color: var(--oz-color-content-tertiary);
+}
+/* Decision D5: video is purple where a picture is the brand accent. The badge
+   says "Video" in words and carries the running time, so the colour is a
+   second and faster signal in a mixed queue rather than the only one. It also
+   answers a question the desktop queue could not: a video has no image
+   thumbnail, so without this a clip was a row with an empty square.
+
+   The value itself is NOT here. This file is not one of the two allowed to
+   name a colour, so the purple is defined once in web/css/base.css - which
+   the app links above as part of the shared design system - and consumed
+   here by name, exactly like every other colour on this page. */
+.row .kind {
+  display: inline-block;
+  margin-right: var(--oz-space-2);
+  padding: 0 var(--oz-space-2);
+  border: 1px solid var(--c-media-video);
+  border-radius: var(--app-radius-sm);
+  color: var(--c-media-video);
+  font-size: var(--oz-text-body-xs);
 }
 .row .tail {
   display: inline-flex; align-items: center; gap: var(--oz-space-3);
@@ -991,7 +1014,8 @@ function renderQueue() {
         `background-image:url('${imgURL(it.id, "before")}')`}"></span>
       <span class="cell">
         <span class="name">${escapeHtml(it.name)}</span>
-        <span class="meta">${statusLine(it)}</span>
+        <span class="meta">${it.is_video ? `<span class="kind">Video${
+          it.duration ? " · " + clockTime(it.duration) : ""}</span> ` : ""}${statusLine(it)}</span>
       </span>
       <span class="cell">
         <span class="track"><i style="--p:${ready && saved > 0

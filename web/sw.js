@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 
@@ -31,7 +31,7 @@ const PRECACHE = [
   "/",
   "/heyoz-tokens.css",
   "/fonts.css",
-  "/css/base.css", "/css/layout.css", "/css/controls.css",
+  "/css/base.css", "/css/media-accent.css", "/css/layout.css", "/css/controls.css",
   "/css/queue.css", "/css/compare.css", "/css/facts.css",
   "/destinations.js",
   "/js/destinations-bridge.js", "/js/theme.js", "/js/dom.js", "/js/format.js",

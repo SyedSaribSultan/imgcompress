@@ -38,6 +38,11 @@
   --c-warn: var(--oz-color-content-warning);
   --c-bad: var(--oz-color-content-critical);
 
+  /* Media coding (decision D5): an image is the brand accent, a video is
+     purple. `--c-media-video` is declared in css/media-accent.css, which both
+     interfaces link - see that file for why it is not written here. */
+  --c-media-image: var(--c-accent);
+
   /* The button's physical edge: a face on a hard plate, no blur and no
      gradient, which presses when clicked. The face is deliberately not the
      brand colour - brand red on a warm ground is a shout - and the ink on it

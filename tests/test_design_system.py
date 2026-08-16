@@ -64,8 +64,9 @@ class TheCopiesAreCurrent(unittest.TestCase):
 
     def test_the_copies_say_they_are_copies(self):
         for name in sync.STYLESHEETS:
+            # Sources may live in a subfolder of web/; the copies are flat.
             with self.subTest(file=name):
-                head = _read(WEBUI / name)[:200]
+                head = _read(WEBUI / Path(name).name)[:200]
                 self.assertIn("DO NOT EDIT", head)
                 self.assertIn("sync_webui_assets.py", head)
 
@@ -255,7 +256,12 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
                 self.assertEqual(found, [], f"{name} hand-types {found}")
 
     def test_every_token_used_is_defined_in_base(self):
-        defined = set(re.findall(r"^\s*(--[a-z0-9-]+)\s*:", _web_css("base.css"), re.M))
+        # base.css plus media-accent.css: the second exists only because the
+        # desktop app needs that one colour by name too and cannot link
+        # base.css, so it is the design system's vocabulary either way.
+        defined = set(re.findall(r"^\s*(--[a-z0-9-]+)\s*:",
+                                 _web_css("base.css")
+                                 + _web_css("media-accent.css"), re.M))
         for name in WEB_SHEETS[1:]:
             used = set(re.findall(r"var\((--[a-z0-9-]+)", _web_css(name)))
             # Locally-set custom properties, written by JS or by a sibling rule.
