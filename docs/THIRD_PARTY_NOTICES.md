@@ -33,12 +33,20 @@ binding, not everything inside it. As a pip dependency this is the accepted
 posture and Pocketsize's own licence is unaffected. It is why decision V3
 exists (see below).
 
-**Verify before relying — imagequant.** The binding declares BSD-3-Clause;
-the underlying libimagequant has changed licence across major versions
-(GPLv3-or-commercial in some). The pip posture is fine either way; if an
-installer ever bundles it (the current ones do), the exact libimagequant
-version inside the pinned wheel should be checked once and the answer
-recorded here.
+**Open question — imagequant.** Checked, and the answer is "the wheel does
+not say". `imagequant` 1.1.5 ships `imagequant/_libimagequant.pyd` — the
+compiled C library — alongside its Python binding, and the only licence text
+in the wheel is the binding's (BSD-3-Clause, Wanadev, 2021). libimagequant
+itself has used different terms across its major versions, including
+GPLv3-or-commercial, and its own text is not present.
+
+This matters because the installers **do** bundle it. It does not affect the
+pip posture, where the user's own package manager fetches the wheel under
+whatever terms it carries. Before the next signed release, somebody should
+establish which libimagequant version is inside that wheel and under what
+licence, and record the answer here. Until then `tools/collect_licences.py`
+states the gap in the shipped notices file rather than letting the BSD label
+stand for the whole thing.
 
 ## 2. Vendored web assets (redistributed in this repository)
 
@@ -60,8 +68,15 @@ obligations are deliberately accepted. Enforced twice: `packaging/
 pocketsize.spec` excludes `av` from collection, and the release gate fails
 any bundle whose `--check` reports PyAV present.
 
-Still open for the installers: embedding the bundled packages' full licence
-texts into the installer artifacts themselves (a `THIRD-PARTY.txt` beside
-the binary). The BSD/MIT/Apache family all require the notice to travel with
-the binary; today it travels with the repository. This needs a small
-packaging step, not a decision.
+**The notices now travel with the binary.** `tools/collect_licences.py`
+gathers the full licence text of every bundled package from the metadata of
+the wheels actually installed at build time, and the release workflow writes
+the result into the payload each installer packages — `THIRD-PARTY.txt` next
+to the executable on Windows, inside `Contents/Resources` on macOS. Generated
+rather than hand-kept, because a hand-kept list is a second copy of the
+dependency set and would drift the first time one changed.
+
+The step runs with `--strict`, so a bundled package whose wheel yields no
+licence text fails the release instead of shipping a notices file that is
+quietly missing an entry. At the time of writing all eight recover their full
+text.

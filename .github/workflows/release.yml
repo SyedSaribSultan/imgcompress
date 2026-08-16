@@ -114,6 +114,32 @@ jobs:
         shell: bash
         run: pyinstaller --clean --noconfirm packaging/pocketsize.spec
 
+      - name: Collect the third-party licence texts
+        # BSD, MIT and Apache all require their notice to travel WITH the
+        # binary. Ours travelled with the repository, which is a different
+        # thing - somebody downloading an installer got compiled copies of
+        # Pillow, numpy, scipy and several codecs with no statement of what
+        # they are or what terms they arrive under. Generated from the
+        # metadata of the packages actually installed on this runner, so it
+        # describes THIS build rather than an idea of one.
+        #
+        # --strict: a bundled package whose wheel yields no licence text fails
+        # the release. The alternative is shipping a notices file that is
+        # quietly missing an entry, which is worse than not shipping one.
+        shell: bash
+        run: |
+          python tools/collect_licences.py --out dist/THIRD-PARTY.txt --strict
+          head -20 dist/THIRD-PARTY.txt
+          # Into the payload each installer actually packages, so the notice
+          # travels with the application rather than sitting beside it in a
+          # build directory nobody ships. Windows installs the contents of
+          # dist/pocketsize/; the macOS app bundle carries its own Resources.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp dist/THIRD-PARTY.txt dist/pocketsize/THIRD-PARTY.txt
+          else
+            cp dist/THIRD-PARTY.txt "dist/Pocketsize.app/Contents/Resources/THIRD-PARTY.txt"
+          fi
+
       - name: Locate the console command inside the build
         shell: bash
         run: |

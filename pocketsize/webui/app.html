@@ -916,12 +916,28 @@ function syncPlayers(before, after) {
 }
 
 /* ------------------------------- helpers -------------------------------- */
+/* Numbers follow the reader. Most of the world writes 1,4 MB where this used
+   to hard-code 1.4 MB, and on a page whose whole argument is a measured
+   number that is not cosmetic - "90,5" read as "905" is a different claim.
+   Built once each: constructing a formatter is the expensive part and the
+   queue formats several numbers per row per frame. The COPY here is still
+   English, which is a real limit and a deliberate one - that needs a person
+   who speaks the language, not a machine translation. */
+const WHOLE = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const ONE_DP = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 1, maximumFractionDigits: 1,
+});
+/* The SSIM fallback scale is 0-1, so it needs the decimals its own scale
+   implies rather than the one-decimal shape the 0-100 scale uses. */
+const SSIM_DP = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 3, maximumFractionDigits: 3,
+});
 function human(n) {
   if (!n && n !== 0) return "—";
   const u = ["B", "KB", "MB", "GB"];
   let v = n, i = 0;
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-  return `${i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
+  return `${i === 0 ? WHOLE.format(v) : ONE_DP.format(v)} ${u[i]}`;
 }
 const shortPath = (p) => (!p ? "Choose a folder…" : p.length > 44 ? "…" + p.slice(-43) : p);
 
@@ -962,7 +978,7 @@ function statusLine(it) {
   if (it.status === "failed") return `<span class="err">${escapeHtml(it.error || "failed")}</span>`;
   if (it.status === "queued") return "waiting";
   if (it.status === "working") return "encoding…";
-  const pct = it.saved_pct > 0 ? `−${it.saved_pct.toFixed(0)}%` : "no gain";
+  const pct = it.saved_pct > 0 ? `−${WHOLE.format(it.saved_pct)}%` : "no gain";
   /* The cap disclosure rides on the SAME line as the percentage, at the same
      size - never after, never smaller. `capped` is a flag the engine posts;
      this line never infers it from the numbers. */
@@ -1093,6 +1109,9 @@ function renderWorking(it) {
     "Trying a few ways to shrink this, keeping only the one that still looks "
     + "right next to your original.";
   const frac = it.status === "working" ? (it.frac || 0.05) : 0;
+  // toFixed, not Intl: this is a CSS value, and a locale that writes a
+  // comma decimal would produce "0,412" - which CSS discards, leaving the
+  // bar stuck at zero. Numbers a MACHINE reads stay machine-formatted.
   $("working-bar").style.setProperty("--p", frac.toFixed(3));
   $("working-now").textContent = it.phase || "";
 }
@@ -1168,7 +1187,7 @@ function renderInspector(it) {
      trustworthy number on the page unless it says so where the number is. */
   const cappedLine = it.capped ? ", not as sharp to fit the size limit" : "";
   $("s-saved").innerHTML = ready
-    ? (it.saved_pct > 0 ? `−${it.saved_pct.toFixed(0)}%${cappedLine} <small>${human(it.original_bytes - it.new_bytes)}</small>`
+    ? (it.saved_pct > 0 ? `−${WHOLE.format(it.saved_pct)}%${cappedLine} <small>${human(it.original_bytes - it.new_bytes)}</small>`
                         : "none")
     : "—";
   $("s-format").textContent = ready ? it.fmt + (it.level != null ? ` q${it.level}` : "") : "—";
@@ -1178,14 +1197,14 @@ function renderInspector(it) {
   // that scale is 0-1 and calling it the same thing would be misleading.
   $("s-metric-k").textContent = it.metric === "ssim" ? "SSIM" : "Visual match";
   $("s-score").textContent = it.score == null ? (ready ? "pixel-identical" : "—")
-    : (it.metric === "ssim" ? it.score.toFixed(4)
+    : (it.metric === "ssim" ? SSIM_DP.format(it.score)
                             : `${Math.round(it.score)} / 100`);
   $("s-dims").innerHTML = !it.width ? "—"
     : (it.out_width && it.out_width !== it.width
         ? `${it.out_width}×${it.out_height} <small>from ${it.width}×${it.height}</small>`
         : `${it.width}×${it.height}`);
   const floor = it.override?.quality_target ?? state.settings.quality_target;
-  $("s-floor").innerHTML = `${state.settings.metric === "ssim" ? Number(floor).toFixed(2) : floor}` +
+  $("s-floor").innerHTML = `${state.settings.metric === "ssim" ? SSIM_DP.format(Number(floor)) : floor}` +
     (it.override ? ' <small>override</small>' : "");
 
   /* The video facts the engine already posts and this panel used to drop on
@@ -1195,7 +1214,7 @@ function renderInspector(it) {
   $("s-duration").textContent = clockTime(it.duration) || "—";
   $("s-witness-row").hidden = !(isVideo && it.witness > 0);
   $("s-witness").textContent = it.witness > 0
-    ? `${it.witness.toFixed(1)} dB (XPSNR)` : "—";
+    ? `${ONE_DP.format(it.witness)} dB (XPSNR)` : "—";
 
   const note = $("s-note");
   const notes = [it.note, it.audio_note].filter(Boolean);
@@ -1226,7 +1245,7 @@ function renderInspector(it) {
 
     const scoreOf = (c) => (c.score == null ? "—"
       : c.score >= 100 ? "identical"
-      : it.metric === "ssim" ? c.score.toFixed(3)
+      : it.metric === "ssim" ? SSIM_DP.format(c.score)
       : `${Math.round(c.score)}/100`);
 
     // One plain sentence per version that lost, same as the web app.
@@ -1289,7 +1308,7 @@ function renderSummary() {
   const saved = (t.before || 0) - (t.after || 0);
   $("t-sizes").textContent = t.done ? `${human(t.before)} → ${human(t.after)}` : "";
   $("t-saved").textContent = t.done && saved > 0
-    ? `saved ${human(saved)} (${((saved / t.before) * 100).toFixed(0)}%)` : "";
+    ? `saved ${human(saved)} (${WHOLE.format((saved / t.before) * 100)}%)` : "";
   $("folder-path").textContent = shortPath(state.last_folder);
   const n = t.unsaved || 0;
   const btn = $("save-btn");
