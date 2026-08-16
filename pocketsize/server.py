@@ -717,6 +717,13 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        # The two directives a meta tag cannot deliver. `frame-ancestors` is
+        # ignored in a meta element entirely, and framing this page is how a
+        # hostile document would try to reach a UI holding the API token -
+        # `_host_ok` stops it loading from a foreign name, and this stops it
+        # being embedded at all.
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        self.send_header("X-Frame-Options", "DENY")
         for key, value in (extra or {}).items():
             self.send_header(key, value)
         self.end_headers()
@@ -749,15 +756,43 @@ class Handler(BaseHTTPRequestHandler):
         supplied = self.headers.get("X-Token") or (query.get("token") or [""])[0]
         return secrets.compare_digest(supplied, self.token)
 
-    def _body(self) -> bytes | None:
+    def _body(self, limit: int = MAX_BODY) -> bytes | None:
         """Request body, or None when it is missing a sane length."""
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             return None
-        if length < 0 or length > MAX_BODY:
+        if length < 0 or length > limit:
             return None
         return self.rfile.read(length) if length else b""
+
+    def _spool_body(self, target: Path, limit: int) -> int | None:
+        """Stream the request body straight to a file, in chunks.
+
+        Videos are the reason this exists. Reading one into memory first
+        means a 2 GB phone clip is 2 GB of resident process before a single
+        byte reaches disk - on a machine that then has to encode it. The
+        chunk loop keeps the whole tier at a constant, small footprint, which
+        is the same reasoning the byte-range player downstream is built on.
+
+        Returns the number of bytes written, or None if the declared length
+        is missing, negative, or past the limit for this kind of file.
+        """
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        if length < 0 or length > limit:
+            return None
+        written = 0
+        with target.open("wb") as handle:
+            while written < length:
+                chunk = self.rfile.read(min(1024 * 1024, length - written))
+                if not chunk:
+                    break
+                handle.write(chunk)
+                written += len(chunk)
+        return written
 
     def _serve_static(self, route: str):
         """A file from `webui/`, or None if the path does not name one.
@@ -918,18 +953,28 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/upload":
             name = unquote(self.headers.get("X-Filename", "upload.png"))
             safe = _BAD_FILENAME.sub("_", Path(name.replace("\x00", "")).name) or "upload.png"
-            data = self._body()
-            if data is None:
-                return self._json({"error": "file too large"}, 413)
-            if not data:
-                return self._json({"error": "empty upload"}, 400)
+            # A video gets the video limit. `MAX_VIDEO_BODY` existed for this
+            # and was never wired to anything, so every clip over 512 MB was
+            # refused as "file too large" - on the tier built for phone video,
+            # which routinely is. The limit is chosen from the name because
+            # that is what the queue itself uses to decide a file is a video.
+            limit = MAX_VIDEO_BODY if vid.is_video_path(safe) else MAX_BODY
             self.upload_dir.mkdir(parents=True, exist_ok=True)
             target = self.upload_dir / safe
             stem, suffix, n = target.stem, target.suffix, 1
             while target.exists():
                 target = self.upload_dir / f"{stem} ({n}){suffix}"
                 n += 1
-            target.write_bytes(data)
+            # Streamed to disk rather than read into memory first: a 2 GB clip
+            # buffered whole is 2 GB resident on the machine that then has to
+            # encode it.
+            written = self._spool_body(target, limit)
+            if written is None:
+                target.unlink(missing_ok=True)
+                return self._json({"error": "file too large"}, 413)
+            if not written:
+                target.unlink(missing_ok=True)
+                return self._json({"error": "empty upload"}, 400)
             return self._json({"added": session.add_path(target, temporary=True)})
 
         payload = self._json_body()

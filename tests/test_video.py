@@ -1076,6 +1076,70 @@ class TheAwkwardInputs(unittest.TestCase):
             f"the witness scored {result.witness:.1f} dB - that is the "
             "sideways comparison this test exists to forbid")
 
+    def test_a_second_format_reuses_the_converted_frames(self):
+        """The biggest cost in the engine, paid once instead of twice.
+
+        Tone mapping a 4K frame is over a second of per-pixel work, and a
+        two-format destination used to convert every frame twice to produce
+        pixels identical to the ones it had just discarded. The cache is only
+        legitimate if it changes nothing about the output, so both halves are
+        asserted: that the second format really did read from the cache, and
+        that the file it produced is byte-for-byte what it produced without
+        one."""
+        source = REAL_WORLD / "hdr.mp4"
+        info = video.probe(source)
+        self.assertIsNotNone(info.tone_map, "the HDR fixture stopped being HDR")
+        fmt = video.FORMATS["h264-mp4"]
+        info.tone_map = info.tone_map.with_peak(1000.0)
+        folder = self.out("tone-cache")
+
+        def encode_to(name, cache):
+            path = folder / name
+            video.encode(
+                source,
+                video.EncodeSpec(fmt=fmt, width=info.width, height=info.height,
+                                 crf=fmt.levels[0], fast=True, info=info,
+                                 with_audio=False, tone_cache=cache),
+                dest=path,
+            )
+            return path.read_bytes()
+
+        cache = video.ToneCache()
+        first = encode_to("first.mp4", cache)
+        self.assertGreater(cache.misses, 0, "nothing was converted at all")
+        converted = cache.misses
+
+        second = encode_to("second.mp4", cache)
+        self.assertGreater(cache.hits, 0,
+                           "the second encode converted everything again")
+        self.assertEqual(cache.misses, converted,
+                         "the second encode did fresh colour work")
+
+        # And the pixels are the same ones. A cache that changed the output
+        # would be a bug wearing a speed-up's clothes.
+        plain = encode_to("uncached.mp4", None)
+        self.assertEqual(first, plain,
+                         "caching changed the first encode's bytes")
+        self.assertEqual(second, plain,
+                         "the cached second encode differs from an uncached one")
+
+    def test_the_frame_cache_refuses_to_grow_without_limit(self):
+        """Bounded in bytes, not frames: a thousand frames is 30 MB at
+        480x270 and 6 GB at 4K, and trading an hours-long encode for an
+        out-of-memory crash is not a fix."""
+        import av
+        import numpy as np
+
+        cache = video.ToneCache(budget_bytes=8 * 1024 * 1024)
+        planes = np.zeros((3, 720, 1280), np.uint8)
+        for stamp in range(40):
+            cache.put(stamp, av.VideoFrame.from_ndarray(planes,
+                                                        format="yuv444p"))
+        self.assertLessEqual(cache.used, 8 * 1024 * 1024)
+        # It kept what it could rather than refusing everything.
+        self.assertIsNotNone(cache.get(0))
+        self.assertIsNone(cache.get(39))
+
     def test_the_sound_claim_comes_from_what_the_encode_did(self):
         """The old claim was inferred afterwards by comparing codec names on
         the finished file, which told two lies: sound decoded and re-encoded

@@ -2,10 +2,10 @@
   "name": "Pocketsize",
   "short_name": "Pocketsize",
   "id": "/",
-  "description": "Image compression that proves it didn't ruin your image. Runs entirely on your device — nothing is uploaded.",
+  "description": "Image and video compression that proves it didn't ruin your file. Runs entirely on your device — nothing is uploaded.",
   "start_url": "/",
   "display": "standalone",
-  "categories": ["photo", "utilities"],
+  "categories": ["photo", "video", "utilities"],
   "background_color": "#070605",
   "theme_color": "#070605",
   "icons": [
@@ -23,7 +23,11 @@
         "image/gif": [".gif"],
         "image/bmp": [".bmp"],
         "image/tiff": [".tif", ".tiff"],
-        "image/avif": [".avif"]
+        "image/avif": [".avif"],
+        "video/mp4": [".mp4", ".m4v"],
+        "video/quicktime": [".mov"],
+        "video/webm": [".webm"],
+        "video/x-matroska": [".mkv"]
       }
     }
   ],

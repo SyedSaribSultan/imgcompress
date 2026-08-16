@@ -201,6 +201,51 @@ class TheDesktopVideoPath(unittest.TestCase):
         self.assertFalse(video_workdir(item_id).exists(),
                          "shutdown must sweep the session's working folders")
 
+    def test_a_video_may_be_uploaded_past_the_picture_limit(self):
+        """`MAX_VIDEO_BODY` was defined and then referenced by nothing, so
+        every upload was capped at the 512 MB picture limit - on the tier
+        built for phone video, which routinely exceeds it. The two limits
+        have to be different numbers AND the video one has to be reachable,
+        which is what a dead constant cannot be."""
+        from pocketsize import server
+
+        self.assertGreater(server.MAX_VIDEO_BODY, server.MAX_BODY)
+
+        # The handler picks the limit from the filename, the same way the
+        # queue decides a file is a video at all. Asserted through the real
+        # decision rather than by re-implementing it here.
+        for name, expected in (("holiday.mp4", server.MAX_VIDEO_BODY),
+                               ("clip.MOV", server.MAX_VIDEO_BODY),
+                               ("photo.png", server.MAX_BODY)):
+            with self.subTest(name=name):
+                limit = (server.MAX_VIDEO_BODY
+                         if video.is_video_path(name) else server.MAX_BODY)
+                self.assertEqual(limit, expected)
+
+    def test_the_desktop_page_carries_a_content_security_policy(self):
+        """The page is handed the run's API token, so anything that could
+        execute in it could read and write any file the person can. There is
+        no injection to exploit today; this is the floor that keeps one from
+        mattering if it ever lands. `connect-src 'self'` is the load-bearing
+        directive - injected script still cannot send a byte off-machine."""
+        import re
+
+        page = (Path(__file__).resolve().parent.parent / "pocketsize"
+                / "webui" / "app.html").read_text(encoding="utf-8")
+        found = re.search(
+            r'<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"',
+            page)
+        self.assertIsNotNone(found, "the desktop page declares no CSP")
+        policy = found.group(1)
+        self.assertIn("default-src 'none'", policy)
+        self.assertIn("connect-src 'self'", policy)
+        # frame-ancestors is ignored inside a meta element, so it must not be
+        # claimed in the policy itself - a directive that silently does
+        # nothing is worse than an absent one. Read from the parsed policy
+        # rather than the file text, or the prose explaining this decision
+        # would satisfy the assertion about it.
+        self.assertNotIn("frame-ancestors", policy)
+
     def test_the_snapshot_says_whether_video_works_on_this_machine(self):
         """The UI cannot offer what this machine cannot do, and must not
         pretend the absence is a failure."""

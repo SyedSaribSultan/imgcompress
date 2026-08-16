@@ -47,6 +47,27 @@ const PRECACHE = [
 
 const PRECACHE_SET = new Set(PRECACHE);
 
+/* The use-case pages, cached on first visit rather than up front - see the
+   fetch handler for why. GENERATED: tools/gen_seo_pages.py writes this list
+   from the same PAGES table it builds the pages and the sitemap from, and
+   `--check` fails if they drift. Never hand-edit it; add a page to PAGES and
+   re-run the generator. */
+const USE_CASE_PAGES = new Set([
+  "/compress-to-200kb",
+  "/compress-to-100kb",
+  "/compress-to-50kb",
+  "/compress-to-1mb",
+  "/compress-jpeg",
+  "/compress-png",
+  "/compress-webp",
+  "/png-to-avif",
+  "/compress-for-email",
+  "/bulk-image-compressor",
+  "/compress-video",
+  "/compress-video-for-discord",
+  "/compress-video-for-email",
+]);
+
 const HEAVY_PRECACHE = [
   "/vendor/mozjpeg.js", "/vendor/mozjpeg_enc.wasm",
   "/vendor/oxipng.js", "/vendor/squoosh_oxipng_bg.wasm",
@@ -131,8 +152,17 @@ self.addEventListener("fetch", (e) => {
          origin GET let any query-string variant of any URL grow the cache
          without bound; the offline set is the precache list, exactly. The
          entry is keyed by pathname so "/?anything" refreshes "/" instead of
-         multiplying. */
-      if (fresh.ok && PRECACHE_SET.has(url.pathname)) {
+         multiplying.
+
+         The use-case pages are added on first visit rather than precached:
+         there are thirteen of them and precaching all of them would cost
+         every visitor several hundred kilobytes for twelve pages they will
+         never open. Someone who arrived at /compress-video and comes back
+         offline gets the page they actually used, with its plan already set,
+         instead of being bounced to the generic app. The list is finite and
+         known, so this cannot grow without bound either. */
+      if (fresh.ok && (PRECACHE_SET.has(url.pathname)
+                       || USE_CASE_PAGES.has(url.pathname))) {
         (await caches.open(SHELL)).put(url.pathname, fresh.clone());
       }
       return fresh;

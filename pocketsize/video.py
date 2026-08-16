@@ -928,6 +928,55 @@ def _component_bits(frame) -> int:
         return 8
 
 
+class ToneCache:
+    """Converted HDR frames, remembered so the arithmetic runs once.
+
+    The reason this exists is the single biggest cost in the whole engine.
+    Tone mapping a 4K frame is over a second of per-pixel work, and a
+    destination that allows two formats used to encode the whole file twice -
+    converting every frame a second time to produce pixels identical to the
+    ones it had just thrown away. The conversion depends only on the source
+    frame and the tone map, never on which codec is about to receive it, so
+    the second format can have the first one's answer.
+
+    Bounded by bytes rather than by frame count, because "1000 frames" means
+    30 MB at 480x270 and 6 GB at 4K. When the budget is spent the cache stops
+    accepting new frames rather than evicting: these are read in presentation
+    order and an encode that has passed a frame will not ask for it again, so
+    the useful window is always the newest one. Nothing here changes a single
+    output pixel - it is the same converted frame either way, which is what
+    `test_a_second_format_reuses_the_converted_frames` pins.
+    """
+
+    def __init__(self, budget_bytes: int = 768 * 1024 * 1024):
+        self.budget = budget_bytes
+        self.used = 0
+        self.hits = 0
+        self.misses = 0
+        self._frames = {}
+
+    def get(self, key):
+        frame = self._frames.get(key)
+        if frame is None:
+            self.misses += 1
+        else:
+            self.hits += 1
+        return frame
+
+    def put(self, key, frame) -> None:
+        if key in self._frames:
+            return
+        cost = int(frame.width) * int(frame.height) * 3
+        if self.used + cost > self.budget:
+            return
+        self._frames[key] = frame
+        self.used += cost
+
+    def clear(self) -> None:
+        self._frames.clear()
+        self.used = 0
+
+
 def tone_map_for(info):
     """The conversion this file needs, or None if it needs none.
 
@@ -1020,6 +1069,11 @@ class EncodeSpec:
     old way - inferring "copied" afterwards by comparing codec names on the
     finished file - reported "kept exactly as it was" for audio that had in
     fact been decoded and re-encoded to the same codec."""
+
+    tone_cache: object = None
+    """Where converted HDR frames are remembered between encodes of the same
+    material - see `ToneCache`. Set by `compress` for the final encodes only;
+    None everywhere else, which is the ordinary path and costs nothing."""
 
 
 def _transform_chain(info, width: int, height: int,
@@ -1315,6 +1369,20 @@ def _pump(inp, out, vs, ostream, src_audio, astream, aresampler, copy_audio,
                 first_pts = t
             stamp = int(round((t - first_pts) * 90000))
             if graph is not None:
+                # A converted frame this run has already produced is reused
+                # rather than recomputed. Keyed on the source frame's own
+                # presentation time, which is what identifies the picture
+                # regardless of which codec is about to receive it - so the
+                # second format in a bake-off pays nothing for colour.
+                cached = None
+                if tone is not None and spec.tone_cache is not None:
+                    cached = spec.tone_cache.get(stamp)
+                if cached is not None:
+                    cached.pts = stamp
+                    cached.time_base = Fraction(1, 90000)
+                    for pkt in ostream.encode(cached):
+                        out.mux(pkt)
+                    continue
                 graph.push(frame)
                 while True:
                     try:
@@ -1323,6 +1391,8 @@ def _pump(inp, out, vs, ostream, src_audio, astream, aresampler, copy_audio,
                         break
                     if tone is not None:
                         shaped = tone.to_frame(shaped)
+                        if spec.tone_cache is not None:
+                            spec.tone_cache.put(stamp, shaped)
                     shaped.pts = stamp
                     shaped.time_base = Fraction(1, 90000)
                     for pkt in ostream.encode(shaped):
@@ -2100,6 +2170,13 @@ def compress(source, destination, *, fast=False, size_target=0,
         result.hdr_peak_nits = info.tone_map.source_peak
         result.warnings.append(HDR_DISCLOSURE)
 
+    # HDR costs more than a second of arithmetic per 4K frame, and a
+    # destination that allows two formats would otherwise pay it twice for
+    # pixels that come out identical. Only built when there is both a
+    # conversion to remember and a second format to remember it for.
+    tone_cache = (ToneCache()
+                  if info.tone_map is not None and len(live) > 1 else None)
+
     best = None
     for fmt_name in live:
         fmt = FORMATS[fmt_name]
@@ -2113,14 +2190,16 @@ def compress(source, destination, *, fast=False, size_target=0,
             candidate = _at_quality(source, fmt, width, height, info,
                                     target, entry.audio, windows, fast,
                                     out_dir, probe_log, progress,
-                                    ref_cache=ref_cache)
+                                    ref_cache=ref_cache,
+                                    tone_cache=tone_cache)
             if cap_bytes and (candidate is None
                               or candidate["bytes"] > cap_bytes):
                 over_cap = candidate
                 candidate = _under_cap(source, fmt, width, height, info,
                                        cap_bytes, duration, entry.audio,
                                        windows, fast, out_dir, probe_log,
-                                       progress, ref_cache=ref_cache)
+                                       progress, ref_cache=ref_cache,
+                                       tone_cache=tone_cache)
                 if candidate is None:
                     # The cap cannot be met at any usable rate - a corrupt
                     # duration, or a limit no encode can reach. The honest
@@ -2137,6 +2216,8 @@ def compress(source, destination, *, fast=False, size_target=0,
             for leftover in (best, locals().get("candidate")):
                 if isinstance(leftover, dict):
                     _unlink(leftover.get("path"))
+            if tone_cache is not None:
+                tone_cache.clear()
             result.skipped = True
             result.note = "stopped"
             result.new_bytes = result.original_bytes
@@ -2156,6 +2237,12 @@ def compress(source, destination, *, fast=False, size_target=0,
             best = candidate
         else:
             _unlink(candidate["path"])
+
+    if tone_cache is not None:
+        # The bake-off is over, so the converted frames have no next reader.
+        # Held any longer this is just several hundred megabytes of a file
+        # nobody is encoding.
+        tone_cache.clear()
 
     if best is None:
         result.error = "every encoder failed on this file"
@@ -2306,7 +2393,8 @@ contract the search itself has when the whole ladder cannot reach the floor."""
 
 
 def _at_quality(src, fmt, width, height, info, target, audio, windows, fast,
-                out_dir, probe_log, progress=None, ref_cache=None):
+                out_dir, probe_log, progress=None, ref_cache=None,
+                tone_cache=None):
     """The ordinary case: smallest file that still measures close enough."""
     index, _memo, reached = _search_quality(src, fmt, width, height, target,
                                             windows, fast, probe_log,
@@ -2319,7 +2407,7 @@ def _at_quality(src, fmt, width, height, info, target, audio, windows, fast,
     try:
         spec = EncodeSpec(fmt=fmt, width=width, height=height, crf=crf,
                           fast=fast, audio=audio, with_audio=True,
-                          faststart=True, info=info)
+                          faststart=True, info=info, tone_cache=tone_cache)
         encode(src, spec, dest=path, progress=progress)
 
         if progress is not None:
@@ -2344,7 +2432,8 @@ def _at_quality(src, fmt, width, height, info, target, audio, windows, fast,
                               f"{fmt.name}, one rung higher")
             spec = EncodeSpec(fmt=fmt, width=width, height=height, crf=crf,
                               fast=fast, audio=audio, with_audio=True,
-                              faststart=True, info=info)
+                              faststart=True, info=info,
+                              tone_cache=tone_cache)
             encode(src, spec, dest=path, progress=progress)
             score, mean, audio_state = _verify(src, path, width, height,
                                                windows, audio, info,
@@ -2372,7 +2461,7 @@ def _at_quality(src, fmt, width, height, info, target, audio, windows, fast,
 
 def _under_cap(src, fmt, width, height, info, cap_bytes, duration, audio,
                windows, fast, out_dir, probe_log, progress=None,
-               ref_cache=None):
+               ref_cache=None, tone_cache=None):
     """The hard-ceiling case: the best this can look inside N bytes.
 
     Rate-targeted rather than quality-targeted, because you cannot promise
@@ -2396,7 +2485,8 @@ def _under_cap(src, fmt, width, height, info, cap_bytes, duration, audio,
         for attempt in range(2):
             spec = EncodeSpec(fmt=fmt, width=width, height=height,
                               bitrate=bitrate, fast=fast, audio=audio,
-                              with_audio=True, faststart=True, info=info)
+                              with_audio=True, faststart=True, info=info,
+                              tone_cache=tone_cache)
             encode(src, spec, dest=path, progress=progress)
             size = path.stat().st_size
             if size <= cap_bytes or attempt == 1:

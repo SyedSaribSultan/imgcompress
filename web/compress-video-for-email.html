@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Compress images for email — Pocketsize</title>
-<meta name="description" content="Make photos email-sized in one step: the email plan picks sensible dimensions and quality, measures the result, and zips a batch with a written report. Free and private.">
+<title>Compress a video to email it — under 25 MB — Pocketsize</title>
+<meta name="description" content="Get a video small enough to attach without uploading it to anyone. Runs on your own device and shows you the measured quality of what it made.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#EEEFE9">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191B21">
-<link rel="canonical" href="https://pocketsize.vercel.app/compress-for-email">
+<link rel="canonical" href="https://pocketsize.vercel.app/compress-video-for-email">
 
 <!-- The social card. og.png is the one asset with words baked in; the alt
      carries the same words for everyone who cannot see it. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Pocketsize">
-<meta property="og:title" content="Compress images for email — Pocketsize">
-<meta property="og:description" content="Make photos email-sized in one step: the email plan picks sensible dimensions and quality, measures the result, and zips a batch with a written report. Free and private.">
-<meta property="og:url" content="https://pocketsize.vercel.app/compress-for-email">
+<meta property="og:title" content="Compress a video to email it — under 25 MB — Pocketsize">
+<meta property="og:description" content="Get a video small enough to attach without uploading it to anyone. Runs on your own device and shows you the measured quality of what it made.">
+<meta property="og:url" content="https://pocketsize.vercel.app/compress-video-for-email">
 <meta property="og:image" content="https://pocketsize.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Pocketsize — compression that proves it didn't ruin your image. Nothing is uploaded.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Compress images for email — Pocketsize">
-<meta name="twitter:description" content="Make photos email-sized in one step: the email plan picks sensible dimensions and quality, measures the result, and zips a batch with a written report. Free and private.">
+<meta name="twitter:title" content="Compress a video to email it — under 25 MB — Pocketsize">
+<meta name="twitter:description" content="Get a video small enough to attach without uploading it to anyone. Runs on your own device and shows you the measured quality of what it made.">
 <meta name="twitter:image" content="https://pocketsize.vercel.app/og.png">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -107,26 +107,18 @@
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "What size should photos be for email?",
+      "name": "Why 18 MB and not 25?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "The email plan's answer is on screen in the plan panel — a pixel cap that reads well everywhere without carrying camera resolution nobody will see. You can change it before or after compressing."
+        "text": "Mail attachments are re-encoded for transport, which adds roughly a third to their size. Aiming at 25 MB would produce files that arrive too big."
       }
     },
     {
       "@type": "Question",
-      "name": "My mail provider caps attachments at 25 MB — will this help?",
+      "name": "Can I send a longer video another way?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Dramatically, in most cases: full-resolution photos are usually a few hundred kilobytes after compression. You can also set an exact per-file size cap under More choices."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "Can I send the originals' quality proof along?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Yes — the zip's written report lists every file's before and after size and its measured visual-match score."
+        "text": "For anything long, a link from a file-sharing service beats an attachment. This is for the clip that nearly fits."
       }
     }
   ]
@@ -560,17 +552,15 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Compress images for email</h1>
-    <p>This page opens Pocketsize with the destination set to “email” — a plan sized for what email actually needs: pictures big enough to look right on any screen the message is read on, small enough that a few of them do not bounce off an attachment limit.</p>
-    <p>Drop the photos, and each one is compressed to that plan and measured against its original. Several at once become a zip, and the zip carries a written report of what happened to every file — sizes in and out, the measured score, and whether pixels were removed — which is worth keeping when the pictures matter.</p>
+    <h1 id="about-h">Compress a video small enough to email</h1>
+    <p>Gmail and Outlook stop at 25 MB, and attachments are encoded in a way that inflates them on the way out — so the number that actually matters is nearer 18 MB. This page opens with that target already set.</p>
+    <p>The clip is re-encoded on your own device and measured against your original, so what you attach is a file whose quality has been checked rather than assumed. Nothing is uploaded to reach that answer, which for a personal video is the whole point.</p>
     <p>Your pictures never leave your computer: the compression runs in your browser, on your own device, and <a href="/nothing-is-uploaded">you can verify that yourself in about a minute</a>. After one visit it even works with no internet at all.</p>
     <p>This page is <a href="/">Pocketsize</a> with the plan pre-set for one job. Nothing is locked — change any control once it is open.</p>
-    <h2>What size should photos be for email?</h2>
-    <p>The email plan's answer is on screen in the plan panel — a pixel cap that reads well everywhere without carrying camera resolution nobody will see. You can change it before or after compressing.</p>
-    <h2>My mail provider caps attachments at 25 MB — will this help?</h2>
-    <p>Dramatically, in most cases: full-resolution photos are usually a few hundred kilobytes after compression. You can also set an exact per-file size cap under More choices.</p>
-    <h2>Can I send the originals' quality proof along?</h2>
-    <p>Yes — the zip's written report lists every file's before and after size and its measured visual-match score.</p>
+    <h2>Why 18 MB and not 25?</h2>
+    <p>Mail attachments are re-encoded for transport, which adds roughly a third to their size. Aiming at 25 MB would produce files that arrive too big.</p>
+    <h2>Can I send a longer video another way?</h2>
+    <p>For anything long, a link from a file-sharing service beats an attachment. This is for the clip that nearly fits.</p>
   </div>
 </section>
 

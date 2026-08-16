@@ -3,6 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- This page is handed the run's API token, so anything that could execute
+     here could drive every local route - reading any file the person can
+     read and writing anywhere they can write. There is no injection to
+     exploit today (every untrusted string goes through escapeHtml or
+     textContent), but the blast radius if one ever landed is total, so the
+     floor is set here rather than trusted to that discipline holding.
+
+     `default-src 'none'` denies everything not named below. The inline
+     script and styles are the app's own and unavoidable without a build
+     step this project deliberately does not have; `connect-src 'self'` is
+     the load-bearing line - it means no amount of injected script can send
+     a byte anywhere but this loopback server, which is the desktop half of
+     the same promise the web app's CSP makes.
+
+     `frame-ancestors` is deliberately NOT here: it is ignored when delivered
+     in a meta element, and a directive that silently does nothing is worse
+     than an absent one. The server sends it as a real header instead. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Pocketsize</title>
 <!-- The same design system the web app loads. Both files are copied in from
      web/ by tools/sync_webui_assets.py and checked by CI, so the two
