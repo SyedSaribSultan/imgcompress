@@ -91,6 +91,74 @@ class TheVideoTable(unittest.TestCase):
         self.assertEqual(dest.get("chat").size_cap_mb, 10.0)
 
 
+class TheSuiteItself(unittest.TestCase):
+    """The rule that keeps 'video absent' from meaning 'suite broken'.
+
+    Video is an optional extra; most of CI runs without it, and a
+    destination's promise about where a video is going does not depend on
+    whether this machine can encode one. So the classes that are not behind
+    `skipUnless(video.available())` must not touch `av` - not at module
+    level, not inside a method.
+
+    This is written as a gate rather than trusted to review because it was
+    NOT caught by review: a test needing a real `av.VideoFrame` was written
+    into the pure colour class, passed on a developer machine that has PyAV,
+    and turned every one of the seven no-video CI legs red. The mistake is
+    invisible locally, which is exactly the kind that needs a machine to
+    watch for it.
+    """
+
+    def test_no_engine_free_class_reaches_for_the_video_library(self):
+        import ast
+
+        source = Path(__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        def guarded(node) -> bool:
+            """Whether a class sits behind the video-engine skip.
+
+            Matched on the shape of the call - `skipUnless(video.available())`
+            - rather than on the text of `ast.dump`, which renders it as
+            `Attribute(value=Name(id='video'), attr='available')` and never
+            as the literal "video.available". The first version of this check
+            searched for that literal, matched nothing, and would have
+            reported every correctly-guarded class as an offender forever.
+            """
+            for decorator in node.decorator_list:
+                for sub in ast.walk(decorator):
+                    if (isinstance(sub, ast.Attribute)
+                            and sub.attr == "available"
+                            and isinstance(sub.value, ast.Name)
+                            and sub.value.id == "video"):
+                        return True
+            return False
+
+        def imports_av(node) -> bool:
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Import):
+                    if any(alias.name.split(".")[0] == "av"
+                           for alias in sub.names):
+                        return True
+                if isinstance(sub, ast.ImportFrom):
+                    if (sub.module or "").split(".")[0] == "av":
+                        return True
+            return False
+
+        offenders = [
+            node.name for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and not guarded(node) and imports_av(node)
+        ]
+        self.assertEqual(
+            offenders, [],
+            f"{offenders} import `av` without being behind "
+            "@skipUnless(video.available()). On a machine without the video "
+            "extra those tests error instead of skipping, which reports a "
+            "missing optional engine as a broken test suite. Move the test "
+            "to a guarded class."
+        )
+
+
 class TheVideoArithmetic(unittest.TestCase):
     """Pure functions. No encoder required, so these run in CI on any machine."""
 
@@ -490,33 +558,6 @@ class TheColourArithmetic(unittest.TestCase):
         self.assertLess(worst, 1.0,
                         f"{worst:.2f} code values apart at the gamut edge")
 
-    def test_the_banded_path_agrees_with_the_plain_arithmetic(self):
-        """`to_frame` runs the conversion on row bands in parallel for speed.
-        Banding is only legitimate because every step is per-pixel, so the
-        result must match the plain functions composed by hand - within one
-        code value, which is the rounding slack of reordering float ops."""
-        import av
-        import numpy as np
-
-        rng = np.random.default_rng(31)
-        height, width = 500, 320   # tall enough to be split into bands
-        planes = np.empty((height, width, 3), np.uint16)
-        planes[..., 0] = (rng.random((height, width)) * 56064 + 4096)
-        planes[..., 1:] = (rng.random((height, width, 2)) * 28672 + 18000)
-        frame = av.VideoFrame.from_ndarray(planes, format="yuv444p16le")
-        tone = video.ToneMap(transfer="smpte2084", source_peak=1000.0)
-
-        got = tone.to_frame(frame).to_ndarray(format="yuv444p").astype(int)
-        code = video.sdr_from_nits(video.pq_nits(tone.signal(frame)),
-                                   1000.0, True)
-        ycc = code @ video._RGB_TO_BT709_YCBCR.T.astype(code.dtype)
-        want = np.empty((3, height, width), int)
-        want[0] = np.clip(ycc[..., 0] * 219.0 + 16.0, 0.0, 255.0).round()
-        want[1] = np.clip(ycc[..., 1] * 224.0 + 128.0, 0.0, 255.0).round()
-        want[2] = np.clip(ycc[..., 2] * 224.0 + 128.0, 0.0, 255.0).round()
-        self.assertLessEqual(int(np.abs(got.reshape(want.shape) - want).max()),
-                             1)
-
     def test_a_witness_that_cannot_see_the_source_reports_nothing(self):
         """The independent metric compares two files straight out of their
         containers, and nothing in this build can apply a PQ transfer inside a
@@ -555,6 +596,47 @@ class TheColourArithmetic(unittest.TestCase):
         self.assertIsNone(video.tone_map_for(odd))
         self.assertIsNotNone(video.tone_map_for(
             video.VideoInfo(hdr=True, hdr_reason="smpte2084")))
+
+
+@unittest.skipUnless(video.available(), "video engine not installed")
+class TheColourArithmeticOnRealFrames(unittest.TestCase):
+    """The colour conversion, checked on an actual decoded frame.
+
+    Separate from `TheColourArithmetic` above for one reason that is a rule
+    rather than a preference: that class is pure and must run on a machine
+    with no video engine at all, because a destination's promise does not
+    depend on whether this laptop can encode. Anything needing an
+    `av.VideoFrame` belongs here instead, behind the skip - a test that
+    imports `av` from the pure class turns "video absent" into "test suite
+    broken", which is exactly the distinction CONTRIBUTING.md draws.
+    """
+
+    def test_the_banded_path_agrees_with_the_plain_arithmetic(self):
+        """`to_frame` runs the conversion on row bands in parallel for speed.
+        Banding is only legitimate because every step is per-pixel, so the
+        result must match the plain functions composed by hand - within one
+        code value, which is the rounding slack of reordering float ops."""
+        import av
+        import numpy as np
+
+        rng = np.random.default_rng(31)
+        height, width = 500, 320   # tall enough to be split into bands
+        planes = np.empty((height, width, 3), np.uint16)
+        planes[..., 0] = (rng.random((height, width)) * 56064 + 4096)
+        planes[..., 1:] = (rng.random((height, width, 2)) * 28672 + 18000)
+        frame = av.VideoFrame.from_ndarray(planes, format="yuv444p16le")
+        tone = video.ToneMap(transfer="smpte2084", source_peak=1000.0)
+
+        got = tone.to_frame(frame).to_ndarray(format="yuv444p").astype(int)
+        code = video.sdr_from_nits(video.pq_nits(tone.signal(frame)),
+                                   1000.0, True)
+        ycc = code @ video._RGB_TO_BT709_YCBCR.T.astype(code.dtype)
+        want = np.empty((3, height, width), int)
+        want[0] = np.clip(ycc[..., 0] * 219.0 + 16.0, 0.0, 255.0).round()
+        want[1] = np.clip(ycc[..., 1] * 224.0 + 128.0, 0.0, 255.0).round()
+        want[2] = np.clip(ycc[..., 2] * 224.0 + 128.0, 0.0, 255.0).round()
+        self.assertLessEqual(int(np.abs(got.reshape(want.shape) - want).max()),
+                             1)
 
 
 @unittest.skipUnless(video.available(), "video engine not installed")
