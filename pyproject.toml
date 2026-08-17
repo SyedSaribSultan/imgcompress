@@ -6,7 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "pocketsize"
 version = "2.7.0"
 description = "Quality-targeted image compression. Measures perceptual quality instead of guessing it, and picks the best format per image."
-readme = "README.md"
+# The PyPI-facing copy, GENERATED from README.md by tools/gen_pypi_readme.py.
+# PyPI has no repository to resolve `docs/screenshot-dark.webp` against, so the
+# repo README's relative links would render as broken images and dead links on
+# the project page. Never hand-edit; edit README.md and re-run the tool.
+readme = "README.pypi.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "HeyOz" }]
