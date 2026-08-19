@@ -17,7 +17,7 @@
  * pushed around.
  */
 
-import { $, setText, show } from "./dom.js";
+import { $, setText, show, toast } from "./dom.js";
 import { state, current, isReady } from "./state.js";
 import {
   human, fmtLabel, splitName, clock, videoResultLine,
@@ -198,8 +198,13 @@ export function applySplit() {
 export function setMode(next) {
   /* The heatmap is built from two decoded stills, and a video has no single
      "the picture" to decode - so Diff is not offered on one, and asking for it
-     lands on the split rather than on a blank canvas. */
-  if (next === "diff" && current()?.isVideo) next = "split";
+     lands on the split rather than on a blank canvas. The reason is SAID, not
+     only parked in a title a touch screen and a screen reader never meet. */
+  if (next === "diff" && current()?.isVideo) {
+    toast("The difference view is for pictures — a video changes every "
+      + "moment, so there is no one picture to compare.");
+    next = "split";
+  }
   mode = next;
   $("view").dataset.mode = next;
   for (const m of ["split", "after", "diff"]) {
@@ -361,9 +366,11 @@ function paintMedia(it, hasResult) {
   show($("vid-after-wrap"), video);
   show($("transport"), video);
   /* A heatmap of one frame of a clip would be a true picture of something
-     nobody asked about. The button says why rather than going quiet. */
+     nobody asked about. aria-disabled rather than disabled=: the button stays
+     focusable and clickable, and pressing it lands on setMode's guard, which
+     says why out loud - a disabled= control keeps its reason to itself. */
   const diffBtn = $("mode-diff");
-  diffBtn.disabled = video;
+  diffBtn.setAttribute("aria-disabled", String(video));
   diffBtn.title = video ? "The difference view is for pictures" : "";
 
   if (!video) {

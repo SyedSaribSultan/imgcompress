@@ -540,7 +540,7 @@ def _about_section(spec):
     paras = "\n".join(f"    <p>{p}</p>" for p in spec["paras"])
     return f'''<section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">{spec["h1"]}</h1>
+    <h2 id="about-h">{spec["h1"]}</h2>
 {paras}
 {faqs_html}
   </div>
@@ -597,6 +597,12 @@ def render(spec, template):
     # It mirrors the visible FAQ word for word - schema for content the page
     # does not show is the kind of cleverness that gets sites penalised.
     html = html.replace("</head>", _faq_jsonld(spec) + "\n</head>", 1)
+
+    # The page's one <h1> is the hidden document title at the top of body
+    # (see index.html); each use-case page gets its own phrase there, the same
+    # words its visible about heading (an h2) opens with.
+    html = re.sub(r'(<h1 class="vh">)[^<]*',
+                  lambda m: m.group(1) + spec["h1"], html, count=1)
 
     html = re.sub(r'<section id="about" aria-labelledby="about-h">.*?</section>',
                   _about_section(spec), html, count=1, flags=re.S)

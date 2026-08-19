@@ -223,8 +223,10 @@ function renderFoot() {
   btn.disabled = !ready || busy;
   /* The button says what it will actually produce - the shape AND the size,
      so nobody commits to a download without knowing what it costs. One image
-     is a file; several are a zip. */
+     is a file; several are a zip. The size rides along in both shapes, which
+     also keeps this label from reading as a twin of the stage's own plain
+     "Download" when there is one picture. */
   setText($("save-label"), ready > 1
     ? `Download ${ready} as zip · ${human(t.after)}`
-    : "Download");
+    : `Download · ${human(t.after)}`);
 }

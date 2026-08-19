@@ -138,6 +138,13 @@
 
 <a class="skip" href="#queue-list">Skip to the pictures</a>
 
+<!-- The document's own name, for whoever reads a page by its headings: the
+     app's region labels are h2s, and a page whose first heading is level 2
+     starts mid-outline. Painted nowhere - the wordmark already says it on
+     screen - but first in the heading order. gen_seo_pages.py rewrites the
+     text per use-case page; keep it the page's one h1. -->
+<h1 class="vh">Compress a JPEG without guessing at a quality number</h1>
+
 <noscript>
   <p id="noscript">Pocketsize compresses images entirely in your browser, which
   needs JavaScript turned on. Nothing is uploaded either way.</p>
@@ -227,7 +234,7 @@
           Choose pictures
         </button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
-        <p class="muted">Your pictures never leave your computer.</p>
+        <p class="muted">Your pictures and videos never leave your computer.</p>
       </div>
 
       <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
@@ -566,7 +573,7 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Compress a JPEG without guessing at a quality number</h1>
+    <h2 id="about-h">Compress a JPEG without guessing at a quality number</h2>
     <p>This page opens Pocketsize with the file type pinned to JPEG. Instead of asking you to guess a quality number, it asks one question — how close must the result look? — then tests real JPEG quality levels, measures each against your original, and keeps the smallest file that clears the bar you chose.</p>
     <p>Recompressing a JPEG is where quality quietly dies in most tools, because nobody measures. Pocketsize measures: every kept file shows its visual-match score, the before/after slider and difference view show you exactly what changed, and a result that comes out bigger than your original is thrown away in favour of the original itself.</p>
     <p>Your pictures never leave your computer: the compression runs in your browser, on your own device, and <a href="/nothing-is-uploaded">you can verify that yourself in about a minute</a>. After one visit it even works with no internet at all.</p>

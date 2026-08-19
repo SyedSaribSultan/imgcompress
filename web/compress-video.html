@@ -146,6 +146,13 @@
 
 <a class="skip" href="#queue-list">Skip to the pictures</a>
 
+<!-- The document's own name, for whoever reads a page by its headings: the
+     app's region labels are h2s, and a page whose first heading is level 2
+     starts mid-outline. Painted nowhere - the wordmark already says it on
+     screen - but first in the heading order. gen_seo_pages.py rewrites the
+     text per use-case page; keep it the page's one h1. -->
+<h1 class="vh">Compress video in your browser</h1>
+
 <noscript>
   <p id="noscript">Pocketsize compresses images entirely in your browser, which
   needs JavaScript turned on. Nothing is uploaded either way.</p>
@@ -235,7 +242,7 @@
           Choose pictures
         </button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
-        <p class="muted">Your pictures never leave your computer.</p>
+        <p class="muted">Your pictures and videos never leave your computer.</p>
       </div>
 
       <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
@@ -574,7 +581,7 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Compress video in your browser</h1>
+    <h2 id="about-h">Compress video in your browser</h2>
     <p>Add an MP4, MOV, WebM or MKV and Pocketsize re-encodes it on your own device. It measures sample frames of the result against the same moments of your original, keeps the smallest version that still looks right, and then plays both clips side by side, in step, so you can check rather than trust.</p>
     <p>Almost every other online video compressor uploads your file to a server first. That is a real wait on a large clip, and a real decision about a video that might be of your family. This one has no server to upload to: the encoding runs in your browser, using the video engine your browser already ships.</p>
     <p>If the picture had to be made smaller on screen, or a size limit cost some sharpness, the same line that shows your saving says so. A number you cannot check is not evidence.</p>

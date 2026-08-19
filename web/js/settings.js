@@ -201,6 +201,21 @@ export function reflectPlan() {
   reflectFormatAvailability();
   reflectQualityWords();
   reflectDirty();
+  reflectSelectTitles();
+}
+
+/* The sidebar is narrow and a collapsed <select> shows one line, so a long
+   choice may ellipsise (controls.css accepts that for #shrink-mode). The full
+   words must still be reachable ON the control, not only in the sentence under
+   the plan - so every plan select carries its selected option's own words (or
+   its help, where the option has some) as a hoverable title. */
+function reflectSelectTitles() {
+  for (const id of ["target", "quality-preset", "shrink-mode",
+                    "plan-goal", "plan-format", "plan-fit"]) {
+    const sel = $(id);
+    const opt = sel?.selectedOptions[0];
+    if (sel) sel.title = opt ? (opt.title || opt.textContent) : "";
+  }
 }
 
 /* ------------------------- what differs from automatic -------------------- */
@@ -223,13 +238,41 @@ export function reflectDirty() {
     "plan-format": !!$("plan-format").value,
     "plan-fit": $("plan-fit").value !== "longest",
   };
+  /* Grouped by the FIELD before anything is toggled: shrink-mode and maxdim
+     share one row, and toggling per control let the second write erase a dot
+     the first had earned. */
+  const byField = new Map();
   let any = false;
   for (const [id, on] of Object.entries(dirty)) {
     const field = $(id)?.closest(".field");
-    if (field) field.toggleAttribute("data-changed", on);
+    if (field) byField.set(field, byField.get(field) || on);
     any = any || on;
   }
+  for (const [field, on] of byField) {
+    field.toggleAttribute("data-changed", on);
+    sayChanged(field, on);
+  }
   show($("plan-reset"), any);
+}
+
+/* The dot (controls.css) says "not what the destination would do" to the eye;
+   this says the same thing to a screen reader, inside the label the control is
+   named by, so the state travels with the name - and to a hover, on the label
+   the dot itself sits on. */
+function sayChanged(field, on) {
+  const label = field.querySelector("label");
+  if (!label) return;
+  let flag = label.querySelector(".vh");
+  if (on && !flag) {
+    flag = document.createElement("span");
+    flag.className = "vh";
+    flag.textContent = " — changed from automatic";
+    label.appendChild(flag);
+  } else if (!on && flag) {
+    flag.remove();
+  }
+  if (on) label.title = "Changed from this destination's automatic setting";
+  else label.removeAttribute("title");
 }
 
 /** One step back to the destination's own defaults. It resets the KNOBS, not

@@ -198,7 +198,12 @@ function videoWhyLine(it, floor) {
 
 function renderMeasured(it) {
   setText($("s-format"), fmtLabel(it.fmt));
-  setText($("s-score"), scoreText(it.score, it.lossless));
+  /* The bare figure was the one number on the page that did not carry its
+     meaning in place: 70.2 of what? The scale rides along here; the words for
+     what the number means stay in the why-line and the warning below. */
+  setText($("s-score"), it.lossless || it.score == null
+    ? scoreText(it.score, it.lossless)
+    : `${scoreText(it.score, false)} of 100`);
   setText($("s-dims"), it.outW && it.outH
     ? (it.outW === it.width && it.outH === it.height
         ? `${it.width}×${it.height}`
@@ -317,6 +322,14 @@ function renderRedo(it) {
      quality override beside it applies to both and stays. */
   show($("ov-format").closest(".field"), !it.isVideo);
   show($("ov-reset"), !!it.override);
+  /* Same courtesy the plan's selects give (settings.js): the panel is narrow
+     and these options are sentences, so the chosen words stay hoverable when
+     the collapsed control cannot show them whole. */
+  for (const id of ["ov-format", "ov-quality"]) {
+    const sel = $(id);
+    const opt = sel.selectedOptions[0];
+    sel.title = opt ? opt.textContent : "";
+  }
 }
 
 /* --------------------------------- render -------------------------------- */

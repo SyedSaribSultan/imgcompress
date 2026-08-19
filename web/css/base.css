@@ -129,6 +129,13 @@
   --icon-pencil: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23898f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3C/svg%3E");
 }
 
+/* Light theme only: the system's tertiary ink misses WCAG AA by a hair on the
+   sunk surfaces this app sets it on - 4.2:1 on --c-sunk, where 4.5 is the bar
+   for the 13-15px readouts that use it. One step darker on the same hue clears
+   the bar (4.8:1) without collapsing into --c-ink-2. Dark theme clears it as
+   shipped and keeps the system value. */
+:root[data-theme="light"] { --c-ink-3: #62645B; }
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body { height: 100%; }
@@ -200,6 +207,21 @@ kbd {
 .muted { color: var(--c-ink-3); }
 .spacer { flex: 1; }
 
+/* Present for assistive tech, absent from the paint. For state a sighted
+   person already sees drawn another way - the changed-field dot, the page's
+   own top-level heading - so the words travel with the element they name. */
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 [hidden] { display: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -210,7 +232,9 @@ kbd {
    and the hairlines darken. The ramp is the system's own, so both themes
    stay coherent. */
 @media (prefers-contrast: more) {
-  :root {
+  /* Both selectors, so the bump also outweighs the light-theme --c-ink-3
+     override above - which is more specific than a bare :root. */
+  :root, :root[data-theme="light"] {
     --c-line: var(--oz-color-border-tertiary);
     --c-ink-2: var(--oz-color-content-primary);
     --c-ink-3: var(--oz-color-content-secondary);

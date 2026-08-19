@@ -138,6 +138,13 @@
 
 <a class="skip" href="#queue-list">Skip to the pictures</a>
 
+<!-- The document's own name, for whoever reads a page by its headings: the
+     app's region labels are h2s, and a page whose first heading is level 2
+     starts mid-outline. Painted nowhere - the wordmark already says it on
+     screen - but first in the heading order. gen_seo_pages.py rewrites the
+     text per use-case page; keep it the page's one h1. -->
+<h1 class="vh">Compress an image to 50 KB</h1>
+
 <noscript>
   <p id="noscript">Pocketsize compresses images entirely in your browser, which
   needs JavaScript turned on. Nothing is uploaded either way.</p>
@@ -227,7 +234,7 @@
           Choose pictures
         </button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
-        <p class="muted">Your pictures never leave your computer.</p>
+        <p class="muted">Your pictures and videos never leave your computer.</p>
       </div>
 
       <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
@@ -566,7 +573,7 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Compress an image to 50 KB</h1>
+    <h2 id="about-h">Compress an image to 50 KB</h2>
     <p>This page opens Pocketsize with the size limit already set to 50 KB — thumbnail and icon territory. The engine tries JPEG, PNG, WebP and AVIF at several quality levels, measures each attempt against your original, and keeps the smallest file under the limit that still looks right.</p>
     <p>50 KB is a hard budget for anything but small or simple images, and this is where most tools quietly hand back mush. Pocketsize will not: every result shows its measured visual-match score, and when the only way under 50 KB would wreck the picture, it keeps the smallest version still worth having and tells you the limit was missed.</p>
     <p>Your pictures never leave your computer: the compression runs in your browser, on your own device, and <a href="/nothing-is-uploaded">you can verify that yourself in about a minute</a>. After one visit it even works with no internet at all.</p>

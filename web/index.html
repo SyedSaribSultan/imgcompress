@@ -106,6 +106,13 @@
 
 <a class="skip" href="#queue-list">Skip to the pictures</a>
 
+<!-- The document's own name, for whoever reads a page by its headings: the
+     app's region labels are h2s, and a page whose first heading is level 2
+     starts mid-outline. Painted nowhere - the wordmark already says it on
+     screen - but first in the heading order. gen_seo_pages.py rewrites the
+     text per use-case page; keep it the page's one h1. -->
+<h1 class="vh">Pocketsize — compress images and video in your browser, free and private</h1>
+
 <noscript>
   <p id="noscript">Pocketsize compresses images entirely in your browser, which
   needs JavaScript turned on. Nothing is uploaded either way.</p>
@@ -195,7 +202,7 @@
           Choose pictures
         </button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
-        <p class="muted">Your pictures never leave your computer.</p>
+        <p class="muted">Your pictures and videos never leave your computer.</p>
       </div>
 
       <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
@@ -534,7 +541,9 @@
      ==================================================================== -->
 <section id="about" aria-labelledby="about-h">
   <div class="about-inner">
-    <h1 id="about-h">Pocketsize — compress images and video in your browser, free and private</h1>
+    <!-- An h2: the page's h1 is the hidden document title at the top of body,
+         which carries these same words. -->
+    <h2 id="about-h">Pocketsize — compress images and video in your browser, free and private</h2>
     <p>Pocketsize makes pictures smaller. Add PNG, JPEG, WebP, GIF, BMP or TIFF
        files and it saves each one several ways — as JPEG, PNG, WebP and AVIF —
        measures every version against your original, and keeps the smallest one

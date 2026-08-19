@@ -200,8 +200,12 @@ try {
   check("it is a video file, named for what was actually written",
     result.blobType.startsWith("video/") && result.ext === ".mp4",
     `${result.blobType} ${result.ext}`);
-  check("it was measured, and the measurement is on screen",
-    result.score > 0 && Number(result.shownScore) === Number(result.score.toFixed(1)),
+  /* The stat cell carries its scale in place - "74.7 of 100", not a bare
+     figure - so the check asserts the number AND that the scale rides along. */
+  check("it was measured, and the measurement is on screen, with its scale",
+    result.score > 0
+      && new RegExp(`^${result.score.toFixed(1).replace(".", "[.,]")} of 100$`)
+        .test(result.shownScore),
     `score ${result.score} shown as "${result.shownScore}"`);
   check("the length of the clip is shown", result.lengthShown && /^\d+:\d\d$/.test(result.length),
     result.length);
@@ -331,7 +335,10 @@ try {
         imgShown: !document.getElementById("img-before").hidden,
         vidHidden: document.getElementById("vid-before").hidden,
         transportHidden: document.getElementById("transport").hidden,
-        diffEnabled: !document.getElementById("mode-diff").disabled,
+        /* Diff's off state is aria-disabled, not disabled= - the button stays
+           focusable so its reason stays reachable. Assert on that mechanism. */
+        diffEnabled: document.getElementById("mode-diff")
+          .getAttribute("aria-disabled") !== "true",
       };
     });
     check("a picture in the same run still compresses",

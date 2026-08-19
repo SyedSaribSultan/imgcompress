@@ -281,6 +281,17 @@ select {
   background: var(--c-accent);
   color: var(--c-accent-ink);
 }
+/* Out of service but still speaking: a mode that does not apply is dimmed and
+   keeps focus, so its reason stays reachable - the title on hover, the toast
+   on activation. A disabled= button is silent to keyboard and screen reader
+   both, which is how a control's explanation goes unread. */
+.segmented > button[aria-disabled="true"],
+.segmented > button[aria-disabled="true"]:hover {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+  color: var(--c-ink-2);
+}
 
 /* -------------------------------- toast ---------------------------------- */
 
