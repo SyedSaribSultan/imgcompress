@@ -136,7 +136,7 @@
 </head>
 <body>
 
-<a class="skip" href="#queue-list">Skip to the pictures</a>
+<a class="skip" href="#queue-list">Skip to the files</a>
 
 <!-- The document's own name, for whoever reads a page by its headings: the
      app's region labels are h2s, and a page whose first heading is level 2
@@ -146,8 +146,8 @@
 <h1 class="vh">Compress a JPEG without guessing at a quality number</h1>
 
 <noscript>
-  <p id="noscript">Pocketsize compresses images entirely in your browser, which
-  needs JavaScript turned on. Nothing is uploaded either way.</p>
+  <p id="noscript">Pocketsize compresses images and video entirely in your
+  browser, which needs JavaScript turned on. Nothing is uploaded either way.</p>
 </noscript>
 
 <!-- ============================== THE BAR ==============================
@@ -187,7 +187,7 @@
 
   <button class="btn" id="add-btn">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-    Add pictures
+    Add files
   </button>
   <button class="btn" id="clear-btn" hidden>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -223,7 +223,7 @@
 
     <section id="queue-sec" aria-labelledby="queue-h">
       <div class="region-head">
-        <h2 id="queue-h">Pictures</h2>
+        <h2 id="queue-h">Files</h2>
         <span class="num muted" id="queue-count">0</span>
         <span class="spacer"></span>
       </div>
@@ -231,7 +231,7 @@
       <div id="queue-empty">
         <button class="btn primary" id="empty-add">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-          Choose pictures
+          Choose pictures or video
         </button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
         <p class="muted">Your pictures and videos never leave your computer.</p>
@@ -240,7 +240,7 @@
       <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
       <!-- The empty state's teaching disappears after first use; the affordance
            should not. -->
-      <p class="muted" id="queue-hint" hidden>Drop more pictures anytime.</p>
+      <p class="muted" id="queue-hint" hidden>Drop more files anytime.</p>
 
       <div id="queue-foot" hidden>
         <!-- How many finished and how many did not, in words. A run that ends with
@@ -257,7 +257,7 @@
       <div class="region-head">
         <h2 id="plan-h">Plan</h2>
         <span class="spacer"></span>
-        <span class="muted">every picture</span>
+        <span class="muted">everything you added</span>
       </div>
 
       <div id="plan-fields">
@@ -451,7 +451,7 @@
     </div>
 
     <div class="stage-bar bottom">
-      <input type="text" id="out-name" spellcheck="false" aria-label="Name for this image">
+      <input type="text" id="out-name" spellcheck="false" aria-label="Name for this file">
       <span class="num muted" id="out-ext"></span>
       <span class="size num" id="s-size">—</span>
       <span class="saved num" id="s-saved"></span>
@@ -474,7 +474,7 @@
       <p id="stage-empty">Nothing to compare yet.</p>
       <button class="btn" id="stage-choose">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-      Choose pictures
+      Choose pictures or video
       </button>
     </div>
 
@@ -514,7 +514,7 @@
              resize disclosure is exactly the someone who may not have wanted
              one. Hidden when the destination's own ceiling makes full size
              impossible. -->
-        <button type="button" class="btn sm" id="keep-size" hidden>Keep full size for this picture</button>
+        <button type="button" class="btn sm" id="keep-size" hidden>Keep full size for this one</button>
         <div class="stats">
           <div><div class="k">Format</div><div class="v" id="s-format">—</div></div>
           <div><div class="k">Visual match</div><div class="v num" id="s-score">—</div></div>
@@ -529,7 +529,7 @@
       </section>
 
       <section id="redo" aria-labelledby="redo-h">
-        <h3 id="redo-h">Just this image</h3>
+        <h3 id="redo-h">Just this one</h3>
         <div class="field">
           <label for="ov-format">Format</label>
           <select id="ov-format">

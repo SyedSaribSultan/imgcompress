@@ -121,10 +121,15 @@ function buildReport(done, names) {
   const clips = done.filter((it) => it.isVideo).length;
   // The noun follows what is in the run: a record that calls three clips
   // "pictures" is a record that was not looking.
-  const what = clips
-    ? `${done.length} file${done.length === 1 ? "" : "s"} (${done.length - clips} `
-      + `picture${done.length - clips === 1 ? "" : "s"}, ${clips} video${clips === 1 ? "" : "s"})`
-    : `${done.length} picture${done.length === 1 ? "" : "s"}`;
+  const pics = done.length - clips;
+  const what = clips && pics
+    ? `${done.length} file${done.length === 1 ? "" : "s"} (${pics} `
+      + `picture${pics === 1 ? "" : "s"}, ${clips} video${clips === 1 ? "" : "s"})`
+    /* An all-video run says "2 videos", not "2 files (0 pictures, 2 videos)".
+       A breakdown whose every other term is zero is arithmetic, not a report. */
+    : clips
+      ? `${clips} video${clips === 1 ? "" : "s"}`
+      : `${pics} picture${pics === 1 ? "" : "s"}`;
   lines.push(`Pocketsize report — ${what}`);
   lines.push(`${human(t.before)} in, ${human(t.after)} out, ${human(t.saved)} saved.`);
   lines.push("Everything ran in this browser. Nothing was uploaded.");
@@ -278,7 +283,7 @@ export async function downloadAll() {
     setTimeout(() => setText($("save-label"), "Saved ✓"), 80);
     setTimeout(() => scheduleRender(), 2200);
   } catch {
-    toast("Could not build the zip — try downloading pictures one at a time");
+    toast("Could not build the zip — try downloading them one at a time");
   }
   scheduleRender();
 }

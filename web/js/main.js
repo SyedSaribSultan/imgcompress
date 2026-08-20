@@ -24,7 +24,7 @@ import {
   startEngine, dispatch, requeue, removeItems, cancelAll, setBatchEndHandler, pool,
   holdWork, warmCodecs, probeVideoSupport,
 } from "./engine.js";
-import { addFiles, filesFromDataTransfer } from "./intake.js";
+import { addFiles, filesFromDataTransfer, countItemWords } from "./intake.js";
 import { chooseCandidate, previewCandidate, endPreview } from "./views.js";
 import {
   setMode, getMode, applySplit, applyZoom, zoomAt, stepZoom, resetZoom, panBy,
@@ -161,14 +161,19 @@ function bindIntake() {
     state.byId.clear();
     state.selected = null;
     scheduleRender();
+    /* The plan says different things while a video is queued, so emptying the
+       queue has to take those sentences back down - and putting them back is
+       part of undo. */
+    reflectPlan();
     let undone = false;
-    toast(`Cleared ${kept.length} picture${kept.length === 1 ? "" : "s"}`, {
+    toast(`Cleared ${countItemWords(kept)}`, {
       label: "Undo",
       onAction: () => {
         undone = true;
         for (const it of kept) { state.items.push(it); state.byId.set(it.id, it); }
         select(kept[0]?.id);
         scheduleRender();
+        reflectPlan();
       },
     });
     /* The object URLs are released only after the undo window has passed -
@@ -203,7 +208,10 @@ function bindIntake() {
     const noun = clips === n ? (n === 1 ? "this video" : `${n} videos`)
       : clips ? `${n} files`
       : (n === 1 ? "this picture" : `${n} pictures`);
-    setText($("drop-say"), n ? `Drop to add ${noun}` : "Drop to add pictures");
+    /* The fallback runs when a drag exposes no usable item types at all, so it
+       cannot name what is coming - "files" is the honest word there, and the
+       true count and nouns arrive above whenever the browser tells us. */
+    setText($("drop-say"), n ? `Drop to add ${noun}` : "Drop to add files");
     show($("drop-say"), true);
   });
   addEventListener("dragover", (e) => {

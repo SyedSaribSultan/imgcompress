@@ -8,6 +8,8 @@
 import { toast } from "./dom.js";
 import {
   state, uid, select, canEncodeVideo, NO_VIDEO_HERE,
+  HEAVY_VIDEO_BYTES, TOO_BIG_VIDEO_BYTES,
+  HEAVY_VIDEO_WARNING, TOO_BIG_VIDEO_HERE,
 } from "./state.js";
 import { SUPPORTED, SUPPORTED_MIME, isVideoFile } from "./format.js";
 import {
@@ -16,6 +18,7 @@ import {
 import { renderQueue } from "./queue.js";
 import { renderStage } from "./compare.js";
 import { renderFacts } from "./facts.js";
+import { reflectPlan } from "./settings.js";
 import { scheduleRender } from "./render.js";
 
 /* A small square, decoded straight to thumbnail scale. Decoding a 12MP original
@@ -131,10 +134,18 @@ function measure(item) {
 /** "3 pictures", "1 video", "2 files" - the noun follows what is actually
  *  there, because a run of clips reported as "pictures" is the interface
  *  telling a person it did not notice what they dropped. */
-function countWords(images, videos) {
+export function countWords(images, videos) {
   if (videos && images) return `${images + videos} files`;
   if (videos) return `${videos} video${videos === 1 ? "" : "s"}`;
   return `${images} image${images === 1 ? "" : "s"}`;
+}
+
+/** The same words, counted off a list of items rather than from two tallies -
+ *  what a caller holding the queue itself needs. */
+export function countItemWords(items) {
+  let images = 0, videos = 0;
+  for (const it of items) { if (it.isVideo) videos += 1; else images += 1; }
+  return countWords(images, videos);
 }
 
 export function addFiles(files) {
@@ -164,6 +175,24 @@ export function addFiles(files) {
       toast(NO_VIDEO_HERE);
       if (!usable.length) return;
     }
+  }
+
+  /* Size, at the door, for the same reason as capability: a person is entitled
+     to know before the wait rather than after it.
+
+     Too big is a refusal WITH A ROUTE - the desktop tier reads from disk and
+     is not holding the file in a tab, so it is a real answer rather than a
+     brush-off. Merely heavy is not a refusal at all: it is said, and then the
+     thing the person asked for happens. Deciding for them would be worse than
+     a slow encode. */
+  const huge = usable.filter((f) => isVideoFile(f) && f.size > TOO_BIG_VIDEO_BYTES);
+  if (huge.length) {
+    usable = usable.filter((f) => !huge.includes(f));
+    toast(TOO_BIG_VIDEO_HERE);
+    if (!usable.length) return;
+  }
+  if (usable.some((f) => isVideoFile(f) && f.size > HEAVY_VIDEO_BYTES)) {
+    toast(HEAVY_VIDEO_WARNING);
   }
 
   startEngine();
@@ -210,6 +239,13 @@ export function addFiles(files) {
   renderQueue();
   renderStage();
   renderFacts();
+  /* The plan says different things depending on whether a video is in the
+     queue - the floor video will really run under, and the destination's byte
+     ceiling. Dropping a clip changes both, so the panel is refreshed here
+     rather than only when a control is touched. It happens here and not in
+     render.js on purpose: that module's whole contract is that renderers never
+     reach back into state, and the plan panel is a form, not a renderer. */
+  reflectPlan();
   requestAnimationFrame(() => dispatch());
 }
 

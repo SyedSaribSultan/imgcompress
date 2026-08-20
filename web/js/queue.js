@@ -78,9 +78,9 @@ function makeRow(it) {
     '<span class="now num"></span>' +
     '<span class="sub"></span>' +
     '<span class="row-acts">' +
-    '<button type="button" class="row-act retry" title="Try this picture again" aria-label="Try this picture again" hidden>' +
+    '<button type="button" class="row-act retry" title="Try this one again" aria-label="Try this one again" hidden>' +
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>' +
-    '<button type="button" class="row-act rm" title="Remove this picture" aria-label="Remove this picture">' +
+    '<button type="button" class="row-act rm" title="Remove this one" aria-label="Remove this one">' +
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>' +
     '</span>' +
     '<span class="track" hidden><i></i></span>';

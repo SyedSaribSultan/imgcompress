@@ -101,6 +101,28 @@ export function firstInteresting() {
   return state.items.find(isReady) || state.items[0] || null;
 }
 
+/** What this run is actually about.
+ *
+ *  One place answers it, because "is there a video in the queue" decides what
+ *  several different parts of the interface should say, and a module that works
+ *  it out for itself is a module that can disagree with the others. A mixed
+ *  queue is the ordinary case, not an edge case: a person drops a folder and it
+ *  has both in it.
+ *
+ *  Both flags rather than one enum, for the same reason: `mixed` as a third
+ *  state would make every caller handle three cases when what each one actually
+ *  wants to know is "do I need to speak about pictures" and "do I need to speak
+ *  about video" - which are independent questions with independent answers. */
+export function queueKinds() {
+  let hasImages = false, hasVideo = false;
+  for (const it of state.items) {
+    if (it.isVideo) hasVideo = true;
+    else hasImages = true;
+    if (hasImages && hasVideo) break;
+  }
+  return { hasImages, hasVideo };
+}
+
 /** What the engine is actually run with for one image: the plan, plus whatever
  *  that image overrides. All three of a destination's numbers can be overridden
  *  for one image, which is the shape the override always implied. */
@@ -127,6 +149,43 @@ export function canEncodeVideo() {
  *  say exactly the same thing. */
 export const NO_VIDEO_HERE =
   "This browser can't re-encode video yet — the desktop app can.";
+
+/* ------------------------------ how big is too big ----------------------- */
+
+/* Two thresholds, because there are two different honest answers.
+ *
+ * A video encode in a browser costs memory that does not shrink to nothing:
+ * the codec pipeline, a window of decoded frames, the staging buffer. Measured
+ * after the streaming work, the encode itself adds roughly 1.3 GB on a 287 MB
+ * clip and 1.8-2.2 GB on a 663 MB one - sub-linear, but never small. On a
+ * machine with 8 GB shared with everything else, a big enough file still ends
+ * in swapping, and swapping stops the whole computer rather than one tab.
+ *
+ * So: above HEAVY, say plainly that it will take a while and the machine will
+ * be busy - and then do it, because the person asked. Above TOO_BIG, do not
+ * start; recommend the desktop tier, which streams from disk and has no
+ * equivalent ceiling (its own limit is 4 GB, and it is not holding the file in
+ * a tab). Refusing is friendlier than freezing.
+ *
+ * These are deliberately not derived from `deviceMemory`: it is absent on
+ * Safari and Firefox entirely and rounded to a power of two where it exists,
+ * so a threshold built on it would be a guess wearing a number. A flat, stated
+ * limit is honest and the desktop route is always available. */
+export const HEAVY_VIDEO_BYTES = 200 * 1024 * 1024;
+export const TOO_BIG_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
+
+/** Said before a long job starts, not after it. Plain about the cost, because
+ *  "your computer will be busy" is the part a person needs in order to decide
+ *  whether to start it now or after lunch. */
+export const HEAVY_VIDEO_WARNING =
+  "That's a big video. It will take a while, and your computer will be busy "
+  + "while it works.";
+
+/** Said instead of starting. Names the way forward rather than only the
+ *  refusal - the same shape as NO_VIDEO_HERE. */
+export const TOO_BIG_VIDEO_HERE =
+  "That video is too big to compress in a browser tab — the desktop app "
+  + "handles it straight from your disk.";
 
 /** What the engine is actually run with for one VIDEO.
  *
