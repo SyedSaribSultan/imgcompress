@@ -26,17 +26,34 @@
  * This worker is a module, unlike `worker.js` next to it, because Mediabunny
  * ships as an ES module. That is also why video is a separate worker rather
  * than more branches inside the image one: a video job holds frames, streams
- * to disk, and can run for minutes, and none of that belongs in the pool that
- * has to stay responsive enough to compress a screenshot.
+ * its output, and can run for minutes, and none of that belongs in the pool
+ * that has to stay responsive enough to compress a screenshot.
+ *
+ * MEMORY IS A CORRECTNESS PROPERTY HERE, not a nicety. A video job's peak must
+ * not scale with the size of the file: once the working set passes what the
+ * machine has, the operating system swaps and the whole computer stops
+ * responding - which is a worse failure than a slow encode, because it is not
+ * confined to this tab. Four rules keep it bounded, each with its own note
+ * where it is enforced:
+ *
+ *   - output is streamed in chunks, never assembled in one buffer
+ *     (`chunkedTarget`);
+ *   - decoded reference frames are cached under a byte budget, evicted
+ *     least-recently-used (`FRAME_CACHE_BYTES`);
+ *   - a losing candidate's bytes are released the moment it loses, not at the
+ *     end of the bake-off (`runJob`), and a probe holds one window at a time
+ *     (`searchQuality`);
+ *   - the job yields to the event loop between units of work (`breathe`), so
+ *     progress and cancellation still reach the page during the minutes.
  */
 
 import {
   ALL_FORMATS,
   BlobSource,
-  BufferTarget,
   Input,
   Mp4OutputFormat,
   Output,
+  StreamTarget,
   CanvasSink,
   Conversion,
 } from "./vendor/mediabunny.min.js";
@@ -56,6 +73,78 @@ const PROBE_FRAMES = 3;
 const VERIFY_FRAMES = 8;
 const SAMPLE_SECONDS = 20;
 const SECONDS_PER_SAMPLE = 12 * 60;
+
+/* ------------------------------------------------------- sharing the machine */
+
+/* Come up for air.
+ *
+ * A worker that never returns to its event loop is a worker that cannot post
+ * progress, cannot notice a cancellation, and gives the browser no chance to
+ * run anything else. The whole job used to be one unbroken chain of awaits on
+ * codec promises, and a 129-second encode reported ZERO distinct progress
+ * fractions - measured, in probe_video_memory.mjs, before this existed.
+ *
+ * `setTimeout(0)` rather than a microtask: a microtask queue drain does not
+ * yield to the event loop, so a `queueMicrotask` or bare `await null` would
+ * post nothing. This is not a delay for throttling's sake - the encode is not
+ * being slowed on purpose. It is the point at which queued messages flush.
+ *
+ * Deliberately NOT a sleep proportional to the work done. Idling would make a
+ * slow job slower without helping: the failure this file is fixing was memory
+ * pressure, and a process holding a gigabyte and sleeping half the time still
+ * swaps. Bounding the bytes is the fix; yielding is what keeps the UI honest
+ * while the bytes are bounded. */
+const breathe = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/* How much decoded-frame memory one job may hold.
+ *
+ * Reference frames are raw RGBA - 4 bytes a pixel, so a single 1080p frame is
+ * 8.3 MB. They are cached because re-decoding them per probe rung was measured
+ * far worse (the note on makeReader records the 480-full-file-opens version).
+ * But the cache had no bound, and windows x frames x 8.3 MB grows with the
+ * length of the clip: on a long file the cache alone outgrew the video.
+ *
+ * A byte budget, not an entry count: entries are frames and frames differ in
+ * size by resolution, so counting them bounds nothing on the files that matter.
+ * 192 MB holds roughly 23 frames of 1080p - comfortably more than one window's
+ * worth at PROBE_FRAMES or VERIFY_FRAMES - and is evicted least-recently-used.
+ * A cache with a ceiling is a cache; without one it is a leak with a name. */
+const FRAME_CACHE_BYTES = 192 * 1024 * 1024;
+
+/* Probing the WHOLE file is only allowed while the whole file is small. Above
+   this, the search samples windows even when they cover most of the duration -
+   see sampleWindows(). 64 MB is comfortably more than a phone clip of a few
+   seconds and far below the sizes that made a rung cost a full re-encode. */
+const PROBE_WHOLE_FILE_BYTES = 64 * 1024 * 1024;
+
+/* Roughly how many source bytes one probe window should cover. The window is
+   derived from the file's own bitrate, so a 30 Mbit/s clip gets a short window
+   and a 2 Mbit/s clip a long one - the cost of a rung stays about the same
+   either way, which is the property that keeps the search affordable. */
+const PROBE_WINDOW_BYTES = 24 * 1024 * 1024;
+
+/* The chunk the muxer stages output in. 4 MB rather than the library's 16 MB
+   default: that buffer is resident on top of everything else, and four writes
+   of 4 MB hand over the same total bytes as one of 16 MB while holding a
+   quarter as much at any instant. Below about 1 MB the per-write overhead
+   starts to show without buying anything. */
+const OUTPUT_CHUNK_BYTES = 4 * 1024 * 1024;
+
+/* The largest single buffer any encode in THIS JOB has been handed.
+ *
+ * Reported on the result as `largestWrite`, purely so a test can assert the
+ * streaming invariant directly: with a chunked stream target this stays at the
+ * chunk size, and anything that reassembles the whole output in one allocation
+ * makes it the size of the file. Reset per job, because a stale value from a
+ * previous job is not a fact about this one.
+ *
+ * It exists because asserting the same property through the operating system's
+ * resident-memory figure did not work. Run-to-run spread on one file measured
+ * about 19% - resident memory is sampled on an interval against a
+ * garbage-collected runtime - which is wider than the regression's own effect,
+ * so that gate could be made to pass or fail by luck. A gate has to assert the
+ * mechanism, not an aggregate the mechanism is lost inside. */
+let largestWrite = 0;
 
 
 
@@ -99,15 +188,45 @@ async function probeSupport() {
 
 /* ------------------------------------------------------------------ sampling */
 
-function sampleWindows(duration) {
+/* Where to look when deciding whether a setting is good enough.
+ *
+ * `bytes` matters as much as `duration`, and used not to be considered at all.
+ * The "just probe the whole thing" shortcut on the last line is right for a
+ * short clip off a phone and badly wrong for a short clip at a high bitrate: a
+ * ten-second 1080p near-lossless file is 287 MB, and probing the whole thing
+ * meant every rung of the search re-encoded all 287 MB. Five rungs across two
+ * formats is over 2 GB of encoding to answer a question three seconds of
+ * footage answers just as well.
+ *
+ * So the shortcut is taken only when the file is also SMALL. Above that, a
+ * window is used even though it covers most of the duration - the probe is a
+ * sample by design, and a sample of a big file has to be a sample of its
+ * bytes, not just of its seconds. */
+function sampleWindows(duration, bytes = 0) {
   if (!(duration > 0)) return [[0, SAMPLE_SECONDS]];
   let count = Math.max(1, Math.round(duration / SECONDS_PER_SAMPLE));
   if (duration > 60) count = Math.max(count, 2);
-  if (SAMPLE_SECONDS * count >= duration * 0.85) return [[0, duration]];
-  const gap = (duration - SAMPLE_SECONDS * count) / (count + 1);
+
+  const wholeFileIsCheap = !bytes || bytes <= PROBE_WHOLE_FILE_BYTES;
+  if (wholeFileIsCheap && SAMPLE_SECONDS * count >= duration * 0.85) {
+    return [[0, duration]];
+  }
+
+  /* A heavy file gets a window measured against its own weight: enough seconds
+     to judge it, few enough that a rung is not another whole encode. */
+  const perSecond = duration > 0 ? bytes / duration : 0;
+  const affordable = perSecond > 0
+    ? Math.max(2, Math.min(SAMPLE_SECONDS, PROBE_WINDOW_BYTES / perSecond))
+    : SAMPLE_SECONDS;
+  const span = Math.min(SAMPLE_SECONDS, affordable);
+  /* Never sample longer than the clip, and never claim more windows than fit. */
+  count = Math.max(1, Math.min(count, Math.floor(duration / span) || 1));
+  if (span * count >= duration) return [[0, Math.min(duration, span)]];
+
+  const gap = (duration - span * count) / (count + 1);
   const out = [];
   for (let i = 0; i < count; i += 1) {
-    out.push([gap * (i + 1) + SAMPLE_SECONDS * i, SAMPLE_SECONDS]);
+    out.push([gap * (i + 1) + span * i, span]);
   }
   return out;
 }
@@ -168,7 +287,11 @@ function makeReader(source, width, height) {
   let sink = null;
   return {
     input,
-    async frames(times) {
+    /* `region` optionally reads back only part of the frame - see tileFor().
+       The frame is still DECODED whole, because a decoder decodes frames; what
+       this avoids is keeping a 1920x1080 RGBA copy (8.3 MB) per frame when a
+       tile answers the same question. */
+    async frames(times, region = null) {
       if (!sink) {
         track = await input.getPrimaryVideoTrack();
         if (!track) return [];
@@ -180,7 +303,10 @@ function makeReader(source, width, height) {
         if (!result) continue;
         const canvas = result.canvas;
         const context = canvas.getContext("2d", { willReadFrequently: true });
-        out.push(context.getImageData(0, 0, canvas.width, canvas.height));
+        const box = region
+          ? [region.left, region.top, region.width, region.height]
+          : [0, 0, canvas.width, canvas.height];
+        out.push(context.getImageData(...box));
       }
       return out;
     },
@@ -194,6 +320,45 @@ function makeReader(source, width, height) {
   };
 }
 
+/* Which part of a frame the SEARCH looks at.
+ *
+ * The desktop tier settled this question already, and the rule it settled on
+ * is in quality.py's own words: "Neither metric is evaluated on a downscaled
+ * copy. Compression artefacts live at native resolution; scoring a shrunk
+ * version hides exactly what you are looking for. Large images are instead
+ * sampled as full-resolution tiles." Its measured drift against the whole
+ * frame is under ~0.5 SSIMULACRA 2 points near the useful thresholds.
+ *
+ * So this does the same thing for video, and for the same two reasons: a tile
+ * is honest where a downscale is not, and a 1280x720 centre tile is 3.7 MB of
+ * RGBA where the full 1080p frame is 8.3 MB. That is per frame, on both sides
+ * of every comparison, across every probe rung - which is where the search's
+ * decoded-frame memory actually goes.
+ *
+ * Centre-weighted rather than a grid: a video frame's subject is overwhelmingly
+ * central, and unlike a photograph there are many frames to average over, so
+ * the coverage a grid buys on one still is bought here by time instead.
+ *
+ * The VERIFY pass deliberately does NOT use this - it scores whole frames, and
+ * it is the number that gets reported. Cheap where it is guessing, exact where
+ * it is answering. */
+const PROBE_TILE_PIXELS = 1_200_000;   // the desktop tier's own budget
+
+function tileFor(width, height) {
+  if (width * height <= PROBE_TILE_PIXELS) return null;   // small enough whole
+  const scale = Math.sqrt(PROBE_TILE_PIXELS / (width * height));
+  /* Even dimensions keep the tile aligned to chroma subsampling, so the tile
+     is not straddling half a chroma sample and inventing colour error. */
+  const w = evenly(Math.min(width, Math.round(width * scale)));
+  const h = evenly(Math.min(height, Math.round(height * scale)));
+  return {
+    left: evenly((width - w) / 2),
+    top: evenly((height - h) / 2),
+    width: w,
+    height: h,
+  };
+}
+
 /* One pair of frames, scored the way the image tier scores a picture: the
    validated SSIMULACRA 2 port, on straight RGBA, with no alpha to weigh. */
 function score(reference, made) {
@@ -203,6 +368,110 @@ function score(reference, made) {
 
 /* ------------------------------------------------------------------ encoding */
 
+/* Where an encode's bytes go.
+ *
+ * This used to be `BufferTarget` with `fastStart: "in-memory"`, and that pair
+ * is what froze a laptop on a 300 MB file. `BufferTarget` grows one contiguous
+ * ArrayBuffer holding the entire output; `fastStart: "in-memory"` additionally
+ * forces the muxer to retain every packet so the index can be written at the
+ * front. Two full copies of the result, both resident, both growing with the
+ * file - on top of the source blob and the decoded frames in flight. Measured
+ * on a 287 MB input: peak grew 4,536 MB, 15.8x the input, and the operating
+ * system started swapping. Swapping is what stops a machine.
+ *
+ * A `StreamTarget` fed into a chunk list is the fix. Chunks arrive as the
+ * muxer produces them and are handed straight to a Blob, which the browser
+ * backs with disk rather than keeping wholly resident. Peak stops scaling with
+ * the file.
+ *
+ * The cost, disclosed rather than hidden: the moov index lands at the END of
+ * the file instead of the front, because writing it at the front requires
+ * either knowing the packet count up front (`fastStart: "reserve"` needs
+ * `maximumPacketCount` per track, which a quality SEARCH cannot know - it
+ * discovers how many packets there are by encoding) or holding everything in
+ * memory, which is the defect. For a file the person downloads to their own
+ * disk this costs nothing: a local player reads the whole file anyway. It
+ * would matter for progressive playback off a web server, which is not what
+ * this tier produces. Recorded here so nobody "fixes" it back. */
+function chunkedTarget() {
+  /* Chunks arrive with a byte POSITION and are not guaranteed to be in order,
+     nor to be written only once: a muxer revisits earlier offsets to patch box
+     sizes once it knows them. Appending them in arrival order produced a file
+     whose bytes were in the wrong places - it still had a plausible size, and
+     scoring it read no frames at all and reported a visual match of 0. That is
+     the worst shape of bug this project has a rule against: a number that
+     looks like a measurement but is an artefact. So position is honoured, and
+     a later write to the same range overwrites rather than appends. */
+  /* `seq` records arrival order, because for two writes covering the same byte
+     the LATER one is the correct value - a muxer patching a box size means the
+     patch, not the placeholder. Sorting by position alone (a stable sort keeps
+     the earlier arrival first) would ship the placeholder. */
+  const parts = [];
+  let seq = 0;
+  const stream = new WritableStream({
+    write(chunk) {
+      /* The writer reuses its buffer, so the bytes are copied out. */
+      const bytes = new Uint8Array(
+        chunk.data.buffer, chunk.data.byteOffset, chunk.data.byteLength).slice();
+      parts.push({ at: chunk.position, bytes, seq: seq += 1 });
+      /* The streaming invariant, observable. See `largestWrite`. */
+      if (bytes.byteLength > largestWrite) largestWrite = bytes.byteLength;
+    },
+  });
+  return {
+    target: new StreamTarget(stream,
+      { chunked: true, chunkSize: OUTPUT_CHUNK_BYTES }),
+    /* Assembled in position order WITHOUT ever making the file contiguous in
+       memory: the pieces are handed to the Blob constructor as a list and the
+       browser stitches them itself, backing the result with disk rather than
+       holding it all resident. Flattening into one Uint8Array here would have
+       undone the whole point of streaming - that array is exactly the
+       contiguous full-file copy `BufferTarget` used to grow. */
+    blob() {
+      /* Later writes patch earlier ones IN PLACE, and the patch is usually
+         tiny and lands near the front - Mediabunny writes an mdat header of
+         unknown length, streams megabytes of samples, then comes back to
+         position 24 with 8 bytes once it knows the size. So this cannot be a
+         forward-only walk: the first attempt appended in arrival order (the
+         file's bytes ended up in the wrong places, scoring read nothing, and
+         the reported visual match was 0), and the second skipped any write
+         that ended before the cursor - which threw that 8-byte patch away and
+         produced a file no demuxer would open.
+
+         The resolution is a byte-interval map: writes are applied newest-first
+         and each one only claims the bytes no newer write has already claimed.
+         Cheap in practice because there are a handful of writes, not one per
+         packet. */
+      const newestFirst = [...parts].sort((a, b) => b.seq - a.seq);
+      const claimed = [];                                // [from, to) taken
+      const owned = [];                                  // {at, bytes} to emit
+      for (const { at, bytes } of newestFirst) {
+        let from = at;
+        const to = at + bytes.byteLength;
+        /* Walk the gaps this write still owns, in ascending order. */
+        const overlaps = claimed
+          .filter((c) => c[1] > from && c[0] < to)
+          .sort((a, b) => a[0] - b[0]);
+        for (const [cFrom, cTo] of overlaps) {
+          if (cFrom > from) {
+            owned.push({ at: from, bytes: bytes.subarray(from - at, cFrom - at) });
+          }
+          from = Math.max(from, cTo);
+        }
+        if (from < to) {
+          owned.push({ at: from, bytes: bytes.subarray(from - at, to - at) });
+        }
+        claimed.push([at, to]);
+      }
+      owned.sort((a, b) => a.at - b.at);
+      return new Blob(owned.map((p) => p.bytes), { type: "video/mp4" });
+    },
+    /* Bytes are droppable the moment a candidate loses, and a loser used to be
+       held until the whole bake-off finished. */
+    release() { parts.length = 0; seq = 0; },
+  };
+}
+
 /* One encode, whole file or one window of it, through the browser's codec. */
 async function encodeOnce(file, opts) {
   const {
@@ -211,7 +480,13 @@ async function encodeOnce(file, opts) {
   } = opts;
 
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
-  const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
+  const sink = chunkedTarget();
+  const output = new Output({
+    /* false, not "in-memory": see chunkedTarget() above for why the index
+       moves to the end and why that is the right trade here. */
+    format: new Mp4OutputFormat({ fastStart: false }),
+    target: sink.target,
+  });
 
   const conversion = await Conversion.init({
     input,
@@ -230,8 +505,19 @@ async function encodeOnce(file, opts) {
     ...(length ? { trim: { start, end: start + length } } : {}),
   });
   if (signal) signal.addEventListener("abort", () => conversion.cancel());
-  await conversion.execute();
-  return new Blob([output.target.buffer], { type: "video/mp4" });
+  try {
+    await conversion.execute();
+    return sink.blob();
+  } catch (error) {
+    /* Whoever owns a half-written result drops it on the way out - the same
+       rule the desktop engine keeps for its half-written files. */
+    sink.release();
+    throw error;
+  } finally {
+    /* The demuxer for this one encode. Left open, a probe ladder accumulates
+       one per rung per window, each holding decoder state. */
+    try { input.dispose?.(); } catch (_) { /* best effort */ }
+  }
 }
 
 const MIN_BITRATE = 120_000;
@@ -251,24 +537,28 @@ async function searchQuality(file, format, width, height, target, windows, ctx) 
     probes += 1;
     ctx.report("looking for the setting", 0.45 * Math.min(1, probes / 5),
       `${format}, try ${probes}`);
-    const parts = [];
+    /* Encoded and scored one window at a time, then dropped.
+       The old shape encoded EVERY window first into a `parts` array and only
+       then scored them, so a rung held every window's output at once - and on
+       a long clip the sampler picks several. Each window's bytes are only
+       needed for as long as it takes to read frames back out of them.
+
+       Each window was encoded on its own, so its timeline starts at zero: the
+       reference is read at the original's offsets and the candidate at its own. */
+    const scores = [];
     for (const [start, length] of windows) {
-      parts.push(await encodeOnce(file, {
+      const part = await encodeOnce(file, {
         format, width, height, quantizer: ladder[index],
         start, length, withAudio: false, signal: ctx.signal,
-      }));
-    }
-    /* Each window was encoded on its own, so its timeline starts at zero -
-       the reference is read at the original's offsets and the candidate at
-       its own. */
-    const scores = [];
-    for (let w = 0; w < windows.length; w += 1) {
-      const [start, length] = windows[w];
+      });
       const local = frameTimes(0, length, PROBE_FRAMES);
-      const reference = await ctx.reference(start, length, PROBE_FRAMES);
-      const reader = makeReader(parts[w], width, height);
+      /* Both sides read the SAME tile of the same frame - a comparison between
+         two different regions is not a comparison. */
+      const tile = tileFor(width, height);
+      const reference = await ctx.reference(start, length, PROBE_FRAMES, tile);
+      const reader = makeReader(part, width, height);
       try {
-        const made = await reader.frames(local);
+        const made = await reader.frames(local, tile);
         const pairs = Math.min(reference.length, made.length);
         for (let i = 0; i < pairs; i += 1) {
           try { scores.push(score(reference[i], made[i])); } catch (_) { /* skip */ }
@@ -276,6 +566,9 @@ async function searchQuality(file, format, width, height, target, windows, ctx) 
       } finally {
         reader.dispose();
       }
+      /* One yield per window: often enough that progress and cancellation are
+         responsive on a long clip, rare enough to cost nothing. */
+      await breathe();
     }
     const value = pooled(scores).reported;
     memo.set(index, value);
@@ -345,12 +638,17 @@ async function oneFormat(file, format, width, height, floor, windows,
           format, width, height, bitrate: Math.round(bitrate),
           signal: ctx.signal,
         });
+        /* The blob this replaces is a whole encode of the whole file. Dropping
+           the reference here rather than letting the next assignment do it
+           keeps at most one full-size result alive across the retry. */
+        blob = null;
         blob = rated;
         capped = true;
         level = null;
         if (rated.size <= sizeCap) break;
         bitrate = bitrate * (sizeCap / rated.size) * 0.95;
         if (bitrate < MIN_BITRATE) break;
+        await breathe();
       }
     }
     /* If no usable rate exists, the quality answer stands, over the cap,
@@ -371,6 +669,10 @@ async function oneFormat(file, format, width, height, floor, windows,
       for (let i = 0; i < pairs; i += 1) {
         try { scores.push(score(reference[i], made[i])); } catch (_) { /* skip */ }
       }
+      /* VERIFY_FRAMES is eight 1080p frames per window - 66 MB of RGBA decoded
+         and scored before this line. The yield is what lets the progress this
+         loop's caller reported actually reach the page. */
+      await breathe();
     }
     verdict = pooled(scores);
   } finally {
@@ -383,6 +685,8 @@ async function oneFormat(file, format, width, height, floor, windows,
 async function runJob(job) {
   const { file, settings } = job;
   const controller = new AbortController();
+  /* This job's own figure, not whatever the last one left behind. */
+  largestWrite = 0;
 
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
@@ -395,26 +699,59 @@ async function runJob(job) {
   const shownWidth = track.displayWidth ?? track.codedWidth;
   const shownHeight = track.displayHeight ?? track.codedHeight;
   const [width, height] = frameFor(shownWidth, shownHeight, settings.maxDimension || 0);
-  const windows = sampleWindows(duration);
+  /* The file's own size decides how much of it a probe rung may re-encode. */
+  const windows = sampleWindows(duration, file.size || 0);
   const sizeCap = Math.max(0, settings.sizeCapBytes || 0);
 
   /* The original is opened once for the whole job, and its reference frames
      are remembered across probe rungs and formats - the same frames used to
-     be decoded from scratch for every single probe. */
+     be decoded from scratch for every single probe.
+
+     Bounded, though: see FRAME_CACHE_BYTES. A Map iterates in insertion order,
+     which is what makes least-recently-used cheap here - a hit re-inserts, so
+     the oldest live entry is always the first key. */
   const source = makeReader(file, width, height);
   const refCache = new Map();
+  let cachedBytes = 0;
+  const frameBytes = (frames) =>
+    frames.reduce((n, f) => n + (f?.data?.byteLength || 0), 0);
   const ctx = {
     signal: controller.signal,
     report(stage, fraction, detail) {
       self.postMessage({ type: "progress", id: job.id, stage, fraction, detail });
     },
-    async reference(start, length, count) {
-      const key = `${start.toFixed(3)}:${length.toFixed(3)}:${count}`;
-      if (!refCache.has(key)) {
-        refCache.set(key,
-          await source.frames(frameTimes(start, length, count)));
+    /* `region` is part of the KEY, not just of the read: the probe asks for a
+       centre tile and the verify pass asks for the whole frame, and handing
+       one back for the other would score a tile against a full frame. */
+    async reference(start, length, count, region = null) {
+      const shape = region
+        ? `${region.left},${region.top},${region.width},${region.height}`
+        : "full";
+      const key = `${start.toFixed(3)}:${length.toFixed(3)}:${count}:${shape}`;
+      const hit = refCache.get(key);
+      if (hit) {
+        /* Re-insert so this becomes the newest entry: the eviction below takes
+           from the front, and a frequently used window should not be dropped
+           just because it was decoded early. */
+        refCache.delete(key);
+        refCache.set(key, hit);
+        return hit;
       }
-      return refCache.get(key);
+      const frames = await source.frames(frameTimes(start, length, count), region);
+      const size = frameBytes(frames);
+      /* A single set of frames larger than the whole budget is not cached at
+         all - caching it would evict everything and then not fit. It is still
+         returned; the caller gets its frames, they are just not kept. */
+      if (size <= FRAME_CACHE_BYTES) {
+        refCache.set(key, frames);
+        cachedBytes += size;
+        while (cachedBytes > FRAME_CACHE_BYTES && refCache.size > 1) {
+          const oldest = refCache.keys().next().value;
+          cachedBytes -= frameBytes(refCache.get(oldest));
+          refCache.delete(oldest);
+        }
+      }
+      return frames;
     },
   };
   ctx.report("reading", 0.02, file.name);
@@ -445,15 +782,29 @@ async function runJob(job) {
         continue;
       }
       candidates.push({ format, bytes: candidate.bytes, score: candidate.score });
+      /* The loser's bytes go NOW, not at the end of the bake-off. `web` and
+         `original` both allow AV1 and H.264, so this used to mean two whole
+         encoded files resident at once - on a large input, that alone is
+         hundreds of megabytes held for nothing. The record of what was tried
+         (`candidates`, above) is numbers, and numbers are what the panel
+         shows: the losing FILE is not kept, only the fact that it existed. */
       if (!best) {
         best = candidate;
       } else if (beats(candidate, best, sizeCap > 0)) {
+        best.blob = null;
         best = candidate;
+      } else {
+        candidate.blob = null;
       }
+      await breathe();
     }
   } finally {
     source.dispose();
     try { input.dispose?.(); } catch (_) { /* best effort */ }
+    /* The decoded frames are the other half of the peak, and the job is over.
+       Nothing downstream reads them - the result carries numbers and one blob. */
+    refCache.clear();
+    cachedBytes = 0;
   }
 
   if (!best) {
@@ -488,6 +839,10 @@ async function runJob(job) {
     /* Said plainly, because it is true and because the person is entitled to
        know which tier they are on: this is the browser's own encoder. */
     note: "compressed in your browser - the desktop app can go smaller",
+    /* Shown to nobody: the streaming invariant, so a test can assert that
+       output still leaves the muxer in chunks rather than as one whole-file
+       buffer. See `largestWrite`. */
+    largestWrite,
   };
 }
 
