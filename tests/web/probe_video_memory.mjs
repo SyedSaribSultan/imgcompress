@@ -314,6 +314,83 @@ try {
       || `largest single write ${mb(invariant.largestWrite)} of a `
          + `${mb(invariant.bytes)} result (ceiling ${mb(chunkCeiling)})`);
 
+  /* The reassembly itself, against a reference implementation.
+     The muxer's writes carry byte POSITIONS, arrive out of order, overlap, and
+     patch each other; the worker resolves them newest-write-wins and hands the
+     pieces to a Blob. Two bugs already came out of that and both produced a
+     file of plausible SIZE that no demuxer would open - which reads as a
+     quality failure, not a corruption. Encoding cannot localise this, so the
+     algorithm is checked directly against the obvious-but-wasteful version:
+     write everything into one flat buffer in arrival order. They must agree
+     byte for byte.
+     The gap case is the one that regressed: a Blob concatenates its pieces, so
+     a hole between two writes silently CLOSES, shifting every byte after it. */
+  const agrees = await page.evaluate(() => {
+    const resolve = (parts) => {
+      const newestFirst = [...parts].sort((a, b) => b.seq - a.seq);
+      const claimed = [], owned = [];
+      for (const { at, bytes } of newestFirst) {
+        let from = at;
+        const to = at + bytes.byteLength;
+        const overlaps = claimed
+          .filter((c) => c[1] > from && c[0] < to).sort((a, b) => a[0] - b[0]);
+        for (const [cFrom, cTo] of overlaps) {
+          if (cFrom > from) {
+            owned.push({ at: from, bytes: bytes.subarray(from - at, cFrom - at) });
+          }
+          from = Math.max(from, cTo);
+        }
+        if (from < to) owned.push({ at: from, bytes: bytes.subarray(from - at, to - at) });
+        claimed.push([at, to]);
+      }
+      owned.sort((a, b) => a.at - b.at);
+      const pieces = [];
+      let cursor = 0;
+      for (const p of owned) {
+        if (p.at > cursor) pieces.push(new Uint8Array(p.at - cursor));
+        pieces.push(p.bytes);
+        cursor = p.at + p.bytes.byteLength;
+      }
+      const out = [];
+      for (const b of pieces) for (const v of b) out.push(v);
+      return out;
+    };
+    const reference = (parts) => {
+      let end = 0;
+      for (const p of parts) end = Math.max(end, p.at + p.bytes.byteLength);
+      const buf = new Uint8Array(end);
+      for (const p of [...parts].sort((a, b) => a.seq - b.seq)) buf.set(p.bytes, p.at);
+      return [...buf];
+    };
+    const mk = (at, vals, seq) => ({ at, bytes: new Uint8Array(vals), seq });
+    const cases = {
+      "the muxer's real shape: a big write then a tiny later patch":
+        [mk(0, [1, 2, 3, 4, 5, 6, 7, 8], 1), mk(4, [99, 98], 2)],
+      "a newer write fully covering an older one":
+        [mk(2, [7, 7, 7], 1), mk(0, [1, 2, 3, 4, 5, 6], 2)],
+      "an older write around a newer one - both its ends must survive":
+        [mk(0, [1, 2, 3, 4, 5, 6], 1), mk(2, [9, 9], 2)],
+      "three writes overlapping each other":
+        [mk(0, [1, 1, 1, 1, 1, 1, 1, 1], 1), mk(2, [2, 2, 2, 2], 2), mk(4, [3, 3], 3)],
+      "a gap between two writes must stay a gap":
+        [mk(0, [1, 2], 1), mk(5, [3, 4], 2)],
+      "the same range written twice - the later one wins":
+        [mk(0, [1, 1, 1], 1), mk(0, [2, 2, 2], 2)],
+      "writes arriving out of position order":
+        [mk(8, [8, 8], 1), mk(0, [1, 1, 1, 1], 2), mk(4, [4, 4, 4, 4], 3)],
+    };
+    const bad = [];
+    for (const [name, parts] of Object.entries(cases)) {
+      if (JSON.stringify(resolve(parts)) !== JSON.stringify(reference(parts))) {
+        bad.push(name);
+      }
+    }
+    return { total: Object.keys(cases).length, bad };
+  });
+  check(`reassembling the muxer's writes matches a flat-buffer reference `
+    + `(${agrees.total} cases)`,
+    agrees.bad.length === 0, agrees.bad.join("; "));
+
   check("the big video was taken as a video", !!outcome && outcome.isVideo,
     outcome ? JSON.stringify(outcome).slice(0, 120) : "no item");
   check("the job finished rather than dying", !!outcome && outcome.status === "done",

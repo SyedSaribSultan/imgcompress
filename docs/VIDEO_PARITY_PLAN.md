@@ -6,6 +6,43 @@
 > **taken as approved at my recommendation** and recorded as decisions. The
 > resource work in Phase R was added after the owner reported a 300 MB video
 > freezing the whole laptop.
+>
+> **STATUS: IMPLEMENTED 2026-08-20**, in two commits on branch `video-parity`.
+>
+> | Phase | State |
+> | --- | --- |
+> | R — resources | Done. 287 MB clip: peak growth 4,536 MB → ~1,300 MB, 129s → 86s. Correctness byte-identical (still.mp4 → 6,881 bytes at 74.7) |
+> | R6/R7 — size honesty | Done. Heavy (>200 MB) is said and then done; too big (>2 GB) is refused with the desktop route named |
+> | 0 — see it fail | Done. Both new gates observed red first, recorded in the commits |
+> | 1 — the model | Done. `queueKinds()`; `videoPlan()` untouched as planned |
+> | 2 — the controls | Done. Floors that really run, the byte ceiling read-only, mixed-queue attribution |
+> | 3 — the copy | Done, including the `twitter:*` pair the earlier SEO audit missed |
+> | 4 — propagation | Done. Desktop app and the 13 generated pages regenerated, not hand-edited |
+> | 5 — verification | Done. 231 Python tests, ruff, three generated-file checks, e2e 85/85, ten browser probes |
+>
+> **Two things learned that changed the plan as written, both recorded in the
+> code rather than only here:**
+>
+> 1. **Gating on resident memory does not work**, and the attempt is preserved
+>    in `probe_video_memory.mjs`'s header so nobody rebuilds it. Run-to-run
+>    spread on one file is ~19% (1,824 / 2,011 / 2,144 / 2,176 MB on the same
+>    input), because RSS is sampled on an interval against a garbage-collected
+>    runtime. A budget tight enough to catch the whole-file-buffer regression
+>    failed honest builds; a loose one let `fastStart: "in-memory"` through
+>    while showing green — verified by reintroducing it. The gate therefore
+>    asserts the **mechanism** (the largest single buffer the muxer hands over:
+>    4 MB when fixed, 87.7 MB when broken) and keeps RSS only as a loose
+>    runaway ceiling.
+> 2. **`fastStart: "reserve"` is unavailable to us**, which the plan had listed
+>    as the tidy answer. It requires `maximumPacketCount` per track, and a
+>    quality *search* cannot know that — it discovers the packet count by
+>    encoding. So the moov index moves to the end of the file, which costs
+>    nothing for a local download and is documented where someone would
+>    otherwise "fix" it back.
+>
+> **Still open, deliberately:** the C1 HDR performance question (a compiled
+> path conflicts with the pip-only rule — an owner decision recorded in the
+> video plan), and i18n copy, which needs a person who speaks the language.
 
 ## Part 1 — Specifications, compatibility, and why your laptop froze
 

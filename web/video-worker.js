@@ -203,6 +203,13 @@ async function probeSupport() {
  * sample by design, and a sample of a big file has to be a sample of its
  * bytes, not just of its seconds. */
 function sampleWindows(duration, bytes = 0) {
+  /* No usable duration - a container with no label, or one that lies. Asking
+     for the first 20 seconds is deliberate and is NOT the same as asking for
+     nothing: a trim wider than the clip is clamped by the encoder to what
+     exists, whereas a zero length means "no trim" downstream (see the `trim`
+     spread in encodeOnce) and would probe the WHOLE file, which on an
+     unlabelled 2 GB clip is the worst available answer. Reading a frame past
+     the end simply yields nothing and is skipped by the scorer. */
   if (!(duration > 0)) return [[0, SAMPLE_SECONDS]];
   let count = Math.max(1, Math.round(duration / SECONDS_PER_SAMPLE));
   if (duration > 60) count = Math.max(count, 2);
@@ -464,7 +471,23 @@ function chunkedTarget() {
         claimed.push([at, to]);
       }
       owned.sort((a, b) => a.at - b.at);
-      return new Blob(owned.map((p) => p.bytes), { type: "video/mp4" });
+
+      /* Any byte nobody wrote is still a byte of the file, and a Blob built
+         from the pieces alone would simply close the hole - shifting everything
+         after it and corrupting the file exactly as silently as the
+         arrival-order bug did. So holes are emitted as zeroes, and the result's
+         length is checked against where the writes actually end.
+         A muxer should never leave a hole; this is here so that if one ever
+         does, the output is wrong in a way a demuxer rejects rather than wrong
+         in a way that scores 0 and looks like a quality problem. */
+      const pieces = [];
+      let cursor = 0;
+      for (const p of owned) {
+        if (p.at > cursor) pieces.push(new Uint8Array(p.at - cursor));
+        pieces.push(p.bytes);
+        cursor = p.at + p.bytes.byteLength;
+      }
+      return new Blob(pieces, { type: "video/mp4" });
     },
     /* Bytes are droppable the moment a candidate loses, and a loser used to be
        held until the whole bake-off finished. */
