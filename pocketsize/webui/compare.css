@@ -1,0 +1,309 @@
+/* COPIED from web/css/compare.css by tools/sync_webui_assets.py - DO NOT EDIT.
+ * Edit the file in web/ and re-run the tool; CI fails on a stale copy. */
+/* The stage: the original and the result, on top of each other.
+ *
+ * The comparison is the product, so it gets the largest region and the fewest
+ * ornaments. Two bars float over it and nothing else does - mode and zoom above,
+ * identity and output below.
+ *
+ * Both images sit inside one #frame at the original's natural pixel size, and
+ * the frame is what zooms and pans. That is the reason they cannot drift apart:
+ * a single transform moves both, so any pixel of the result is over the pixel of
+ * the original it replaced at every zoom level. The split is applied as a clip
+ * on the top layer, in the frame's own coordinates, which JS recomputes from the
+ * divider's position on screen - so the caliper cuts where it appears to cut
+ * however far the image has been pushed around.
+ */
+
+#view {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+#view[data-panning="1"] { cursor: grabbing; }
+
+/* Sized in JS to the original's natural pixel dimensions, which is almost always
+   larger than the region it sits in.
+ *
+ * Centring is done by the transform, not by the layout. This was a grid with
+ * `place-items: center` first, and it does not work: an item bigger than its grid
+ * area is clamped to the start edge rather than overflowing evenly, so a 1400px
+ * frame in a 1080px region sat hard against the left and hung off the bottom.
+ * `left/top: 50%` plus `translate(-50%, -50%)` centres on the element's own box
+ * and cannot be clamped, at any zoom. */
+#frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* Checkerboard, so transparency reads as transparency rather than as white.
+     Two gradients at 16px is the whole trick; it costs no image request. */
+  background-color: var(--c-checker-ground);
+  background-image:
+    linear-gradient(45deg, var(--c-checker-square) 25%, transparent 25%, transparent 75%, var(--c-checker-square) 75%),
+    linear-gradient(45deg, var(--c-checker-square) 25%, transparent 25%, transparent 75%, var(--c-checker-square) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
+/* Every layer fills the frame. The result is stretched to the original's box on
+   purpose: resizing is part of the plan, and what is being compared is how the
+   two look at the size they will be seen at, not their pixel grids.
+   Video is two more layers in the same two positions - one frame, one
+   transform - so the split, the divider and the zoom work on a clip exactly as
+   they work on a picture, with nothing about them knowing which it is. */
+#frame > img,
+#frame > video,
+#frame > .after,
+#frame > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+#frame > .after > img,
+#frame > .after > video { width: 100%; height: 100%; display: block; }
+/* [hidden] wins over these anyway - see base.css - but a layer with no source
+   must never be a black rectangle sitting over the one that has one. */
+#frame > video { background: transparent; }
+
+/* Pixels stay pixels past 1:1. Inspecting compression artefacts through a
+   smoothing filter would be inspecting the filter. */
+#view[data-sharp="1"] #frame img,
+#view[data-sharp="1"] #frame canvas { image-rendering: pixelated; }
+
+.after { clip-path: inset(0 0 0 var(--clip, 50%)); }
+
+/* Mode is carried on the view, so switching it is one attribute rather than a
+   set of hidden flags that could disagree with each other. */
+#view[data-mode="after"] .after { clip-path: none; }
+#view[data-mode="diff"] .after { display: none; }
+#view:not([data-mode="diff"]) #img-diff { display: none; }
+#view[data-mode="diff"] #img-diff { display: block; }
+
+/* ------------------------------ the caliper ------------------------------ */
+
+/* Full height of the viewport, not of the image: it is a measuring edge on the
+   screen, and the two labels ride it so the reading is attached to the thing
+   being read rather than parked in a corner. */
+#divider {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--c-over-line);
+  box-shadow: 0 0 0 1px var(--c-over-shadow);
+  pointer-events: none;
+}
+#divider > .tag {
+  position: absolute;
+  top: var(--s-3);
+  padding: 3px var(--s-2);
+  border-radius: 999px;
+  background: var(--c-over-glass);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--c-over-ink);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+#divider > .tag.l { right: var(--s-2); }
+#divider > .tag.r { left: var(--s-2); }
+
+/* The caliper's grip: the one place the page must LOOK draggable, because
+   dragging it is the product. A white disc with outward chevrons, riding the
+   line's midpoint; hit-testing still belongs to the invisible range slider. */
+#divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background:
+    var(--icon-grip) center / 16px no-repeat,
+    var(--c-over-grip);
+  box-shadow: 0 1px 4px var(--c-over-shadow);
+}
+
+/* The real control over the split: a native range, invisible but present, so
+   the divider is draggable with a mouse and arrow-steppable with a keyboard
+   without any of that being reimplemented here. */
+#split {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: ew-resize;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+#split::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 40px;
+  height: 100vh;
+  cursor: ew-resize;
+}
+#split::-moz-range-thumb {
+  width: 40px;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+/* Only in split mode is there anything to drag. */
+#view:not([data-mode="split"]) ~ #split,
+#view:not([data-mode="split"]) #divider { display: none; }
+
+/* ------------------------------ floating bars ---------------------------- */
+
+/* Wraps on a narrow screen. The bottom bar carries the name, the extension, two
+   figures and two buttons; on a phone that is more than one row's worth, and
+   squeezing it onto one row is what cut the filename down to four legible
+   characters. */
+.stage-bar {
+  position: absolute;
+  left: var(--s-3);
+  right: var(--s-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-lg);
+  /* Floating glass over the photograph: mostly the page ground, with the
+     picture faintly alive behind it. */
+  background: color-mix(in srgb, var(--c-bg) 86%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--elev-2);
+  z-index: 2;
+}
+.stage-bar.top { top: var(--s-3); }
+.stage-bar.bottom { bottom: var(--s-3); }
+
+/* The name is editable in place: renaming is an edit, not a fact about the
+   result, so it looks like text until it is being typed in. */
+/* Wide enough that a real filename is still a filename. 20ch left a 60-character
+   screenshot name showing 19 legible characters, which is not enough to tell two
+   exports of the same screen apart - the one thing the name is for. */
+#out-name {
+  flex: 1 1 30ch;
+  min-width: 12ch;
+  max-width: 44ch;
+  border-color: transparent;
+  background: transparent;
+}
+/* Editable, and it says so before it is touched: the pencil appears with the
+   border, together making "this is a field" perceivable. */
+#out-name:hover:not(:focus) {
+  border-color: var(--c-line);
+  background-image: var(--icon-pencil);
+  background-repeat: no-repeat;
+  background-position: right var(--s-2) center;
+  background-size: 13px;
+}
+
+.stage-bar .size { font-size: 15px; color: var(--c-ink-2); }
+.stage-bar .saved { font-size: 15px; color: var(--c-good); }
+
+.zoom { display: inline-flex; align-items: center; gap: var(--s-1); }
+.zoom > .z { min-width: 5ch; text-align: center; font-size: 14px; color: var(--c-ink-2); }
+
+/* ------------------------------- transport ------------------------------- */
+
+/* Play, position, elapsed. On the top bar rather than on the player itself,
+   because the split's own slider covers the whole stage and native controls
+   would be unreachable exactly when the comparison is in use. Both players
+   move together: this drives the original and the compressed side follows. */
+.transport {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+.transport > .z {
+  min-width: 11ch;
+  text-align: center;
+  font-size: 14px;
+  color: var(--c-ink-2);
+}
+/* A real range, kept native - the accent is the app's own, and nothing here
+   repaints a control it does not fully own. */
+.scrub {
+  flex: 1 1 140px;
+  min-width: 80px;
+  max-width: 260px;
+  accent-color: var(--c-accent);
+  cursor: pointer;
+}
+
+/* ------------------------------ stage empty ------------------------------ */
+
+/* What is true when there is nothing to compare, said plainly. Some files this
+   browser cannot decode at all, and this is also where that is said - the
+   honest substitute for a preview is a sentence, not a broken-image glyph. */
+#stage-hero {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  padding: var(--s-5);
+  text-align: center;
+  color: var(--c-ink-3);
+}
+#stage-hero > * { max-width: min(52ch, 100%); }
+
+/* Which image is showing, when the caliper is not on screen to say it. */
+#mode-badge {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px var(--s-3);
+  border-radius: 999px;
+  background: var(--c-over-glass);
+  color: var(--c-over-ink);
+  font-size: 13px;
+  white-space: nowrap;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ------------------------------- progress -------------------------------- */
+
+/* While an image is being measured, the stage shows the untouched original and
+   this line over it. Never a bare spinner: it names the format being tried, so
+   the wait is legible rather than merely long. */
+#stage-work {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4);
+  border-radius: 999px;
+  background: var(--c-over-glass-strong);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--c-over-ink);
+  font-size: 15px;
+  z-index: 2;
+}

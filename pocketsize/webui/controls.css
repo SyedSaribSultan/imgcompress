@@ -1,0 +1,390 @@
+/* COPIED from web/css/controls.css by tools/sync_webui_assets.py - DO NOT EDIT.
+ * Edit the file in web/ and re-run the tool; CI fails on a stale copy. */
+/* Controls: buttons, native form fields, the toast, the one dialog.
+ *
+ * Two button weights and no more. `.btn` is every action; `.btn.primary` is the
+ * one action a region is for, and a region gets at most one. Everything else -
+ * quieter, smaller, iconic - is the same button with less padding, because a
+ * third weight is a third thing to decide and nobody could tell the second from
+ * the third anyway.
+ *
+ * The form fields are native and stay native. A <select> here is a real select:
+ * the operating system's own popup opens, the keyboard works, and no part of
+ * this file tries to repaint a control it does not fully own.
+ */
+
+.btn {
+  font: inherit;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  /* A hard plate, not a soft shadow: zero blur, one flat colour, so the edge
+     reads as the side of a physical key rather than a glow under a card. */
+  box-shadow: 0 3px 0 -1px var(--c-line-hover);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fx) var(--ease-fx),
+    border-color var(--dur-fx) var(--ease-fx),
+    box-shadow var(--dur-fx) var(--ease-fx),
+    transform var(--dur-move) var(--ease-move);
+}
+.btn:hover:not(:disabled) {
+  background: var(--c-raised-hover);
+  border-color: var(--c-line-hover);
+  box-shadow: 0 4px 0 -1px var(--c-line-hover);
+  transform: translateY(calc(-1px * var(--motion-scale)));
+}
+/* The press is the state: the key travels down and its edge shortens by the
+   same amount, so the top face lands where the plate was. Both values move
+   through the spatial scale, so a reduced-motion preference collapses the
+   travel without flattening the button. */
+.btn:active:not(:disabled) {
+  background: var(--c-raised-active);
+  box-shadow: 0 1px 0 -1px var(--c-line-hover);
+  transform: translateY(calc(2px * var(--motion-scale)));
+}
+.btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+
+.btn > svg { flex: none; width: 16px; height: 16px; }
+
+.btn.primary {
+  background: var(--c-chrome-face);
+  border-color: var(--c-chrome-edge);
+  color: var(--c-chrome-ink);
+  box-shadow: 0 3px 0 -1px var(--c-chrome-shadow);
+  font-weight: 600;
+}
+/* The face keeps its colour through hover and press - what changes is the
+   edge and the travel, which is what makes it feel like a key rather than a
+   rectangle that lights up. */
+.btn.primary:hover:not(:disabled) {
+  background: var(--c-chrome-face);
+  border-color: var(--c-chrome-edge);
+  box-shadow: 0 4px 0 -1px var(--c-chrome-shadow);
+}
+.btn.primary:active:not(:disabled) {
+  background: var(--c-chrome-face);
+  border-color: var(--c-chrome-edge);
+  box-shadow: 0 1px 0 -1px var(--c-chrome-shadow);
+}
+
+.btn.sm { padding: var(--s-1) var(--s-2); font-size: 14px; }
+.btn.sm > svg { width: 14px; height: 14px; }
+
+/* No border, no fill - for actions that sit inside something already framed. */
+.btn.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--c-ink-2);
+  box-shadow: none;
+}
+.btn.quiet:hover:not(:disabled) { background: var(--c-sunk); color: var(--c-ink); }
+
+/* ------------------------------ form fields ------------------------------- */
+
+select, input[type="text"], input[type="number"] {
+  font: inherit;
+  padding: var(--s-1) var(--s-2);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  max-width: 100%;
+  box-shadow: var(--elev-1);
+  transition:
+    border-color var(--dur-fx) var(--ease-fx),
+    box-shadow var(--dur-fx) var(--ease-fx);
+}
+select:hover, input[type="text"]:hover, input[type="number"]:hover {
+  border-color: var(--c-line-hover);
+}
+input[type="number"] { width: 7ch; }
+
+/* The select drops the platform chrome for the system's own: a quiet chevron
+   in a metal grey that reads on both grounds, so one glyph serves both themes
+   without a wrapper element per control. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: calc(var(--s-2) + 20px);
+  background-image: var(--icon-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--s-2) center;
+  background-size: 14px;
+}
+
+/* A labelled row in the plan. The label is the question, the control is the
+   answer, and they stay on one line until the column is too narrow to hold
+   both - at which point the control drops below its own label rather than
+   being squeezed to nothing. */
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  padding: var(--s-1) 0;
+}
+.field > label {
+  flex: 0 0 112px;
+  color: var(--c-ink-2);
+}
+/* min-width: 0 is load-bearing, not defensive. A <select>'s intrinsic minimum is
+   the width of its longest <option>, and a flex item will not shrink below its
+   intrinsic minimum unless told it may - so "indistinguishable unless you
+   compare" propped the whole sidebar open to 497px inside a 375px viewport and
+   the page scrolled sideways. */
+.field > select,
+.field > input { flex: 1 1 120px; min-width: 0; }
+
+/* The row that pairs two numbers - a size and its unit, a limit and its edge.
+   Allowed to wrap: a control squeezed until its own value cannot be read is
+   worse than a second line. */
+.field .pair {
+  flex: 1 1 120px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  min-width: 0;
+}
+/* Wide enough that its shortest option reads whole when selected; the longer
+   "never" option may ellipsise, and the sentence under the plan restates it. */
+#shrink-mode { flex: 1 1 auto; min-width: 11ch; }
+.field .pair > * { min-width: 0; }
+.field .pair > select { flex: 1; }
+/* Wide enough for four digits and the spinner. At the shared 7ch it clipped
+   "2560" to "256" plus an arrow, which reads as a different number. */
+.field .pair > input[type="number"] { flex: 0 0 9ch; width: auto; }
+
+/* A static unit beside a number, not a control - so it is never focusable and
+   never looks like something to click. */
+.field .pair > .unit { flex: none; color: var(--c-ink-3); align-self: center; }
+
+/* Wins over `.field > label` on specificity, deliberately: a checkbox's label is
+   the whole row, not the 92px question column, and inheriting that basis broke
+   "Add -min to filenames" across three lines. */
+.field > label.check {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 1 1 100%;
+  color: var(--c-ink-2);
+}
+.check input { margin: 0; flex: none; }
+
+/* What the current plan will actually do, in words, under the fields that set
+   it. It is a readout and never a control, so it is never focusable. */
+.plan-why {
+  color: var(--c-ink-3);
+  font-size: 14px;
+  padding-top: var(--s-2);
+}
+
+/* ----------------------------- more choices ------------------------------ */
+
+/* The rest of the plan, folded away. The three fields above answer the whole
+   question for almost everyone; these answer it more precisely for the people
+   who ask. Native <details>, so it costs no script and the state is the
+   browser's own. */
+#more-choices {
+  margin-top: var(--s-3);
+  border-top: 1px solid var(--c-line);
+  padding-top: var(--s-2);
+}
+#more-choices > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+  color: var(--c-ink-2);
+  padding: var(--s-2) 0;
+  user-select: none;
+  list-style: none;
+  transition: color var(--dur-fx) var(--ease-fx);
+}
+#more-choices > summary::-webkit-details-marker { display: none; }
+#more-choices > summary::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  flex: none;
+  background: var(--c-ink-3);
+  -webkit-mask: var(--icon-chevron) center / contain no-repeat;
+  mask: var(--icon-chevron) center / contain no-repeat;
+  rotate: -90deg;
+  transition: rotate var(--dur-move) var(--ease-move);
+}
+#more-choices[open] > summary::before { rotate: 0deg; }
+#more-choices > summary:hover { color: var(--c-ink); }
+
+/* ------------------------------ touch floor ------------------------------ */
+
+/* Wherever a finger is the pointer - and on any one-column layout, where it
+   probably is - every control clears the system's minimum target. Desktop
+   with a mouse keeps its compact heights. */
+@media (max-width: 860px), (pointer: coarse) {
+  button,
+  select,
+  input[type="text"],
+  input[type="number"],
+  summary,
+  .skip {
+    min-height: var(--s-target);
+  }
+  /* A checkbox's target is its label - the whole row toggles it - so the row
+     clears the floor and the box itself just gets big enough to read. */
+  label.check { min-height: var(--s-target); }
+  .check input { width: 20px; height: 20px; }
+  /* An inline link is as tall as its line; a tappable one is as tall as a
+     fingertip. */
+  #cli-note a { display: inline-flex; align-items: center; min-height: var(--s-target); }
+}
+
+/* ------------------------------- segmented ------------------------------- */
+
+/* Mutually exclusive choices where all of them fit on screen: cheaper to read
+   than a select, because the alternatives are visible without opening
+   anything. Pressed state is carried by aria-pressed, so the styling and the
+   accessibility name cannot drift apart. */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--c-raised);
+  box-shadow: var(--elev-1);
+}
+.segmented > button {
+  font: inherit;
+  font-weight: 500;
+  padding: var(--s-1) var(--s-3);
+  border: 0;
+  border-right: 1px solid var(--c-line);
+  background: transparent;
+  color: var(--c-ink-2);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fx) var(--ease-fx),
+    color var(--dur-fx) var(--ease-fx);
+}
+.segmented > button:hover:not([aria-pressed="true"]) {
+  background: var(--c-sunk);
+  color: var(--c-ink);
+}
+.segmented > button:last-child { border-right: 0; }
+.segmented > button[aria-pressed="true"] {
+  background: var(--c-accent);
+  color: var(--c-accent-ink);
+}
+/* Out of service but still speaking: a mode that does not apply is dimmed and
+   keeps focus, so its reason stays reachable - the title on hover, the toast
+   on activation. A disabled= button is silent to keyboard and screen reader
+   both, which is how a control's explanation goes unread. */
+.segmented > button[aria-disabled="true"],
+.segmented > button[aria-disabled="true"]:hover {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+  color: var(--c-ink-2);
+}
+
+/* -------------------------------- toast ---------------------------------- */
+
+/* Transient, and never the only place something is said. Failures also land on
+   the row they belong to; this is the acknowledgement, not the record. */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--s-5);
+  transform: translate(-50%, calc(100% + var(--s-6)));
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: min(90vw, 520px);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-lg);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  box-shadow: var(--elev-3);
+  transition: transform var(--dur-move) var(--ease-move);
+  z-index: 20;
+}
+#toast[data-up="1"] { transform: translate(-50%, 0); }
+/* A receipt must never stand between the pointer and a control: clicks pass
+   through the toast to whatever is under it. Only its own action is real. */
+#toast { pointer-events: none; }
+#toast > #toast-action { flex: none; pointer-events: auto; }
+
+/* ------------------------------ drop overlay ------------------------------ */
+
+/* What letting go will do, said over everything while a drag is in flight.
+   Never interactive - the drop still lands on the window. */
+#drop-say {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--s-3) var(--s-6);
+  border-radius: 999px;
+  background: var(--c-accent);
+  color: var(--c-accent-ink);
+  font-size: 18px;
+  font-weight: 600;
+  box-shadow: var(--elev-3);
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* ------------------------------- help card ------------------------------- */
+
+#help-keys {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s-2) var(--s-3);
+  align-items: baseline;
+  padding: var(--s-3) 0;
+}
+#help-keys > div { display: contents; }
+#help-keys kbd { justify-self: start; }
+#help-keys span { color: var(--c-ink-2); }
+
+/* ----------------------- what differs from automatic ---------------------- */
+
+/* The dot: this field is not where the destination would put it. State made
+   visible instead of remembered. */
+.field[data-changed] > label::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--c-accent);
+  vertical-align: middle;
+}
+
+/* -------------------------------- dialog --------------------------------- */
+
+dialog {
+  max-width: min(92vw, 460px);
+  padding: var(--s-5);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius-lg);
+  background: var(--c-raised);
+  color: var(--c-ink);
+  box-shadow: var(--elev-3);
+}
+dialog::backdrop {
+  background: var(--overlay-dim);
+  backdrop-filter: blur(var(--overlay-blur));
+}
+dialog p { padding: var(--s-3) 0 var(--s-4); color: var(--c-ink-2); }
+dialog .row { display: flex; gap: var(--s-2); justify-content: flex-end; }
