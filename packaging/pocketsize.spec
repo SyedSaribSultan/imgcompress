@@ -57,6 +57,28 @@ ICON = REPO / "web" / "icon-512.png"
 CODESIGN_IDENTITY = os.environ.get("POCKETSIZE_CODESIGN_IDENTITY") or None
 ENTITLEMENTS_FILE = os.environ.get("POCKETSIZE_ENTITLEMENTS") or None
 
+# A build for the machine it was built on, rather than for distribution.
+#
+# `av` and `imagequant` are excluded from every shipped artifact because their
+# wheels carry GPL-licensed compiled code, and putting that inside a downloadable
+# installer makes us the distributor - see the excludes below and
+# docs/THIRD_PARTY_NOTICES.md. That reasoning is about *distribution*, and it is
+# the whole reason the exclusion exists.
+#
+# It says nothing about a build somebody makes for their own use. Running GPL
+# code you installed yourself is what the licence is for, so this switch admits
+# both engines - full video support and the better palette quantizer - to a
+# bundle that is not going anywhere.
+#
+# The default is off, so the plain command in packaging/README.md and every
+# release build stay distributable. Nothing in CI sets it, and the release gate
+# fails a build carrying either engine, which means a private bundle cannot be
+# published by accident even if this variable were set on a release runner.
+#
+# Artifacts built with it are named `-private` by the packaging step and must
+# not be shared. That is a naming convention, not an enforcement.
+PRIVATE_BUILD = bool(os.environ.get("POCKETSIZE_PRIVATE_BUILD"))
+
 
 # --------------------------------------------------------------------------- #
 # entry scripts
@@ -177,10 +199,28 @@ excludes = [
     "PySide2",
     "PySide6",
     "gi",
-    # Nothing here draws with Tk. Pillow's own hook already excludes it, but
-    # this build also pulls in scipy and pywebview, and the exclusion should
-    # not depend on which package happened to be analysed first.
-    "tkinter",
+    # NOTE: tkinter is deliberately NOT excluded, though it was until a frozen
+    # build proved why it cannot be. `pick_folder` in server.py opens the OS
+    # folder chooser with `tkinter.filedialog`, and it is written to degrade
+    # quietly:
+    #
+    #     try:
+    #         import tkinter
+    #     except Exception:
+    #         return ""
+    #
+    # Excluding Tk therefore produced an application that started, ran, and
+    # compressed correctly while "Choose a folder", "Watch folder" and the save
+    # destination dialog all did nothing at all - the picker returned "" and the
+    # UI reported the folder path as unavailable. The old comment here read
+    # "Nothing here draws with Tk", which was true of the drawing and false of
+    # the file dialogs, and no test caught it because every test that needs a
+    # folder passes one in.
+    #
+    # This is the same shape as the engine problem documented in
+    # docs/PACKAGING.md: an optional import behind `except Exception` cannot
+    # fail loudly, so leaving it out of the bundle costs functionality and
+    # reports nothing.
     # Decision V3: the installers must not bundle PyAV. Its wheels carry a
     # complete FFmpeg with GPL x264/x265 inside, and *distributing* that in a
     # shipped binary is a different legal act from depending on it via pip.
@@ -245,6 +285,16 @@ excludes = [
     "sympy",
     "networkx",
 ]
+
+# A private build keeps the two GPL engines. Both are named in `excludes` above
+# for the distributable case; removing them from that list is what lets the
+# Analysis collect them, and the `hiddenimports` addition is what makes it
+# actually happen - `av` is reached through a `try: import av` in video.py and
+# `imagequant` through the same shape in encoders.py, so neither is visible to
+# the bytecode scan. `--check` on the built binary is what proves it worked.
+if PRIVATE_BUILD:
+    excludes = [name for name in excludes if name not in ("av", "imagequant")]
+    hiddenimports = hiddenimports + ["av", "imagequant"]
 
 a = Analysis(
     [cli_entry, gui_entry],

@@ -23,9 +23,11 @@ The third is the release gate itself, which reads that report.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -38,16 +40,54 @@ RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 GPL_ENGINES = ("av", "imagequant")
 
 
+def _spec_lists(env: dict) -> tuple:
+    """Execute the spec's exclude/hiddenimport logic under a given environment
+    and return what it actually decided.
+
+    Read as text, this file's own comments were enough to fool a regex: the
+    prose mentions `"av"` and `"imagequant"` while explaining why they are
+    excluded, and a `"([^"]+)"` scan over the block cannot tell a package name
+    from a quoted word in a sentence. The earlier version of this test broke
+    that way, which was luck - the same version could not see a conditional
+    at all, so a spec that removed both engines from `excludes` at build time
+    would have passed it unchanged.
+
+    So the logic is executed rather than parsed. The spec is a Python file, but
+    it cannot simply be imported: PyInstaller injects `Analysis`, `EXE`,
+    `COLLECT` and friends as globals, and it reads the installed distribution.
+    Only the part above `a = Analysis(` is needed to know what the lists hold,
+    and that part is plain Python, so it is executed on its own.
+    """
+    text = SPEC.read_text(encoding="utf-8")
+    head = text[:text.index("a = Analysis(")]
+    saved = dict(os.environ)
+    os.environ.update(env)
+    with tempfile.TemporaryDirectory() as tmp:
+        # `workpath` and `SPECPATH` are injected by PyInstaller, not defined in
+        # the file. The spec writes its entry-point shims under `workpath`, so
+        # it gets a throwaway directory - the point here is the two lists, and
+        # a test should not leave build scratch in the tree.
+        namespace: dict = {
+            "__name__": "spec",
+            "SPECPATH": str(SPEC.parent),
+            "workpath": tmp,
+            "DISTPATH": str(Path(tmp) / "dist"),
+        }
+        try:
+            exec(compile(head, str(SPEC), "exec"), namespace)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+    return set(namespace["excludes"]), set(namespace["hiddenimports"])
+
+
 class TheInstallerExcludesGplEngines(unittest.TestCase):
     def test_the_spec_excludes_every_gpl_engine(self):
         """PyInstaller collects what it can reach, so the exclusion has to be
-        stated. Read out of the `excludes` list specifically - the names
-        appear elsewhere in the file in prose, and matching those would pass
-        while the build still bundled them."""
-        text = SPEC.read_text(encoding="utf-8")
-        block = re.search(r"excludes\s*=\s*\[(.*?)\n\]", text, re.S)
-        self.assertIsNotNone(block, "could not find the excludes list")
-        excluded = set(re.findall(r'"([^"]+)"', block.group(1)))
+        stated - and it has to survive whatever the spec does after stating
+        it. This runs the spec with a distributable environment and reads the
+        list it ended up with."""
+        excluded, _ = _spec_lists({})
         for engine in GPL_ENGINES:
             with self.subTest(engine=engine):
                 self.assertIn(
@@ -58,13 +98,27 @@ class TheInstallerExcludesGplEngines(unittest.TestCase):
     def test_no_gpl_engine_is_a_hidden_import(self):
         """A hidden import is an instruction to collect. Naming one of these
         there would undo the exclusion in the most confusing possible way."""
-        text = SPEC.read_text(encoding="utf-8")
-        block = re.search(r"hiddenimports\s*=\s*\[(.*?)\n\]", text, re.S)
-        self.assertIsNotNone(block, "could not find the hiddenimports list")
-        named = set(re.findall(r'"([^"]+)"', block.group(1)))
+        _, named = _spec_lists({})
         for engine in GPL_ENGINES:
             with self.subTest(engine=engine):
                 self.assertNotIn(engine, named)
+
+    def test_a_private_build_is_the_only_thing_that_admits_them(self):
+        """`POCKETSIZE_PRIVATE_BUILD` exists so somebody can build a bundle
+        for their own machine with video and the better quantizer in it.
+        Running GPL code you installed yourself is what the licence is for;
+        the exclusion is about *distribution*.
+
+        That switch is also the one way this project's own build can produce a
+        bundle it must not publish, so it is pinned from both sides: the flag
+        admits both engines, and its absence - the default, and what every
+        release build uses - still excludes them. If this ever passes with the
+        environment empty, the default has silently become undistributable."""
+        excluded, named = _spec_lists({"POCKETSIZE_PRIVATE_BUILD": "1"})
+        for engine in GPL_ENGINES:
+            with self.subTest(engine=engine):
+                self.assertNotIn(engine, excluded)
+                self.assertIn(engine, named)
 
     def test_check_names_the_video_engine_even_when_it_is_absent(self):
         """The release gate proves the GPL engines are absent by reading
