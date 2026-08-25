@@ -209,6 +209,41 @@ excludes = [
     # is absent, so the installers keep working and simply choose PNG-8 less
     # often. See docs/THIRD_PARTY_NOTICES.md.
     "imagequant",
+    # Nothing in this application does machine learning. These are excluded
+    # because the *build machine* may have them - a developer's global Python
+    # often carries an unrelated ML stack - and PyInstaller reaches them
+    # through `setuptools`, whose metadata handling touches every distribution
+    # installed alongside it. On the machine this exclusion was written for,
+    # `setuptools` -> `datasets`/`peft` -> `transformers` -> `torch` added
+    # 1.2 GB to a bundle whose own dependencies are about 300 MB: 317 MB of
+    # torch, 289 MB of bitsandbytes, 173 MB of nltk_data, 76 MB of pyarrow.
+    #
+    # This is not a size nit. A frozen build collects whatever it can reach,
+    # so the artifact a contributor uploads depends on what else they happen
+    # to have pip-installed - two people building the same tag get different
+    # bundles. Excluding the tree by name makes the output depend on the spec
+    # instead of on the builder's machine.
+    #
+    # `pocketsize` imports none of these (verified by scanning the package for
+    # each name), so excluding them cannot affect behaviour - and `--check`
+    # plus the corpus run prove that independently after every build.
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "transformers",
+    "sentence_transformers",
+    "datasets",
+    "peft",
+    "accelerate",
+    "bitsandbytes",
+    "nltk",
+    "faiss",
+    "onnxruntime",
+    "pyarrow",
+    "botocore",
+    "boto3",
+    "sympy",
+    "networkx",
 ]
 
 a = Analysis(
