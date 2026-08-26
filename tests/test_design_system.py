@@ -38,9 +38,26 @@ def _read(path: Path) -> str:
 
 
 def _desktop_css() -> str:
-    match = re.search(r"<style>(.*?)</style>", _read(DESKTOP), re.S)
-    assert match, "could not find the <style> block in webui/app.html"
-    return re.sub(r"/\*.*?\*/", "", match.group(1), flags=re.S)
+    """Whatever CSS the desktop page defines for itself - which should be none.
+
+    Until 2026-08-26 this page carried the entire interface in one inline
+    <style> block, and these tests policed that block: no colour literals, no
+    hand-typed easing, no reduced-motion handling of its own. The block is gone.
+    The app now loads the same stylesheets the web app does, so the rules those
+    tests describe are enforced where the rules live - `css/base.css` and the
+    token layer, which have their own gates in this file.
+
+    What is left to check here is stronger and simpler: the page defines no CSS
+    at all. An inline <style> block, or a `style=` attribute, is how a private
+    palette would come back - one colour at a time, in the file least likely to
+    be read as a stylesheet. So this returns everything the page styles
+    directly, and every caller asserts on an empty string.
+    """
+    text = _read(DESKTOP)
+    blocks = re.findall(r"<style[^>]*>(.*?)</style>", text, re.S)
+    inline = re.findall(r"""\sstyle\s*=\s*["']([^"']*)["']""", text)
+    joined = "\n".join(blocks + inline)
+    return re.sub(r"/\*.*?\*/", "", joined, flags=re.S)
 
 
 class TheCopiesAreCurrent(unittest.TestCase):
@@ -173,15 +190,26 @@ class TheDesktopAppHasNoPaletteOfItsOwn(unittest.TestCase):
                 self.assertNotRegex(css, rf"^\s*{re.escape(name)}\s*:", )
 
     def test_it_loads_the_shared_stylesheets_tokens_first(self):
+        """Order matters: a sheet that consumes a token before the token layer
+        has defined it resolves to nothing, and the app renders unstyled.
+
+        This used to assert that the token layer came before the page's own
+        <style> block. There is no such block now - the page loads the same
+        region sheets the web app does - so the assertion is the real one: the
+        token layer and the faces come first, and every region sheet follows in
+        the order base.css expects."""
         html = _read(DESKTOP)
-        tokens = html.find("/webui/heyoz-tokens.css")
-        faces = html.find("/webui/fonts.css")
-        style = html.find("<style>")
-        self.assertNotEqual(tokens, -1, "the token layer is not linked")
-        self.assertNotEqual(faces, -1, "the face declarations are not linked")
-        self.assertLess(tokens, style,
-                        "tokens must load before the styles that consume them")
-        self.assertLess(faces, style)
+        order = []
+        for name in ("heyoz-tokens.css", "fonts.css", "base.css", "layout.css",
+                     "controls.css", "queue.css", "compare.css", "facts.css"):
+            where = html.find(f"/webui/{name}")
+            self.assertNotEqual(where, -1, f"{name} is not linked")
+            order.append((where, name))
+        self.assertEqual([n for _, n in sorted(order)],
+                         [n for _, n in order],
+                         "the stylesheets are linked out of order; a sheet that "
+                         "consumes a token before the token layer defines it "
+                         "resolves to nothing")
 
     def test_reduced_motion_is_not_handled_here(self):
         """The token layer does it once, for both interfaces, and better - it
@@ -189,19 +217,40 @@ class TheDesktopAppHasNoPaletteOfItsOwn(unittest.TestCase):
         self.assertNotIn("prefers-reduced-motion", _desktop_css())
 
     def test_it_shares_the_browser_apps_alias_names(self):
-        """Same names for the same ideas, so the two are one product."""
-        css = _desktop_css()
-        for alias in ("--app-radius-sm", "--app-radius-md", "--app-radius-lg",
-                      "--app-radius-pill", "--app-control-h", "--app-gap-tight",
-                      "--checker-a", "--checker-b"):
-            with self.subTest(alias=alias):
-                self.assertRegex(css, rf"{re.escape(alias)}\s*:")
+        """Same names for the same ideas, so the two are one product.
 
-    def test_every_token_it_references_is_defined(self):
+        This once asserted that the desktop page's own <style> block defined
+        `--app-radius-sm` and friends. That was the strongest statement
+        available while the page carried its own CSS: the names matched even
+        though the definitions were duplicated.
+
+        They are not duplicated any more - the page loads css/base.css, which is
+        where the vocabulary is defined for both interfaces - so asserting the
+        page defines them would now require putting a private palette back. The
+        question worth asking is whether the two still speak one language, and
+        the honest place to ask it is the shared sheet."""
+        base = _read(WEB_CSS_DIR / "base.css")
+        for alias in ("--radius-sm", "--radius-lg",
+                      "--c-checker-ground", "--c-checker-square"):
+            with self.subTest(alias=alias):
+                self.assertRegex(base, rf"{re.escape(alias)}\s*:")
+
+    def test_every_token_the_shared_sheets_reference_is_defined(self):
+        """A `var()` naming a token that does not exist resolves to nothing, and
+        the rule silently does not apply - the failure mode this catches.
+
+        The desktop page used to name tokens itself and this read them out of
+        its markup. It no longer names any: the sheets it loads do. So the same
+        question is asked of those sheets, which is where a typo would now
+        live - and asked of all of them at once, because the desktop app loads
+        all of them."""
         defined = set(re.findall(r"^\s*(--oz-[a-z0-9-]+)\s*:",
                                  _read(WEB / "heyoz-tokens.css"), re.M))
-        used = set(re.findall(r"var\((--oz-[a-z0-9-]+)", _read(DESKTOP)))
-        self.assertTrue(used, "the desktop app references no tokens at all")
+        used = set()
+        for name in ("base.css",) + WEB_SHEETS[1:]:
+            used |= set(re.findall(r"var\((--oz-[a-z0-9-]+)",
+                                   _read(WEB_CSS_DIR / name)))
+        self.assertTrue(used, "the shared sheets reference no tokens at all")
         self.assertEqual(sorted(used - defined), [])
 
 
@@ -341,6 +390,85 @@ class MotionIsTokenised(unittest.TestCase):
                         re.findall(r"(?<![\w-])(?:ease-in-out|ease-in|ease-out|ease|linear)"
                                    r"(?![\w-])", bare), [],
                         f"{name}: hand-typed easing in {kind} -> {value.strip()}")
+
+
+class TheDesktopAppRunsTheApprovedInterface(unittest.TestCase):
+    """The desktop app must be the same interface as the web app, not a second
+    one that happens to share a palette.
+
+    It was the second one for a year. The UX overhaul of 2026-08-13 landed on
+    the web app and stopped there, and nothing noticed: the sync carried the
+    token layer, so both products passed every design-system gate above while
+    one of them was missing the staged sequence, the plan panel, the facts
+    blocks and the help card. The owner found it by opening the app and having
+    nowhere to go.
+
+    So the structure is asserted, not just the styling. These ids are the
+    approved plan made checkable - the sequence from
+    docs/UX_IMPLEMENTATION_PLAN.md 5 ("add pictures -> one question -> result ->
+    evidence on demand") and the three visible plan fields from constraint 1.
+    """
+
+    #: The sequence, the panel, and the evidence-on-demand regions. Every one of
+    #: these was absent from the desktop app before 2026-08-26.
+    REQUIRED = (
+        "stage-empty", "stage-choose", "stage-hero", "stage-work",
+        "queue-sec", "plan-sec", "plan-fields", "more-choices",
+        "facts", "measured", "versions", "help",
+    )
+
+    def test_the_page_carries_the_whole_sequence(self):
+        html = _read(DESKTOP)
+        for element in self.REQUIRED:
+            with self.subTest(element=element):
+                self.assertIn(f'id="{element}"', html,
+                              f"{element} is missing from the desktop app - the "
+                              "interface has diverged from the approved plan")
+
+    def test_the_plan_panel_still_asks_three_questions(self):
+        """Constraint 1: visible plan fields stay at 3, everything else under
+        More choices. A fourth is a decision added to first run, which is the
+        one number this project does not let grow."""
+        html = _read(DESKTOP)
+        start = html.index('id="plan-fields"')
+        end = html.index('id="more-choices"', start)
+        visible = html.count('class="field"', start, end)
+        self.assertEqual(
+            visible, 3,
+            f"the plan panel shows {visible} fields, not 3 - first-run "
+            "decisions must not grow (UX plan, constraint 1)")
+
+    def test_it_loads_the_shared_modules_rather_than_its_own(self):
+        """The interface is the web app's modules, not a reimplementation. A
+        page that stopped loading main.js would still pass every check above."""
+        html = _read(DESKTOP)
+        self.assertIn('src="/webui/main.js"', html)
+        self.assertIn('type="module"', html)
+
+    def test_the_desktop_copy_talks_to_the_local_engine(self):
+        """The one substitution the sync makes. If it silently stopped, the page
+        would ask for /webui/engine.js - which is deliberately not synced - get a
+        403, and load no interface at all."""
+        for name in sorted(sync.ENGINE_IMPORTERS):
+            with self.subTest(module=name):
+                copied = _read(WEBUI / Path(name).name)
+                self.assertIn('from "./engine-local.js"', copied)
+                self.assertNotIn('from "./engine.js"', copied)
+
+    def test_no_inline_executable_script(self):
+        """Same rule the web app has, and now achievable here: the token travels
+        as a data attribute, so the page's CSP refuses inline script outright."""
+        html = _read(DESKTOP)
+        blocks = re.findall(r"<script(?![^>]*src=)[^>]*>(.*?)</script>",
+                            html, re.S)
+        executable = [b for b in blocks if b.strip()]
+        self.assertEqual(executable, [],
+                         "an inline <script> is back in webui/app.html")
+
+    def test_the_offline_layer_is_not_registered_here(self):
+        """There is no sw.js in the package. Registering one 403s on every
+        launch and caches nothing - the encoders are native."""
+        self.assertNotIn("serviceWorker", _read(WEBUI / "main.js"))
 
 
 if __name__ == "__main__":

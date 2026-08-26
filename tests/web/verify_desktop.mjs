@@ -95,7 +95,11 @@ try {
       surface: read("--oz-color-surface-primary"),
       content: read("--oz-color-content-primary"),
       brand: read("--oz-color-fill-brand"),
-      radius: read("--app-radius-sm"),
+      /* `--app-radius-sm` was the old inline block's own name for this, and
+         it went with that block: the desktop app now consumes the same
+         `--radius-sm` the web app does, out of css/base.css. Reading the dead
+         name asserted only that the private vocabulary still existed. */
+      radius: read("--radius-sm"),
       spring: read("--oz-spring-effects-fast-ms"),
       bodyBg: getComputedStyle(document.body).backgroundColor,
       bodyFamily: getComputedStyle(document.body).fontFamily,
@@ -136,7 +140,15 @@ try {
      `the private palette is gone (${legacy.join(", ") || "none defined"})`);
 
   // ---- everything stayed local -----------------------------------------
-  const foreign = [...origins].filter((o) => !o.includes("127.0.0.1"));
+  /* `data:` and `blob:` URLs report an origin of "null", and the shared
+     stylesheets draw several icons as inline data: SVGs - which the CSP
+     explicitly permits (`img-src 'self' data: blob:`). They are not requests
+     that left the machine, and counting them as foreign made this gate fail on
+     a page that had contacted nothing. What it means to assert is that no
+     request reached a real host other than this one. */
+  const foreign = [...origins].filter(
+    (o) => o !== "null" && !o.startsWith("data:") && !o.startsWith("blob:")
+           && !o.includes("127.0.0.1"));
   ok(foreign.length === 0, `every request stayed on this origin (${foreign.join(", ") || "clean"})`);
   ok(errors.length === 0, `no console errors (${errors.slice(0, 2).join(" | ") || "clean"})`);
 } finally {

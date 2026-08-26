@@ -646,31 +646,12 @@ dispatch();
    whole compressor runs with no network at all - which is the privacy promise
    made physical. Registration failing (old browser, file: URL) costs nothing
    but the offline capability. */
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").then((reg) => {
-    /* A silent superpower earns no trust: the first time the offline layer
-       finishes warming, it is announced - exactly once. */
-    const announce = () => hintOnce("offline",
-      "Ready to work offline — this whole app now runs without internet.");
-    if (navigator.serviceWorker.controller) return;   // already installed before
-    const sw = reg.installing || reg.waiting;
-    if (!sw) return;
-    sw.addEventListener("statechange", () => {
-      if (sw.state === "activated") announce();
-    });
-  }).catch(() => {});
-
-  /* Warm the codecs only once this page is service-worker-controlled, so the
-     warm reads the freshly installed cache. Before this, the warm fired on a
-     timer and RACED the install's own download of the same files - a first
-     visit could fetch the 3.5 MB AVIF codec twice. Repeat visits are
-     controlled immediately, so they warm immediately. */
-  if (navigator.serviceWorker.controller) warmVideo();
-  else navigator.serviceWorker.addEventListener("controllerchange", () => warmVideo(), { once: true });
-} else {
-  // No offline layer to wait for - warm once the first paint is out the door.
-  setTimeout(warmVideo, 1000);
-}
+/* The web app registers a service worker here so that after one visit it
+   runs with no network at all. Stripped for the desktop app by
+   tools/sync_webui_assets.py: there is no sw.js in the package, so the
+   registration 403'd on every launch, and there would be nothing to
+   cache - the encoders are native and this app is local already. */
+setTimeout(warmVideo, 1000);
 
 /* The codecs, and the question only the video worker can answer.
  *

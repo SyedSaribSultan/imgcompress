@@ -47,9 +47,12 @@ import { toast } from "./dom.js";
 /* The API token is substituted into the page by the server at launch - it
    replaces `__TOKEN__` in app.html before the bytes are sent - and every call
    carries it. A call without it is refused, which is what stops another page in
-   the same browser driving this app. The header name is the server's:
-   `X-Token`, checked in server.py's `_authorised`. */
-const TOKEN = window.POCKETSIZE_TOKEN || "";
+   the same browser driving this app.
+
+   Read from a data attribute on <body> rather than a global set by an inline
+   script, which is what lets the page's CSP refuse inline script outright. The
+   header name is the server's: `X-Token`, checked in `_authorised`. */
+const TOKEN = document.body.dataset.token || "";
 
 async function call(route, payload) {
   const response = await fetch(route, {

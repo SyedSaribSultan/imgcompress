@@ -16,7 +16,7 @@ import {
 import { SUPPORTED, SUPPORTED_MIME, isVideoFile } from "./format.js";
 import {
   beginBatch, dispatch, startEngine, probeVideoSupport,
-} from "./engine.js";
+} from "./engine-local.js";
 import { renderQueue } from "./queue.js";
 import { renderStage } from "./compare.js";
 import { renderFacts } from "./facts.js";

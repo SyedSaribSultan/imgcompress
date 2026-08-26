@@ -72,6 +72,15 @@ STYLESHEETS = [
 #
 # Imports between these files are all `./sibling.js`, which is why a flat copy
 # into `webui/` resolves unchanged.
+# Every module that imports the engine, and so needs redirecting at the copy.
+#
+# This was `main.js` alone at first, which was wrong: intake.js imports the
+# engine too. The desktop page then asked for /webui/engine.js, got a 403
+# because the file is deliberately not synced, and the whole module graph failed
+# to load - a blank window with one console line. The browser gate caught it;
+# no static check could have, because both files are individually valid.
+ENGINE_IMPORTERS = {"js/main.js", "js/intake.js"}
+
 MODULES = [
     "js/dom.js", "js/format.js", "js/state.js", "js/views.js",
     "js/settings.js", "js/panels.js", "js/queue.js", "js/render.js",
@@ -131,6 +140,45 @@ def stylesheet(name: str) -> str:
     return BANNER.format(name=name) + text
 
 
+def _drop_service_worker(text: str) -> str:
+    """Remove the offline-cache registration from the desktop copy of main.js.
+
+    The web app registers `/sw.js` so that after one visit the whole compressor
+    runs with no network - the privacy promise made physical, and the reason
+    that block exists. None of it applies here. There is no `sw.js` in the
+    package, so the desktop app asked for one, got a 403 and logged an error on
+    every launch; and there is nothing to cache anyway, because the encoders are
+    native and the app is local by construction.
+
+    What replaces it is the block's own `else` branch, which is what the desktop
+    app wants unconditionally: warm once the first paint is out of the door.
+    Against the local engine that is two no-op calls, which is the honest answer
+    - there are no codecs to fetch.
+
+    Matched on exact opening and closing text rather than a regex over the body,
+    and `str.index` raises if either moves. A silent miss would restore a 403
+    nobody would think to look for again.
+    """
+    opening = 'if ("serviceWorker" in navigator) {'
+    closing = (
+        '} else {\n'
+        '  // No offline layer to wait for - warm once the first paint is out the door.\n'
+        '  setTimeout(warmVideo, 1000);\n'
+        '}'
+    )
+    start = text.index(opening)
+    end = text.index(closing, start) + len(closing)
+    note = (
+        "/* The web app registers a service worker here so that after one visit it\n"
+        "   runs with no network at all. Stripped for the desktop app by\n"
+        "   tools/sync_webui_assets.py: there is no sw.js in the package, so the\n"
+        "   registration 403'd on every launch, and there would be nothing to\n"
+        "   cache - the encoders are native and this app is local already. */\n"
+        "setTimeout(warmVideo, 1000);"
+    )
+    return text[:start] + note + text[end:]
+
+
 def module(name: str) -> str:
     """A shared UI module, banner-stamped.
 
@@ -157,14 +205,18 @@ def module(name: str) -> str:
     """
     text = _read_exact(WEB / name)
     if name == "js/main.js":
+        text = _drop_service_worker(text)
+    if name in ENGINE_IMPORTERS:
         before = text
-        text = text.replace('} from "./engine.js";', '} from "./engine-local.js";')
+        text = text.replace('from "./engine.js"', 'from "./engine-local.js"')
         if text == before:                       # pragma: no cover - guard
             raise SystemExit(
-                "sync_webui_assets: main.js no longer imports './engine.js' the "
-                "way this tool rewrites it. The desktop app would silently load "
-                "the browser engine and every compression would fail with no "
-                "worker to answer. Fix the substitution rather than removing it."
+                f"sync_webui_assets: {name} no longer imports './engine.js', so "
+                "this tool rewrote nothing. Either it stopped needing the engine "
+                "- remove it from ENGINE_IMPORTERS - or the import was reworded, "
+                "in which case the desktop app would fetch /webui/engine.js, get "
+                "a 403, and load no interface at all. Fix the substitution "
+                "rather than removing it."
             )
     return BANNER.format(name=name) + text
 
