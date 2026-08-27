@@ -183,6 +183,7 @@ function adopt(snapshot) {
   if (snapshot.toast) toast(snapshot.toast);
 
   if (state.selected && !state.byId.has(state.selected)) select(null);
+  reflectDesktopControls();
   scheduleRender();
 
   /* A run ends when nothing is queued or working. The web build fires this from
@@ -349,4 +350,77 @@ export function pickFolder(initial) {
 
 export function setWatch(folder) {
   return mutate("/api/watch", { folder: folder || "" });
+}
+
+/* --------------------------------------------------------------------------- *
+ * the desktop-only controls
+ * --------------------------------------------------------------------------- */
+
+/* Watching a folder has no browser equivalent - it needs a real path - so the
+ * shared main.js knows nothing about the button and cannot wire it. This does,
+ * and it lives here because this file is already the place where "things only
+ * the local build can do" are answered.
+ *
+ * The button existed in the markup with nothing behind it after the interface
+ * was replaced: the old page's inline handler went with the old page. Clicking
+ * it did nothing at all, which is the same symptom as the dead folder picker
+ * and worth being just as careful about.
+ */
+/* Declared before the function that fills it: `const` is not hoisted, so
+ * pushing to this from wireWatchButton() while the declaration sat below it
+ * threw a ReferenceError the moment the DOM was already parsed - which is the
+ * normal case for a module. */
+const watchReflectors = [];
+
+function wireWatchButton() {
+  const button = document.getElementById("watch-btn");
+  if (!button) return;
+
+  button.addEventListener("click", async () => {
+    if (state.watchFolder) {
+      await setWatch("");
+      toast("Stopped watching");
+      return;
+    }
+    const { folder } = await pickFolder(state.lastFolder);
+    if (!folder) return;                  // the person cancelled the dialog
+    await setWatch(folder);
+    /* Says subfolders explicitly, because the answer used to be no and because
+       a person pointing this at a folder of folders has no other way to find
+       out. The count is not promised here - nothing is compressed until
+       something new arrives. */
+    toast("Watching that folder, and everything inside it");
+  });
+
+  /* The label is the state: a control that looks identical whether it is on or
+     off is a control you have to remember the state of. */
+  const reflect = () => {
+    const on = !!state.watchFolder;
+    button.textContent = on ? "Watching" : "Watch folder";
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+    button.classList.toggle("on", on);
+    button.title = on
+      ? `Watching ${state.watchFolder} and its subfolders — click to stop`
+      : "Compress anything new that lands in a folder, or any folder inside it";
+  };
+  reflect();
+  /* Re-read on every snapshot rather than only on click: the watch can also be
+     set from elsewhere, and the label has to follow the truth rather than the
+     last thing this button did. */
+  watchReflectors.push(reflect);
+}
+
+export function reflectDesktopControls() {
+  for (const fn of watchReflectors) {
+    try { fn(); } catch { /* a broken reflector must not stop the poll */ }
+  }
+}
+
+/* Wired once the shared modules have built the page. `main.js` runs as a module
+ * so the DOM is already parsed by the time this file's imports resolve, but the
+ * guard costs nothing and covers a future change in load order. */
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", wireWatchButton, { once: true });
+} else {
+  wireWatchButton();
 }

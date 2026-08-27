@@ -541,18 +541,45 @@ class Session:
 
     # -- folder watching --------------------------------------------------- #
 
+    @staticmethod
+    def _watchable(folder: str) -> list:
+        """Every picture and video anywhere under `folder`.
+
+        Recursive, with `rglob`, which is the point of this method existing.
+        It used to be `iterdir` written out twice - once here and once in
+        `set_watch` - and a flat scan is the wrong answer for the shape people
+        actually keep images in. Pointed at a folder holding three folders of
+        renders, watching found nothing at all, reported nothing, and looked
+        exactly like watching a folder that happened to be quiet.
+
+        Every other intake path in this application already recurses:
+        `add_path` walks with `iter_images` plus `rglob`, and the CLI defaults
+        to recursive with `--no-recursive` to opt out. The watcher was the only
+        one that did not, and it was the one place where the difference is
+        invisible - a drop that misses files shows you a short queue, a watch
+        that misses files shows you nothing and says nothing.
+
+        Both callers now share this, so the scan that decides what is "already
+        here" cannot drift from the scan that finds new arrivals. When those two
+        disagree, every file the second one sees and the first one missed is
+        compressed again on the next tick, forever.
+        """
+        try:
+            return [p for p in Path(folder).rglob("*")
+                    if p.is_file() and (p.suffix.lower() in SUPPORTED_SUFFIXES
+                                        or vid.is_video_path(p))]
+        except OSError:
+            # A folder that has been unplugged or deleted while watched. Not an
+            # error worth stopping the thread for - the next tick tries again.
+            return []
+
     def _watcher(self) -> None:
         while True:
             time.sleep(2.0)
             folder = self.watch_folder
             if not folder:
                 continue
-            try:
-                found = [p for p in Path(folder).iterdir()
-                         if p.is_file() and (p.suffix.lower() in SUPPORTED_SUFFIXES
-                                             or vid.is_video_path(p))]
-            except OSError:
-                continue
+            found = self._watchable(folder)
             fresh = [p for p in found if str(p) not in self.watch_seen]
             for p in fresh:
                 self.watch_seen.add(str(p))
@@ -563,17 +590,10 @@ class Session:
 
     def set_watch(self, folder: str) -> None:
         self.watch_folder = folder or ""
-        self.watch_seen = set()
-        if folder:
-            try:
-                # Everything already there is "old" - only react to new arrivals.
-                self.watch_seen = {
-                    str(p) for p in Path(folder).iterdir()
-                    if p.is_file() and (p.suffix.lower() in SUPPORTED_SUFFIXES
-                                        or vid.is_video_path(p))
-                }
-            except OSError:
-                pass
+        # Everything already there is "old" - only react to new arrivals. Same
+        # scan the watcher uses, so the two cannot disagree about what "already
+        # there" means.
+        self.watch_seen = {str(p) for p in self._watchable(folder)} if folder else set()
         self.touch()
 
     # -- previews and saving ----------------------------------------------- #
