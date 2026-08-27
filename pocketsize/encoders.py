@@ -23,6 +23,25 @@ import warnings
 
 from PIL import Image
 
+# Pillow 12 ships an AVIF plugin but does not register it on `import PIL.Image`
+# the way it does JPEG or WebP: the codec only appears in `Image.SAVE` once the
+# plugin module has been imported. `AvifEncoder.available()` asks
+# `"AVIF" in Image.SAVE`, so without this line a machine that can write AVIF
+# perfectly well reports that it cannot - and the format silently drops out of
+# every destination that offers it.
+#
+# Found on a real folder: 67 photographic PNGs where AVIF at a visual match of
+# 88 was half the size of the JPEG the bake-off settled for, because AVIF was
+# never in the running.
+#
+# Guarded because the plugin is genuinely absent on some builds, which is the
+# case `available()` exists for. The import is for its registration side effect
+# only, hence the noqa.
+try:
+    import PIL.AvifImagePlugin  # noqa: F401
+except Exception:
+    pass
+
 try:
     import imagequant as _imagequant
 
