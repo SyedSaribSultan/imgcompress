@@ -32,14 +32,47 @@ import { reflectFormatAvailability } from "./settings.js";
 import { scheduleRender } from "./render.js";
 
 /* One worker per core, less two for the main thread and the browser's own work.
-   The old cap of 4 left most of a modern machine idle on a batch; the ceiling of 8
-   is about memory, since each worker keeps one decoded frame cached. */
-const POOL_MAX = Math.min(8, Math.max(2, (navigator.hardwareConcurrency || 4) - 2));
+ *
+ * The ceiling is about memory, not cores: each worker holds a decoded frame,
+ * and a 12-megapixel photograph is about 48MB of RGBA before any candidate
+ * encode exists. Twelve of those is most of a modest laptop.
+ *
+ * So the ceiling moves with what the machine says about itself, and the two
+ * directions are deliberately not symmetric:
+ *
+ *   deviceMemory <= 4   a genuinely small machine. Four workers, and the read
+ *                       window in dispatch narrows with it, because on these
+ *                       the failure is not slowness, it is the tab dying.
+ *   otherwise           twelve. Chrome CLAMPS deviceMemory at 8 for
+ *                       fingerprinting reasons, so "8" means "8 or anything
+ *                       above it" and cannot be read as a workstation signal -
+ *                       there is no branch above this one to write honestly.
+ *                       Twelve is chosen against cores instead: it is what a
+ *                       14-core machine reaches under cores-2, and wasm SIMD
+ *                       encode scales sub-linearly past that anyway.
+ *
+ * Firefox and Safari do not implement deviceMemory at all, so both land in the
+ * second case, which is why it has to be the safe one rather than the greedy
+ * one. */
+const DEVICE_MEMORY = navigator.deviceMemory || 0;
+const POOL_CEILING = DEVICE_MEMORY > 0 && DEVICE_MEMORY <= 4 ? 4 : 12;
+const POOL_MAX = Math.min(
+  POOL_CEILING, Math.max(2, (navigator.hardwareConcurrency || 4) - 2));
 
 /* Exported for the browser harness, which asserts on how many workers a batch
  * actually spins up - a regression to a pool of one would not fail any other
  * check, it would just make every batch slow. */
 export const pool = [];
+
+/* What the sizing decided, and what it decided from. A gate that only sees the
+ * pool length cannot tell a correct 6 on an 8-core machine from a ceiling that
+ * silently stopped moving. */
+export const poolPlan = () => ({
+  max: POOL_MAX,
+  ceiling: POOL_CEILING,
+  cores: navigator.hardwareConcurrency || null,
+  deviceMemory: navigator.deviceMemory || null,
+});
 
 let batchActive = false;
 let onBatchEnd = null;
@@ -184,7 +217,10 @@ async function walkQueue() {
    * window. Decrementing in the settle handler rather than after the await is
    * the same reasoning - the count has to fall when the read finishes, not
    * when some particular caller gets around to noticing. */
-  const window = pool.length + 2;
+  /* Plus two on an ordinary machine so a worker never waits on a disk read;
+     plus one where memory is the binding constraint, since there the point of
+     the window is the resident bytes rather than the idle slot. */
+  const window = pool.length + (POOL_CEILING === 4 ? 1 : 2);
   for (const item of queued) {
     if (reading >= window) break;
     if (item.bytesPromise) continue;

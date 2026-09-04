@@ -23,7 +23,7 @@ import {
 } from "./settings.js";
 import {
   startEngine, dispatch, requeue, removeItems, cancelAll, setBatchEndHandler, pool,
-  readingCount, readingPeakSeen,
+  readingCount, readingPeakSeen, poolPlan,
   holdWork, warmCodecs, warmAvif,
 } from "./engine.js";
 import { addFiles, filesFromDataTransfer, countItemWords } from "./intake.js";
@@ -498,7 +498,7 @@ function bindKeys() {
  * the app's side, so deleting it would break tests and nothing else.
  */
 window.imgc = {
-  state, pool, dispatch, scheduleRender, renderNow, toast, human, readingCount, readingPeakSeen,
+  state, pool, dispatch, scheduleRender, renderNow, toast, human, readingCount, readingPeakSeen, poolPlan,
   chooseCandidate, currentSettings, select: pick,
   // Zoom geometry, for the probe that asserts the frame stays centred.
   zoom: getZoom, pan: getPan, setView, mode: getMode, setMode, applyZoom, resetZoom,
