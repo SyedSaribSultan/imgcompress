@@ -60,11 +60,11 @@ const TEXT_TARGETS = [
   { sel: "#quality-note", min: 3, what: "the plan's summary" },
   { sel: "#queue-list .row .name", min: 4.5, what: "a filename in the list" },
   { sel: "#queue-list .row .sub", min: 3, what: "a row's result line" },
-  { sel: "#cands .chip .cf", min: 4.5, what: "a chip's format" },
-  { sel: "#cands .chip .cb", min: 3, what: "a chip's size" },
-  { sel: "#measured .stats .v", min: 4.5, what: "a measured value" },
-  { sel: "#measured .stats .k", min: 3, what: "a measured value's label" },
-  { sel: "#chip-why", min: 3, what: "the sentence explaining the pick" },
+  { sel: "#out-name", min: 4.5, what: "the export name" },
+  { sel: "#s-size", min: 4.5, what: "the result's size" },
+  { sel: "#s-saved", min: 3, what: "what the picture became" },
+  { sel: "#queue-foot #t-sizes", min: 4.5, what: "the run's before and after" },
+  { sel: "#queue-foot #t-saved", min: 3, what: "what the run saved" },
 ];
 
 try {
@@ -113,7 +113,7 @@ try {
          alone - a palette half-defined in a media block moves one and not the
          others. */
       out.surfaces = [...new Set(
-        [...document.querySelectorAll("#bar, #side, #stage, #facts, .chip, .btn")]
+        [...document.querySelectorAll("#bar, #side, #stage, #queue-list, .row, .btn")]
           .map((e) => getComputedStyle(e).backgroundColor)
           // A transparent background has no colour to move, so comparing it across
           // schemes proves nothing. `.btn.quiet` is deliberately transparent.

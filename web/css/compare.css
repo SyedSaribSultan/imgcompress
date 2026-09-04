@@ -83,10 +83,15 @@
 /* Full height of the viewport, not of the image: it is a measuring edge on the
    screen, and the two labels ride it so the reading is attached to the thing
    being read rather than parked in a corner. */
+/* top/left/height are written by js/compare.js from the picture's own live
+   rectangle - the caliper belongs to the image, not to the stage, so it never
+   runs above, below or past the edges of what it is measuring. The values here
+   are the pre-first-paint state only. */
 #divider {
   position: absolute;
-  top: 0; bottom: 0;
+  top: 0;
   left: 50%;
+  height: 100%;
   width: 1px;
   background: var(--c-over-line);
   box-shadow: 0 0 0 1px var(--c-over-shadow);
@@ -129,12 +134,19 @@
 
 /* The real control over the split: a native range, invisible but present, so
    the divider is draggable with a mouse and arrow-steppable with a keyboard
-   without any of that being reimplemented here. */
+   without any of that being reimplemented here.
+
+   It is laid over the PICTURE, not the stage: --split-x/y/w/h are the image's
+   own live rectangle, written by js/compare.js. A grab that lands on empty
+   stage should do nothing, and 0% and 100% should be the picture's two edges -
+   both of which are the same fact, that the control is the width of the thing
+   it controls. */
 #split {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: var(--split-x, 0px);
+  top: var(--split-y, 0px);
+  width: var(--split-w, 100%);
+  height: var(--split-h, 100%);
   margin: 0;
   opacity: 0;
   cursor: ew-resize;
@@ -145,12 +157,12 @@
 #split::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 40px;
-  height: 100vh;
+  height: 100%;
   cursor: ew-resize;
 }
 #split::-moz-range-thumb {
   width: 40px;
-  height: 100vh;
+  height: 100%;
   border: 0;
   border-radius: 0;
   background: transparent;

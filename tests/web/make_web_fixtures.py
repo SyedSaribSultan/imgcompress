@@ -99,6 +99,14 @@ frames[0].save(OUT / "anim.gif", save_all=True, append_images=frames[1:],
 # a jpeg source, already small
 img.resize((300, 200)).convert("RGB").save(OUT / "small.jpg", quality=30)
 
+# Tall and narrow, so the frame is much narrower than the stage it is shown on.
+# That gap is the whole point: on a picture that happens to fill the stage, a
+# caliper confined to the stage and a caliper confined to the picture land in
+# the same place, and the difference between the two is untestable. Here the
+# picture occupies about a tenth of the stage's width, so a divider that is
+# still measuring the stage is off by hundreds of pixels. See probe_zoom.mjs.
+img.crop((0, 0, 280, 900)).resize((280, 1800)).save(OUT / "portrait-tall.png")
+
 # corrupt
 (OUT / "corrupt.png").write_bytes(b"definitely not a png" * 3)
 

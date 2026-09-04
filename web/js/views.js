@@ -97,8 +97,7 @@ export function currentPick(it) {
  *  not render and does not toast - the caller owns both, so this stays callable
  *  from a test without a document. */
 /** The view a given pick names, or null. One resolver, shared by the real
- *  choice and the hover preview, so the two can never show different bytes for
- *  the same chip. */
+ *  choice, so the stage and the model can never show different bytes. */
 function viewFor(it, format) {
   if (format === ORIGINAL_PICK) return originalView(it);
   if (it.auto && format === it.auto.fmt && !it.auto.passthrough) return it.auto;
@@ -122,20 +121,4 @@ export function chooseCandidate(format) {
   return format === ORIGINAL_PICK ? "Keeping your original — nothing compressed"
     : view === it.auto ? "Back to the smallest one that passed"
     : `Keeping ${fmtLabel(format)} for this image`;
-}
-
-/* Hovering a chip tries it on: the stage shows that encode until the pointer
- * leaves, and NOTHING is committed - `it.pick` never moves. Try-before-choose,
- * at the cost of an object URL. */
-export function previewCandidate(format) {
-  const it = state.selected ? state.byId.get(state.selected) : null;
-  if (!it || !it.auto || currentPick(it) === format) return false;
-  return applyView(it, viewFor(it, format));
-}
-
-/** Put the stage back on whatever is actually chosen. */
-export function endPreview() {
-  const it = state.selected ? state.byId.get(state.selected) : null;
-  if (!it || !it.auto) return false;
-  return applyView(it, viewFor(it, currentPick(it)));
 }

@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 
@@ -32,12 +32,12 @@ const PRECACHE = [
   "/heyoz-tokens.css",
   "/fonts.css",
   "/css/base.css", "/css/layout.css", "/css/controls.css",
-  "/css/queue.css", "/css/compare.css", "/css/facts.css",
+  "/css/queue.css", "/css/compare.css",
   "/destinations.js",
   "/js/destinations-bridge.js", "/js/theme.js", "/js/dom.js", "/js/format.js",
   "/js/state.js", "/js/views.js", "/js/render.js", "/js/settings.js",
   "/js/intake.js", "/js/engine.js", "/js/queue.js", "/js/compare.js",
-  "/js/facts.js", "/js/save.js", "/js/panels.js", "/js/main.js",
+  "/js/save.js", "/js/panels.js", "/js/main.js",
   "/worker.js",
   "/ss2.module.js", "/ss2.js",
   "/site.webmanifest", "/favicon.svg", "/favicon.ico",

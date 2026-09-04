@@ -104,9 +104,11 @@ try {
   // from the keyboard?
   const keys = await pg.evaluate(() => {
     const order = [];
-    // #facts is what the evidence drawer became: same controls, no drawer.
+    /* The details panel is gone; the stage IS the result view now, and it
+       carries the whole control surface - the modes, the zoom, the name, and
+       the two ways out of a result. */
     const els = [...document.querySelectorAll(
-      "#facts button, #facts input, #facts select")]
+      "#stage button, #stage input, #stage select")]
       .filter((e) => e.offsetParent !== null);
     for (const e of els) order.push(`${e.tagName.toLowerCase()}#${e.id || e.className}`);
     return order;
@@ -114,49 +116,48 @@ try {
   console.log("\nkeyboard reachable in the result view:", JSON.stringify(keys, null, 1));
   ok(keys.length > 0, `the result view is reachable from the keyboard (${keys.length} controls)`);
 
-  /* The chips are the primary control, so they have to be operable without a
-     pointer: focusable in order, and Enter must do what a tap does. */
-  const chipKeys = await pg.evaluate(() => {
-    const chips = [...document.querySelectorAll("#cands .chip")];
-    const first = chips.find((c) => c.getAttribute("aria-pressed") !== "true");
-    const was = state.items[0].fmt;
+  /* The comparison modes are the primary control on the result view, so they
+     have to be operable without a pointer: focusable, and Enter must do what a
+     tap does. This replaces the chip assertions, which went with the details
+     panel - the property being checked is the same one, on the control that
+     now occupies that role. */
+  const modeKeys = await pg.evaluate(() => {
+    const btns = [...document.querySelectorAll('#stage .segmented button')];
+    const first = btns.find((b) => b.getAttribute("aria-pressed") !== "true");
+    const was = document.getElementById("view").dataset.mode;
     first.focus();
-    const focusedIsChip = document.activeElement === first;
+    const focusedIsMode = document.activeElement === first;
     first.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     first.click();      // what Enter on a <button> does natively
     return {
-      count: chips.length, focusedIsChip,
-      pressed: chips.map((c) => c.getAttribute("aria-pressed")),
-      changed: state.items[0].fmt !== was,
-      // aria-label, not title: the three spans in a chip are meaningless read one
-      // at a time, so the whole story is put in the accessible name.
-      labelled: chips.map((c) => c.getAttribute("aria-label")).every(Boolean),
+      count: btns.length, focusedIsMode,
+      pressed: btns.map((b) => b.getAttribute("aria-pressed")),
+      changed: document.getElementById("view").dataset.mode !== was,
+      labelled: btns.map((b) => (b.textContent || "").trim()).every(Boolean),
     };
   });
-  console.log("\nchips from the keyboard:", JSON.stringify(chipKeys, null, 1));
-  ok(chipKeys.count > 0, `the version chips exist (${chipKeys.count})`);
-  ok(chipKeys.focusedIsChip, "a chip can take focus");
-  ok(chipKeys.changed, "Enter on a focused chip does what a tap does");
-  ok(chipKeys.labelled, "every chip carries a description");
-  ok(chipKeys.pressed.every((p) => p === "true" || p === "false"),
-     `every chip reports its pressed state (${chipKeys.pressed.join(",")})`);
+  console.log("\nmodes from the keyboard:", JSON.stringify(modeKeys, null, 1));
+  ok(modeKeys.count > 0, `the comparison modes exist (${modeKeys.count})`);
+  ok(modeKeys.focusedIsMode, "a mode button can take focus");
+  ok(modeKeys.changed, "Enter on a focused mode does what a tap does");
+  ok(modeKeys.labelled, "every mode carries a name");
+  ok(modeKeys.pressed.every((p) => p === "true" || p === "false"),
+     `every mode reports its pressed state (${modeKeys.pressed.join(",")})`);
 
-  /* A result announces itself, and says why it is the one showing. The sentence
-     moved off the stage and into the block the chips live in, and the live region
-     that speaks it is the toast - a role=status, so it is announced without
-     stealing focus. The old assertion that the sentence "ends in a real control"
-     is gone with the design it described: the controls are the chips beside it
-     now, not a link buried in a paragraph. */
+  /* A result announces itself, and says what it became. The live region that
+     speaks it is the toast - a role=status, so it is announced without stealing
+     focus - and the standing sentence is the stage's own result line, which is
+     where the numbers live now that the details panel is gone. */
   const narration = await pg.evaluate(() => ({
     live: document.getElementById("toast").getAttribute("aria-live"),
     role: document.getElementById("toast").getAttribute("role"),
-    text: document.getElementById("chip-why").textContent,
+    text: document.getElementById("s-saved").textContent,
   }));
   console.log("\nnarration:", JSON.stringify(narration, null, 1));
   ok(!!narration.live, `results are announced (${narration.live || "not announced"})`);
   ok(narration.role === "status",
      `and announced without stealing focus (role=${narration.role})`);
-  ok(!!narration.text.trim(), "the panel says why this version is the one showing");
+  ok(!!narration.text.trim(), "the stage says what this picture became");
 
   // Enter in the name field means "done renaming", and nothing else.
   await pg.evaluate(() => {

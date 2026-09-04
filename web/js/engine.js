@@ -328,7 +328,7 @@ function onWorkerMessage(slot, msg) {
     item.outW = r.outW || item.width;
     item.outH = r.outH || item.height;
     /* The destination's ceiling fired, stated by the worker rather than
-       inferred from the numbers. The facts panel warns on it. */
+       inferred from the numbers. */
     item.hardCapped = !!r.hardCapped;
     // The authority has arrived; the live preview's scaffolding goes.
     item.stale = false;

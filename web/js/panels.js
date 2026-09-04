@@ -1,12 +1,12 @@
 /* The person's own panel sizes.
  *
- * Two handles - the side panel's right edge and the details panel's top edge -
+ * Two handles - the side panel's right edge and the file list's bottom edge -
  * draggable with any pointer and steppable with arrow keys, because a
  * separator that only a mouse can move is a control keyboard users can see
  * and not use. Sizes persist per browser; double-click (or Home) puts a panel
  * back to automatic.
  *
- * The sizes land as custom properties on <html> (--side-w, --facts-h) that
+ * The sizes land as custom properties on <html> (--side-w, --queue-h) that
  * layout.css reads with automatic fallbacks - so "no stored size" and "reset"
  * are the same state, and the CSS defaults stay the single source of what
  * automatic means.
@@ -15,7 +15,7 @@
 import { $ } from "./dom.js";
 
 const SIDE = { prop: "--side-w", key: "imgc-side-w", min: 260, max: 560, step: 16 };
-const FACTS = { prop: "--facts-h", key: "imgc-facts-h", min: 120, max: 560, step: 16 };
+const QUEUE = { prop: "--queue-h", key: "imgc-queue-h", min: 120, max: 720, step: 16 };
 
 function put(cfg, px) {
   const v = Math.round(Math.min(cfg.max, Math.max(cfg.min, px)));
@@ -79,9 +79,10 @@ function bindHandle(handle, panel, cfg, sign) {
 
 export function bindPanels() {
   restore(SIDE);
-  restore(FACTS);
-  // The side panel grows as the pointer moves right; the details panel grows
-  // as its top edge moves UP, hence the flipped sign.
+  restore(QUEUE);
+  // The side panel grows as the pointer moves right; the file list grows as its
+  // bottom edge moves DOWN. Both are the same sign, and the handle's position
+  // is what makes each read the right way round.
   bindHandle($("side-handle"), $("side"), SIDE, +1);
-  bindHandle($("facts-handle"), $("facts"), FACTS, -1);
+  bindHandle($("queue-handle"), $("queue-sec"), QUEUE, +1);
 }

@@ -249,18 +249,17 @@ try {
       elapsed: state.items.filter((i) => i.status === "done" || i.status === "saved")
         .map((i) => i.elapsedMs),
       rowText: [...document.querySelectorAll("#queue-list .sub")].map((e) => e.textContent),
-      shownTime: document.getElementById("s-time").textContent,
     }));
     ok(t.elapsed.length > 0 && t.elapsed.every((ms) => ms > 0),
        `every finished image recorded a duration (${t.elapsed.length} images)`);
-    /* The per-image time moved out of the row and into #facts. The row now spends
-       its second line on the result - what it weighed, what it became, what that
-       saved - which is what someone scanning a list of twenty is actually reading
-       for. The duration is still reported, on the image being looked at.
+    /* The duration is still measured on every image and still carried on the
+       model; the details panel that used to print it is gone with #facts, so
+       this asserts on the measurement rather than on a readout that no longer
+       exists. The row spends its second line on the result - what it weighed,
+       what it became, what that saved - which is what someone scanning a list
+       of twenty is actually reading for.
        The exported-report assertion that used to sit here is gone with the
        feature: CSV/JSON/summary export was not part of compressing an image. */
-    ok(/\d+(\.\d+)?\s?(ms|s)\b/.test(t.shownTime),
-       `the selected image reports how long it took (${t.shownTime})`);
     ok(t.rowText.every((s) => s.trim().length > 0),
        `every row says what happened to it (${t.rowText.length} rows)`);
   }
@@ -334,31 +333,38 @@ try {
   await page.evaluate(() => imgc.select(state.items[0].id));
   await page.waitForFunction(() => document.getElementById("img-before").naturalWidth > 0);
   await page.screenshot({ path: path.join(here, "shot-loaded.png") });
+  /* The details panel is gone; the stage's own result line and the queue's
+     footer are what report the numbers now, so they are what is asserted on.
+     #s-saved carries the format and the resize disclosure on the same line as
+     the percentage, which is the one placement the plan calls non-negotiable. */
   const statText = await page.evaluate(() => ({
     size: document.getElementById("s-size").textContent,
-    fmtL: document.getElementById("s-format").textContent,
-    score: document.getElementById("s-score").textContent,
+    saved: document.getElementById("s-saved").textContent,
     // The before-and-after pair for the whole run lives in the queue's footer;
     // #s-size is the one image's result, so it is a single figure by design.
     totals: document.getElementById("t-sizes").textContent,
   }));
   ok(/\d/.test(statText.size), `the result reports its size (${statText.size})`);
+  ok(/\S/.test(statText.saved),
+     `and says what it became on the same line (${statText.saved})`);
   ok(/→/.test(statText.totals),
      `the run reports what it started and ended at (${statText.totals})`);
 
-  /* ---- the candidate chips ARE the format control -----------------------
-   * And they answer instantly: every encode came home with the run, so a tap
-   * is a relabel, not another bake-off. Measured, because "immediately" is the
-   * whole reason this control teaches itself. */
+  /* ---- keeping a different encode --------------------------------------
+   * The chips went with the details panel, but the thing they drove did not:
+   * every encode still comes home with the run, so choosing one is a relabel,
+   * not another bake-off. Measured through the same entry point the chips
+   * called, because "immediately" is the property that mattered, and it is a
+   * property of the model rather than of the control that was removed. */
   await page.evaluate(() => imgc.select(state.items.find((i) => i.name === "ui.png").id));
   await new Promise((r) => setTimeout(r, 200));
   const swap = await page.evaluate(() => {
     const it = () => state.items.find((i) => i.name === "ui.png");
     const was = { fmt: it().fmt, bytes: it().newBytes, url: it().afterURL };
-    const card = document.querySelector('#cands .chip[data-format="jpeg"]');
-    if (!card) return { found: false };
+    const has = it().candidates.some((c) => c.format === "jpeg");
+    if (!has) return { found: false };
     const t0 = performance.now();
-    card.click();
+    imgc.chooseCandidate("jpeg");
     return {
       found: true, was, ms: performance.now() - t0,
       fmt: it().fmt, bytes: it().newBytes, status: it().status,
@@ -366,34 +372,34 @@ try {
       pick: it().pick,
     };
   });
-  console.log("  chip swap:", JSON.stringify(swap));
-  ok(swap.found, "the jpeg chip is present and clickable");
+  console.log("  candidate swap:", JSON.stringify(swap));
+  ok(swap.found, "the jpeg encode came home with the run and can be chosen");
   ok(swap.fmt === "jpeg" && swap.status === "done",
-     `tapping a chip shows that encode at once (${swap.fmt}/${swap.status})`);
-  ok(swap.ms < 250, `and it happens in the click, not after a re-run (${swap.ms?.toFixed(0)} ms)`);
+     `choosing one shows that encode at once (${swap.fmt}/${swap.status})`);
+  ok(swap.ms < 250, `and it happens in the call, not after a re-run (${swap.ms?.toFixed(0)} ms)`);
   ok(swap.urlChanged && swap.bytes === (await page.evaluate(() =>
       state.items.find((i) => i.name === "ui.png").candidates
         .find((c) => c.format === "jpeg").bytes)),
      "the shown bytes are that candidate's own");
+  /* The stage reports the encode being shown, so a chosen format is never a
+     silent substitution - the readout follows the choice. imgc.chooseCandidate
+     is the model call the removed chip handler used to wrap; the handler also
+     asked for a repaint, so the test asks for one too rather than pretending
+     the model updates the document by itself. */
+  await page.evaluate(() => imgc.renderNow());
   await new Promise((r) => setTimeout(r, 200));
-  ok(await page.evaluate(() =>
-      // "Which one is on screen" is carried by aria-pressed rather than by a
-      // class, so the styling and the accessibility name cannot drift apart.
-      !!document.querySelector('#cands .chip[data-format="jpeg"][aria-pressed="true"]')),
-     "the chosen chip is marked as the one on screen");
-  /* The sentence explaining the choice moved from the stage to the block the
-     chips live in, which is where the question is actually being asked. */
-  ok(/because you chose it/.test(await page.evaluate(() =>
-      document.getElementById("chip-why").textContent)),
-     "the panel says why this one is showing");
+  const shown = await page.evaluate(() =>
+    document.getElementById("s-saved").textContent);
+  ok(/JPEG/i.test(shown), `and the stage says which encode is on screen (${shown})`);
 
-  // And the winner chip is the way back to the automatic answer.
+  // The automatic answer is still reachable: null pick means "whatever won".
   const back = await page.evaluate(() => {
     const it = () => state.items.find((i) => i.name === "ui.png");
-    document.querySelector('#cands .chip[data-win="1"]')?.click();
+    imgc.chooseCandidate(it().auto.fmt);
     return { fmt: it().fmt, pick: it().pick };
   });
-  ok(back.pick === null, `the winner chip restores the automatic choice (${JSON.stringify(back)})`);
+  ok(back.pick === null,
+     `the winning encode restores the automatic choice (${JSON.stringify(back)})`);
 
   const uiForced = await page.evaluate(() => {
     const it = state.items.find((i) => i.name === "ui.png");

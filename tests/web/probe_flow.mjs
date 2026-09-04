@@ -1,4 +1,4 @@
-/* The first five seconds after a drop, the candidate chips, the copy button,
+/* The first five seconds after a drop, the candidate encodes, the copy button,
  * and cursor-anchored zoom.
  *
  * The sequence this asserts is the product's answer to two fears a person has
@@ -99,7 +99,7 @@ try {
       !document.getElementById(id).closest("details")),
     restFolded: ["plan-goal", "plan-format", "plan-fit", "suffix-toggle"].every((id) =>
       !!document.getElementById(id).closest("details#more-choices")),
-    summaryNamed: /more choices/i.test(
+    summaryNamed: /advanced settings/i.test(
       document.querySelector("#more-choices > summary")?.textContent || ""),
     // The plan is on screen without anything being opened first.
     planVisible: document.getElementById("plan-fields").getBoundingClientRect().height > 0,
@@ -112,7 +112,7 @@ try {
      "the three primary questions are not behind any disclosure");
   ok(controls.disclosures === 1 && controls.restFolded,
      "everything else is inside exactly one disclosure");
-  ok(controls.summaryNamed, "and it is named in words (More choices)");
+  ok(controls.summaryNamed, "and it is named in words (Advanced settings)");
 
   // ---- frame 3: original and result legible at the same time --------------
   await pg.evaluate(() => imgc.select(state.items[0].id));
@@ -139,102 +139,85 @@ try {
   ok(/Original/.test(compare.left) && /Compressed/.test(compare.right),
      `both sides are named (${compare.left} | ${compare.right})`);
 
-  // ---- frame 4: the chips are the control, and they answer instantly ------
-  /* Nothing to open first. They were in a drawer for a while and this probe had to
-     press it open; they are in a region of the page that is always present now, so
-     the measurement below is taken where a person actually finds them. */
+  // ---- frame 4: every encode came home, and choosing one is instant ------
+  /* The chips that used to present this are gone with the details panel. What
+     they presented is not: the run still brings every encode home ranked
+     smallest first, the untouched original is still one of the answers, and
+     switching between them is still a relabel rather than another bake-off.
+     Those are properties of the model, so that is where they are measured now. */
   await settle(500);
-  const chips = await pg.evaluate(() => {
-    const els = [...document.querySelectorAll("#cands .chip")];
+  const cands = await pg.evaluate(() => {
+    const it = state.items[0];
+    const rows = it.candidates || [];
+    const passing = rows.filter((c) => c.bytes < it.originalBytes);
+    const smallest = passing.reduce((a, c) => (!a || c.bytes < a.bytes ? c : a), null);
     return {
-      n: els.length,
-      allButtons: els.every((e) => e.tagName === "BUTTON"),
-      // Ranked smallest first, and the original is the last chip.
-      order: els.map((e) => e.dataset.format),
-      bytes: els.map((e) => Number(e.dataset.bytes)),
-      // Carried by aria-pressed and a data attribute rather than by classes, so
-      // the styling and the accessibility name cannot drift apart.
-      current: els.filter((e) => e.getAttribute("aria-pressed") === "true").length,
-      winner: els.filter((e) => e.dataset.win === "1").length,
-      /* Reachable and real, rather than "above the numbers". The old check
-         was an absolute vertical relation between two containers, and the
-         numbers are not below the image any more - they are beside it, in the
-         same drawer. What still has to be true is that a chip is something you
-         can actually see and hit. */
-      onScreen: els.every((e) => {
-        const r = e.getBoundingClientRect();
-        return r.width > 0 && r.height > 0 &&
-               r.right > 0 && r.left < innerWidth &&
-               r.bottom > 0 && r.top < innerHeight;
-      }),
+      n: rows.length,
+      order: rows.map((c) => c.format),
+      bytes: rows.map((c) => c.bytes),
+      hasAuto: !!it.auto,
+      pick: it.pick,
+      autoFmt: it.fmt,
+      autoBytes: it.newBytes,
+      passing: passing.map((c) => `${c.format}:${c.bytes}`).join(" "),
+      autoIsSmallestPassing: !!smallest && it.newBytes === smallest.bytes,
     };
   });
-  console.log("  chips:", JSON.stringify(chips));
-  ok(chips.n >= 2 && chips.allButtons, `every candidate is a real button (${chips.n})`);
-  ok(chips.onScreen, "every chip is visible and hittable where it sits");
-  ok(chips.current === 1, `exactly one chip is marked as showing (${chips.current})`);
-  ok(chips.winner === 1, `and exactly one as the winner (${chips.winner})`);
-  ok(chips.order[chips.order.length - 1] === "__original",
-     `the original is the yardstick at the end (${chips.order})`);
+  console.log("  candidates:", JSON.stringify(cands));
+  ok(cands.n >= 2, `the run brought every encode home (${cands.n})`);
+  ok(cands.hasAuto, "and named one of them the automatic answer");
+  ok(cands.pick === null, "which is what is showing until someone says otherwise");
 
-  // Ranked smallest first, so the meter and the order agree.
-  const encodes = chips.bytes.slice(0, -1);
-  ok(encodes.every((v, i) => i === 0 || v >= encodes[i - 1]),
-     `the chips are ranked smallest first (${chips.bytes})`);
+  /* The chips sorted for display; the model's array is in encoder order, so
+     the orderable fact is not the array but the choice made from it: the
+     automatic answer is the smallest candidate that cleared the floor. That is
+     the property the bake-off exists to produce. */
+  ok(cands.autoIsSmallestPassing,
+     `the automatic answer is the smallest encode that passed (${cands.autoFmt} at ${cands.autoBytes}, passing: ${cands.passing})`);
 
-  // Tapping one has to change the picture inside the click.
+  // Choosing one has to change the picture inside the call.
   const swap = await pg.evaluate(() => {
     const it = () => state.items[0];
-    const cur = document.querySelector('#cands .chip[aria-pressed="true"]')?.dataset.format;
-    const target = [...document.querySelectorAll("#cands .chip")]
-      .find((e) => e.dataset.format !== cur && e.dataset.format !== "__original");
+    const cur = it().fmt;
+    const target = (it().candidates || []).find((c) => c.format !== cur);
     if (!target) return { found: false };
     const before = { fmt: it().fmt, url: it().afterURL };
     const t0 = performance.now();
-    target.click();
+    imgc.chooseCandidate(target.format);
     return {
       found: true, ms: performance.now() - t0, from: before.fmt, to: it().fmt,
-      want: target.dataset.format, urlChanged: it().afterURL !== before.url,
+      want: target.format, urlChanged: it().afterURL !== before.url,
       stillDone: it().status === "done",
     };
   });
   console.log("  swap:", JSON.stringify(swap));
   ok(swap.found && swap.to === swap.want,
-     `tapping a chip shows that encode (${swap.from} -> ${swap.to})`);
+     `choosing a candidate shows that encode (${swap.from} -> ${swap.to})`);
   ok(swap.urlChanged && swap.stillDone, "the preview is rebuilt from that candidate's own bytes");
-  ok(swap.ms < 250, `and it lands in the click, not after a re-run (${swap.ms?.toFixed(0)} ms)`);
+  ok(swap.ms < 250, `and it lands in the call, not after a re-run (${swap.ms?.toFixed(0)} ms)`);
 
-  // The original chip is a real answer: keep the file exactly as it arrived.
+  // The original is a real answer: keep the file exactly as it arrived.
   const keepOriginal = await pg.evaluate(() => {
-    document.querySelector('#cands .chip[data-format="__original"]').click();
+    imgc.chooseCandidate("__original");
     const it = state.items[0];
     return { pick: it.pick, bytes: it.newBytes, orig: it.originalBytes, ext: it.ext };
   });
   ok(keepOriginal.pick === "__original" && keepOriginal.bytes === keepOriginal.orig,
-     `the original is one tap from being the only thing kept (${JSON.stringify(keepOriginal)})`);
+     `the original is one call from being the only thing kept (${JSON.stringify(keepOriginal)})`);
 
-  /* The winner chip is the way back to the automatic answer, and pressing it clears
-     the manual pick rather than recording the winner as one.
-
-     What used to be here as well: the narration ended in a "Prefer something else?"
-     button that scrolled the chips into view and focused one. That existed because
-     the chips were in a drawer nobody knew to open. They are in a region of the page
-     that is always on screen now, so an invitation to go and find them is an
-     invitation to somewhere the reader is already looking. */
-  await pg.evaluate(() => document.querySelector('#cands .chip[data-win="1"]').click());
+  /* And the automatic answer is the way back: choosing the encode that won
+     clears the manual pick rather than recording the winner as one. */
+  await pg.evaluate(() => imgc.chooseCandidate(state.items[0].auto.fmt));
   await settle(300);
   const backToAuto = await pg.evaluate(() => ({
     pick: state.items[0].pick,
-    why: document.getElementById("chip-why").textContent,
-    chipsOnScreen: document.getElementById("cands").getBoundingClientRect().height > 0,
+    shown: document.getElementById("s-saved").textContent,
   }));
   console.log("  back to auto:", JSON.stringify(backToAuto));
   ok(backToAuto.pick === null,
-     `the winner chip restores the automatic choice (pick=${backToAuto.pick})`);
-  ok(backToAuto.chipsOnScreen,
-     "and the chips need no invitation - they are on screen already");
-  ok(/smallest|kept exactly|Only /.test(backToAuto.why),
-     `the panel explains the automatic answer (${JSON.stringify(backToAuto.why.slice(0, 70))})`);
+     `the winning encode restores the automatic choice (pick=${backToAuto.pick})`);
+  ok(!!backToAuto.shown.trim(),
+     "and the stage still says what the picture became");
 
   // ---- renaming, which used to live in the set-up step --------------------
   await pg.evaluate(() => {

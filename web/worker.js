@@ -1448,14 +1448,15 @@ async function runJob(msg) {
   /* Thoroughness has a battery bill, and it lands hardest on the machines
      least able to pay it. On a weak device the automatic set drops AVIF - the
      slowest encoder behind the largest download - and the result says so, with
-     the way to insist ("always AVIF") already sitting under More choices. An
+     the way to insist ("always AVIF") already sitting under Advanced
+     settings. An
      explicit pin or the lossless promise is never overridden. */
   let deviceNote = "";
   if (WEAK_DEVICE && !settings.lossless && !(settings.formats && settings.formats.length)
       && names.includes("avif")) {
     names = names.filter((n) => n !== "avif");
     deviceNote = "AVIF was skipped to save time and battery on this device. "
-      + "Pick “always AVIF” under More choices to try it anyway.";
+      + "Pick “always AVIF” under Advanced settings to try it anyway.";
   }
 
   // Codecs load lazily, but availability gating needs them resolved first.

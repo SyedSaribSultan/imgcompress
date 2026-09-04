@@ -5,7 +5,6 @@
  *   #bar     what you are doing to everything - intake and output
  *   #side    the plan, and the queue it applies to
  *   #stage   the image being looked at
- *   #facts   what happened to it, and how to change that
  *
  * This replaces a set of mutually exclusive screens. Nothing here appears or
  * disappears as a mode: the regions are fixed, and their contents go quiet when
@@ -179,10 +178,8 @@ body {
      when the edge is dragged and remembered. Unset, the panel breathes with
      the window. */
   grid-template-columns: var(--side-w, clamp(300px, 26vw, 384px)) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "side stage"
-    "side facts";
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "side stage";
   min-height: 0;
 }
 
@@ -201,7 +198,6 @@ body {
    Entered and left with F (or the button on the stage). The regions are not
    destroyed, just out of the way - the plan keeps running the queue. */
 body[data-focus="1"] #side,
-body[data-focus="1"] #facts,
 body[data-focus="1"] #about { display: none; }
 body[data-focus="1"] #dash {
   grid-template-columns: minmax(0, 1fr);
@@ -228,14 +224,14 @@ body[data-focus="1"] #dash {
   width: 6px;
   cursor: col-resize;
 }
-#facts-handle {
+#queue-handle {
   left: 0;
   right: 0;
-  top: -3px;
+  bottom: -3px;
   height: 6px;
   cursor: row-resize;
 }
-#side, #facts { position: relative; }
+#side, #queue-sec { position: relative; }
 
 /* Pictures first, then the plan, then the one line for the command line.
  *
@@ -280,8 +276,25 @@ body[data-focus="1"] #dash {
 /* The queue grows into whatever is spare, shrinks to a floor a few rows tall
    (its list scrolls inside), and past that the sidebar scrolls. A floor of 0
    would let flex squash it out of existence on a short window - the exact
-   collapse this layout exists to prevent. */
-#queue-sec { flex: 1 1 auto; min-height: 200px; }
+   collapse this layout exists to prevent.
+
+   --queue-h is the person's own height for it, written by js/panels.js from
+   the bottom-edge handle; unset, the list takes whatever the sidebar spares. */
+#queue-sec {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 200px;
+  height: var(--queue-h, auto);
+}
+/* The list is the one part that gives: a dragged height is spent on rows rather
+   than on pushing the totals out of the panel. queue.css already scrolls it. */
+#queue-sec > #queue-list { flex: 1 1 auto; min-height: 0; }
+/* A dragged height is a fixed height: the list stops growing into spare space
+   and becomes exactly what was asked for, scrolling inside itself. Keyed off
+   the property actually being set, so "never dragged" and "reset" are one
+   state and the flex default above stays what automatic means. */
+html[style*="--queue-h"] #queue-sec { flex: 0 0 auto; }
 /* An empty queue is a button and two sentences, not a region-sized void: it
    sits compact, the plan follows immediately, and the leftover space falls
    after the command-line note instead of between the two things a first-time
@@ -296,20 +309,6 @@ body[data-focus="1"] #dash {
   background: var(--c-sunk);
 }
 
-/* Capped, and it scrolls past the cap. The comparison is what the product is for,
-   so the detail region is not allowed to grow into the stage's share - at 42vh a
-   run whose chips wrapped to three rows left the picture with barely half the
-   height it should have had. */
-#facts {
-  grid-area: facts;
-  border-top: 1px solid var(--c-line);
-  background: var(--c-bg);
-  /* --facts-h is the person's own height for the evidence, written by
-     js/panels.js from the top-edge handle. */
-  max-height: var(--facts-h, 30vh);
-  overflow-y: auto;
-}
-
 /* A region's own heading row: the label, then whatever acts on that region. */
 .region-head {
   display: flex;
@@ -321,32 +320,6 @@ body[data-focus="1"] #dash {
 /* The plan's fields share the heading's inset, so the labels line up under it
    instead of running into the window edge. */
 #plan-fields { padding: 0 var(--s-4) var(--s-5); }
-
-/* Each block inside #facts is a separate concern and says so with a rule above
-   it. They are laid out in columns while there is room and stack when there is
-   not, so no block is ever the reason the page scrolls sideways. */
-.fact-blocks {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0;
-  border-top: 1px solid var(--c-line);
-}
-
-/* Once there is room, the versions block takes half. Three equal columns wrapped
-   seven chips onto four rows, which pushed the last of them below the region's
-   scroll line - and the chips are the primary control, so needing to scroll to
-   reach one is the control being hidden again by a different mechanism. */
-/* minmax(0, ·) floors each track at zero: a bare fr cannot shrink an item
-   below its min-content, so one long <option> in the override select was
-   silently widening its column and squeezing the chips into a single file. */
-@media (min-width: 1100px) {
-  .fact-blocks { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
-}
-.fact-blocks > section {
-  padding: var(--s-4);
-  border-right: 1px solid var(--c-line);
-}
-.fact-blocks > section:last-child { border-right: 0; }
 
 /* ------------------------------- narrow ---------------------------------- */
 
@@ -378,8 +351,8 @@ body[data-focus="1"] #dash {
 
   #dash {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto;
-    grid-template-areas: "side" "stage" "facts";
+    grid-template-rows: auto auto;
+    grid-template-areas: "side" "stage";
   }
 
   #side {
@@ -392,7 +365,6 @@ body[data-focus="1"] #dash {
   #queue-list { max-height: 40vh; }
 
   #stage { height: 52vh; }
-  #facts { max-height: none; overflow: visible; }
 
   /* One column: there is nothing beside anything to trade space with. */
   .pane-handle { display: none; }

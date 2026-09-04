@@ -12,9 +12,8 @@
 
 import { renderQueue } from "./queue.js";
 import { renderStage } from "./compare.js";
-import { renderFacts } from "./facts.js";
 
-const dirty = { queue: false, stage: false, facts: false };
+const dirty = { queue: false, stage: false };
 let scheduled = false;
 
 /** Repaint now, on this tick. Used where the next thing that happens must see the
@@ -23,23 +22,21 @@ let scheduled = false;
 export function renderNow() {
   renderQueue();
   renderStage();
-  renderFacts();
 }
 
 /** Ask for a repaint. With no argument everything is redrawn; naming a part
  *  redraws only that, which is what the hot path during a batch uses. */
 export function scheduleRender(part) {
   if (part) dirty[part] = true;
-  else dirty.queue = dirty.stage = dirty.facts = true;
+  else dirty.queue = dirty.stage = true;
 
   if (scheduled) return;
   scheduled = true;
   requestAnimationFrame(() => {
     scheduled = false;
     const todo = { ...dirty };
-    dirty.queue = dirty.stage = dirty.facts = false;
+    dirty.queue = dirty.stage = false;
     if (todo.queue) renderQueue();
     if (todo.stage) renderStage();
-    if (todo.facts) renderFacts();
   });
 }

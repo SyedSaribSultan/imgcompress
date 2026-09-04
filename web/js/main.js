@@ -25,12 +25,11 @@ import {
   holdWork, warmCodecs,
 } from "./engine.js";
 import { addFiles, filesFromDataTransfer, countItemWords } from "./intake.js";
-import { chooseCandidate, previewCandidate, endPreview } from "./views.js";
+import { chooseCandidate } from "./views.js";
 import {
   setMode, getMode, applySplit, applyZoom, zoomAt, stepZoom, resetZoom, panBy,
   onSelectionChanged, getZoom, getPan, setView,
 } from "./compare.js";
-import { readOverride, invalidateRedo } from "./facts.js";
 import { downloadAll, downloadOne, copyImage } from "./save.js";
 
 /* ---------------------------- settings -> engine -------------------------- */
@@ -135,7 +134,6 @@ function bindTheme() {
 function pick(id) {
   if (state.selected === id) return;
   select(id);
-  invalidateRedo();
   onSelectionChanged();
   scheduleRender();
 }
@@ -273,13 +271,13 @@ function bindPlan() {
   // differs from them.
   $("plan-reset").addEventListener("click", () => { resetPlan(); pushSettings(); });
 
-  /* The disclosure remembers its state: someone who works from More choices
-     should not have to reopen it every visit. */
+  /* The disclosure remembers its state: someone who works from Advanced
+     settings should not have to reopen it every visit. */
   const more = $("more-choices");
   try { more.open = localStorage.getItem("imgc-more") === "1"; } catch { /* fine */ }
-  /* A use-case page that presets a field living under More choices opens the
-     disclosure, whatever was remembered: a preset the person cannot see would
-     be the resize-disclosure rule broken one level up. */
+  /* A use-case page that presets a field living under Advanced settings opens
+     the disclosure, whatever was remembered: a preset the person cannot see
+     would be the resize-disclosure rule broken one level up. */
   const preset = document.documentElement.dataset;
   if (preset.presetSize || preset.presetFormat) more.open = true;
   more.addEventListener("toggle", () => {
@@ -431,60 +429,6 @@ function measureBar() {
   if (typeof ResizeObserver === "function") new ResizeObserver(write).observe(bar);
 }
 
-function bindFacts() {
-  $("cands").addEventListener("click", (e) => {
-    const chip = e.target.closest(".chip");
-    if (!chip) return;
-    const said = chooseCandidate(chip.dataset.format);
-    if (said) { toast(said); scheduleRender(); }
-  });
-
-  /* Hovering a chip tries that encode on, on the stage, and commits nothing -
-     the cheapest possible exploration of a choice. Pointer hover only: on a
-     touch screen there is no hover, and the tap already commits. */
-  $("cands").addEventListener("mouseover", (e) => {
-    const chip = e.target.closest(".chip");
-    if (!chip || chip.disabled) return;
-    if (previewCandidate(chip.dataset.format)) scheduleRender("stage");
-  });
-  $("cands").addEventListener("mouseleave", () => {
-    if (endPreview()) scheduleRender("stage");
-  });
-
-  /* The resize disclosure's own undo: zero the shrink for this one picture
-     and run it again. */
-  $("keep-size").addEventListener("click", () => {
-    const it = current();
-    if (!it) return;
-    it.override = { ...(it.override || {}), maxDimension: 0 };
-    invalidateRedo();
-    requeue([it.id]);
-    toast("Running again at full size");
-  });
-
-  $("ov-apply").addEventListener("click", () => {
-    const it = current();
-    if (!it) return;
-    it.override = readOverride();
-    invalidateRedo();
-    requeue([it.id]);
-  });
-
-  $("ov-reset").addEventListener("click", () => {
-    const it = current();
-    if (!it) return;
-    it.override = null;
-    $("ov-format").value = "";
-    $("ov-quality").value = "";
-    invalidateRedo();
-    requeue([it.id]);
-  });
-
-  $("remove-btn").addEventListener("click", () => {
-    if (state.selected) removeItems([state.selected]);
-  });
-}
-
 /* Focus mode: everything but the comparison steps aside. Entered and left
  * with F or the stage button; Escape also leaves, because Escape means "out". */
 function setFocus(on) {
@@ -576,7 +520,6 @@ bindIntake();
 bindPlan();
 bindQueue();
 bindStage();
-bindFacts();
 bindKeys();
 
 /* The wordmark and "?" both open the one help card. */

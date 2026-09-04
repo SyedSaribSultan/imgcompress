@@ -165,16 +165,55 @@ export function panBy(dx, dy) {
 
 /** Convert the divider's position on screen into a clip in the frame's own
  *  coordinates. Reading the live rect is what makes this survive zoom and pan
- *  without either of them having to know the split exists. */
+ *  without either of them having to know the split exists.
+ *
+ *  The caliper is confined to the picture. Its travel is the frame's own
+ *  on-screen width, not the stage's, and its line spans the frame's height and
+ *  no more - so it can neither be dragged off the edge of the image onto empty
+ *  stage, nor extend above and below it into the checkerboard. Comparing two
+ *  pictures at a position where there is no picture is the control offering a
+ *  reading it cannot give.
+ *
+ *  Both are clipped to the viewport as well, because a zoomed-in frame runs
+ *  past the stage on every side and a line drawn to the frame's real edges
+ *  would be drawn outside the box that clips it. */
 export function applySplit() {
   const pct = Number($("split").value);
-  $("divider").style.left = `${pct}%`;
-
   const view = $("view").getBoundingClientRect();
   const frame = $("frame").getBoundingClientRect();
-  if (!frame.width) return;
-  const dividerX = view.left + (view.width * pct) / 100;
-  const inFrame = ((dividerX - frame.left) / frame.width) * 100;
+  const divider = $("divider");
+
+  if (!frame.width || !view.width) {
+    divider.style.left = `${pct}%`;
+    return;
+  }
+
+  /* The band of the stage the picture actually occupies, in the stage's own
+     coordinates, never wider or taller than the stage itself. */
+  const left = Math.max(0, frame.left - view.left);
+  const right = Math.min(view.width, frame.right - view.left);
+  const top = Math.max(0, frame.top - view.top);
+  const bottom = Math.min(view.height, frame.bottom - view.top);
+  const span = Math.max(0, right - left);
+
+  // 0% is the picture's left edge and 100% its right, whatever else is on screen.
+  const x = left + (span * pct) / 100;
+  const height = Math.max(0, bottom - top);
+  divider.style.left = `${x}px`;
+  divider.style.top = `${top}px`;
+  divider.style.height = `${height}px`;
+
+  /* The invisible range is laid over exactly the same band, so its 0 and 100
+     are the picture's edges and a grab on empty stage misses it entirely. */
+  const range = $("split").style;
+  range.setProperty("--split-x", `${left}px`);
+  range.setProperty("--split-y", `${top}px`);
+  range.setProperty("--split-w", `${span}px`);
+  range.setProperty("--split-h", `${height}px`);
+
+  /* Back into the frame's own coordinates. x is in the stage's, and the frame
+     may start off-screen when zoomed, so the offset is not always zero. */
+  const inFrame = ((view.left + x - frame.left) / frame.width) * 100;
   /* Written on the FRAME, not on a layer. There are two `.after` layers now -
      one for pictures, one for video - and a custom property set on the first
      one found would clip that one and leave the other showing whole. Setting
@@ -185,7 +224,6 @@ export function applySplit() {
   /* The side labels ride the caliper, but they must never ride it off the
      stage - a label that has left the viewport stops orienting anyone. Pushed
      to an edge, each tag slides along the line just enough to stay readable. */
-  const x = (view.width * pct) / 100;
   const tagL = $("tag-l"), tagR = $("tag-r");
   const overL = tagL.offsetWidth + 16 - x;
   const overR = tagR.offsetWidth + 16 - (view.width - x);
@@ -269,10 +307,13 @@ async function ensureDiff() {
     canvas.getContext("2d").putImageData(out, 0, 0);
     diffFor = key;
   } catch {
-    // Some files this browser cannot decode twice. Say so rather than showing a
-    // blank canvas that looks like "no difference".
+    /* Some files this browser cannot decode twice. Say so rather than showing a
+       blank canvas that looks like "no difference" - which is the one reading
+       this failure must never be mistaken for. It goes to the toast now that
+       the panel it used to be written into is gone; a role=status announces it
+       without stealing focus from the comparison. */
     diffFor = null;
-    setText($("chip-why"), "This browser could not decode both versions, so the difference cannot be drawn.");
+    toast("This browser could not decode both versions, so the difference cannot be drawn.");
   }
 }
 

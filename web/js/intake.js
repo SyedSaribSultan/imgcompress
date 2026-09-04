@@ -15,7 +15,6 @@ import {
 } from "./engine.js";
 import { renderQueue } from "./queue.js";
 import { renderStage } from "./compare.js";
-import { renderFacts } from "./facts.js";
 import { reflectPlan } from "./settings.js";
 import { scheduleRender } from "./render.js";
 
@@ -130,7 +129,6 @@ export function addFiles(files) {
      your image, now watch" and "something happened to my file". */
   renderQueue();
   renderStage();
-  renderFacts();
   /* The panel is refreshed here rather than only when a control is touched:
      what the plan says can depend on what is in the queue. It happens here and
      not in render.js on purpose - that module's whole contract is that

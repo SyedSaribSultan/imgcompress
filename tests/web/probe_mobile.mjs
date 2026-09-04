@@ -1,4 +1,4 @@
-/* The studio on a phone: does anything overflow, and are the chips reachable
+/* The studio on a phone: does anything overflow, and are the rows reachable
  * and finger-sized? They are the primary control now, so on the surface where
  * a control is hardest to hit they are the thing worth measuring.
  *
@@ -41,7 +41,7 @@ try {
   await pg.waitForFunction(() => state.items.every((i) =>
     ["done", "failed", "saved"].includes(i.status)), { timeout: 900000, polling: 300 });
   await new Promise((r) => setTimeout(r, 600));
-  /* Select one image. There is no drawer to open first any more - the chips are in
+  /* Select one image. There is no drawer to open first any more - the result is in
      a region of the page that is always present, which is the whole reason a
      measurement here is worth taking: a control measured while it was shut
      measured 0px and passed nothing. */
@@ -52,30 +52,31 @@ try {
   const fit = await pg.evaluate(() => {
     const doc = document.documentElement;
     const wide = [];
-    /* The chip strip scrolls sideways inside itself on purpose, so it is
-       exempt from the overhang check - what matters is that it does not push
-       the page wide, which the first line below measures. */
+    /* The file list scrolls inside itself on purpose, so it is exempt from the
+       overhang check - what matters is that it does not push the page wide,
+       which the first line below measures. */
     // The whole dashboard, since there is no separate app shell to scope to.
     for (const el of document.querySelectorAll("#dash *")) {
-      if (el.closest("#cands")) continue;
+      if (el.closest("#queue-list")) continue;
       const r = el.getBoundingClientRect();
       if (r.width > 0 && (r.right > doc.clientWidth + 1 || r.left < -1)) {
         wide.push(`${el.tagName.toLowerCase()}.${el.className || el.id} ` +
                   `${Math.round(r.left)}..${Math.round(r.right)}`);
       }
     }
-    const chips = [...document.querySelectorAll("#cands .chip")];
+    /* The rows are the touch targets now that the chip strip is gone: they are
+       what a finger actually aims at on a phone. */
+    const rows = [...document.querySelectorAll("#queue-list .row")];
     return {
       pageScrollsSideways: doc.scrollWidth > doc.clientWidth,
       viewport: doc.clientWidth,
       overflowing: wide,
-      chips: chips.length,
+      rows: rows.length,
       // The system's coarse-pointer floor is 44px; anything under it is a miss
       // waiting to happen on the control the whole redesign rests on.
-      chipHeights: chips.map((c) => Math.round(c.getBoundingClientRect().height)),
-      // The result is stated in words as well as drawn - the sentence moved from
-      // the stage to the block the chips live in.
-      narrationVisible: !!document.getElementById("chip-why").textContent.trim(),
+      rowHeights: rows.map((r) => Math.round(r.getBoundingClientRect().height)),
+      // The result is stated in words as well as drawn, on the stage's own line.
+      narrationVisible: !!document.getElementById("s-saved").textContent.trim(),
     };
   });
   console.log(JSON.stringify(fit, null, 1));
@@ -85,11 +86,11 @@ try {
      `the page does not scroll sideways at ${WIDTH}px`);
   ok(fit.overflowing.length === 0,
      `nothing overhangs the viewport (${fit.overflowing.join("; ") || "clean"})`);
-  ok(fit.chips > 0, `the version chips rendered (${fit.chips})`);
-  const small = fit.chipHeights.filter((h) => h < TOUCH_FLOOR);
+  ok(fit.rows > 0, `the file rows rendered (${fit.rows})`);
+  const small = fit.rowHeights.filter((h) => h < TOUCH_FLOOR);
   ok(small.length === 0,
-     `every chip clears the ${TOUCH_FLOOR}px touch floor (${
-       small.length ? "short: " + small.join(",") : fit.chipHeights.join(",")})`);
+     `every row clears the ${TOUCH_FLOOR}px touch floor (${
+       small.length ? "short: " + small.join(",") : fit.rowHeights.join(",")})`);
   ok(fit.narrationVisible, "the result is narrated, not just drawn");
   ok(errors.length === 0, `no console errors (${errors.slice(0, 2).join(" | ") || "clean"})`);
 } finally { await b.close(); server.kill(); }

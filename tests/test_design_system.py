@@ -23,7 +23,7 @@ WEB = ROOT / "web"
 WEB_CSS_DIR = WEB / "css"
 
 WEB_SHEETS = ("base.css", "layout.css", "controls.css",
-              "queue.css", "compare.css", "facts.css")
+              "queue.css", "compare.css")
 
 
 def _read(path: Path) -> str:
@@ -77,9 +77,12 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
         for name in WEB_SHEETS[1:]:
             used = set(re.findall(r"var\((--[a-z0-9-]+)", _web_css(name)))
             # Locally-set custom properties, written by JS or by a sibling rule.
-            # --side-w and --facts-h are the person's own panel sizes, written
-            # by js/panels.js onto <html>.
-            used -= {"--clip", "--bar-h", "--side-w", "--facts-h"}
+            # --side-w and --queue-h are the person's own panel sizes, written
+            # by js/panels.js onto <html>. --split-* is the picture's own live
+            # rectangle, written onto the range by js/compare.js so the caliper
+            # cannot leave the image.
+            used -= {"--clip", "--bar-h", "--side-w", "--queue-h",
+                     "--split-x", "--split-y", "--split-w", "--split-h"}
             with self.subTest(sheet=name):
                 self.assertEqual(sorted(used - defined), [],
                                  f"{name} uses tokens base.css does not define")

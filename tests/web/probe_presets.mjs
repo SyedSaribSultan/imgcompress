@@ -5,7 +5,7 @@
  * Two families of assertion:
  *
  *   1. A generated page's preset lands in REAL app state: /compress-to-200kb
- *      boots with sizeTarget 204800 and More choices open (a preset the person
+ *      boots with sizeTarget 204800 and Advanced settings open (a preset the person
  *      cannot see would be the disclosure rule broken one level up),
  *      /compress-jpeg boots pinned to JPEG, /compress-for-email boots on the
  *      email destination - and pages without a preset, the homepage included,
@@ -54,12 +54,12 @@ const boot = async (file) => {
 let s = await boot("compress-to-200kb.html");
 ok(s.size === 204800, `200kb page: the engine's target is 204800 (${s.size})`);
 ok(s.goal === "cap" && /200/.test(s.capShown), `200kb page: the control says it ("${s.capShown}")`);
-ok(s.moreOpen, "200kb page: More choices is open, so the preset is on screen");
+ok(s.moreOpen, "200kb page: Advanced settings is open, so the preset is on screen");
 
 s = await boot("compress-jpeg.html");
 ok(s.formats?.[0] === "jpeg" && s.pinShown === "jpeg",
   `jpeg page: pinned to JPEG in state and on the control (${JSON.stringify(s.formats)}, "${s.pinShown}")`);
-ok(s.moreOpen, "jpeg page: More choices is open");
+ok(s.moreOpen, "jpeg page: Advanced settings is open");
 
 s = await boot("compress-for-email.html");
 ok(s.target === "email", `email page: destination is email (${s.target})`);

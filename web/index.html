@@ -51,7 +51,6 @@
 <link rel="modulepreload" href="/js/engine.js">
 <link rel="modulepreload" href="/js/queue.js">
 <link rel="modulepreload" href="/js/compare.js">
-<link rel="modulepreload" href="/js/facts.js">
 <link rel="modulepreload" href="/js/save.js">
 <link rel="modulepreload" href="/js/panels.js">
 
@@ -98,7 +97,6 @@
 <link rel="stylesheet" href="/css/controls.css">
 <link rel="stylesheet" href="/css/queue.css">
 <link rel="stylesheet" href="/css/compare.css">
-<link rel="stylesheet" href="/css/facts.css">
 </head>
 <body>
 
@@ -217,6 +215,12 @@
         <span class="num" id="t-sizes"></span>
         <span class="num" id="t-saved"></span>
       </div>
+
+      <!-- The file list's own height, dragged from its bottom edge. Same
+           separator pattern as the sidebar's: any pointer, arrow-steppable,
+           double-click (or Home) back to automatic. -->
+      <div class="pane-handle" id="queue-handle" role="separator" tabindex="0"
+           aria-orientation="horizontal" aria-label="Resize the file list"></div>
     </section>
 
     <section id="plan-sec" aria-labelledby="plan-h">
@@ -257,7 +261,7 @@
 
         <!-- One row for the one thing a person decides about size: shrink big
              photos, or never touch a pixel count. Which edge the number caps is
-             expert nuance and lives under "More choices". -->
+             expert nuance and lives under "Advanced settings". -->
         <div class="field" id="shrink-field">
           <label for="shrink-mode">Shrink big photos</label>
           <div class="pair">
@@ -292,7 +296,7 @@
         <button class="btn quiet sm" id="plan-reset" hidden>Back to automatic</button>
 
         <details id="more-choices">
-          <summary>More choices</summary>
+          <summary>Advanced settings</summary>
 
           <div class="field">
             <label for="plan-goal">Size limit</label>
@@ -422,77 +426,6 @@
     </div>
   </section>
 
-  <!-- ============================= THE FACTS =============================
-       Three separate blocks: the encodes that exist, the numbers behind the one
-       kept, and the way to override the plan for this image alone.
-       =================================================================== -->
-  <section id="facts" aria-label="Details">
-    <div class="pane-handle" id="facts-handle" role="separator" tabindex="0"
-         aria-orientation="horizontal" aria-label="Resize the details panel"></div>
-    <div class="fact-blocks">
-
-      <section id="versions" aria-labelledby="versions-h">
-        <h3 id="versions-h">Versions tried</h3>
-        <div class="chips" id="cands" role="group" aria-labelledby="versions-h"></div>
-        <p id="chip-why">Every version here is real and ready. Tap one to keep
-           it instead.</p>
-      </section>
-
-      <section id="measured" aria-labelledby="measured-h">
-        <h3 id="measured-h">How this was measured</h3>
-        <!-- The resize, when there was one, comes BEFORE the numbers it
-             affects, at full strength. A shrink disclosed in fine print under
-             an impressive percentage is the disclosure happening backwards. -->
-        <p class="note strong" id="s-resize" hidden></p>
-        <!-- The undo lives where the realisation happens: someone reading the
-             resize disclosure is exactly the someone who may not have wanted
-             one. Hidden when the destination's own ceiling makes full size
-             impossible. -->
-        <button type="button" class="btn sm" id="keep-size" hidden>Keep full size for this one</button>
-        <div class="stats">
-          <div><div class="k">Format</div><div class="v" id="s-format">—</div></div>
-          <div><div class="k">Visual match</div><div class="v num" id="s-score">—</div></div>
-          <div><div class="k">Dimensions</div><div class="v num" id="s-dims">—</div></div>
-          <div><div class="k">Time</div><div class="v num" id="s-time">—</div></div>
-        </div>
-        <p class="note" id="s-note" hidden></p>
-        <p class="note warn" id="s-warn" hidden></p>
-      </section>
-
-      <section id="redo" aria-labelledby="redo-h">
-        <h3 id="redo-h">Just this one</h3>
-        <div class="field">
-          <label for="ov-format">Format</label>
-          <select id="ov-format">
-            <option value="">follow the plan</option>
-            <option value="jpeg">JPEG</option>
-            <option value="png8">PNG — fewer colors</option>
-            <option value="png">PNG — every pixel kept</option>
-            <option value="webp">WebP</option>
-            <option value="avif">AVIF</option>
-          </select>
-        </div>
-        <!-- The same words the plan speaks, not a raw 60-99 number the plan
-             deliberately abolished: one vocabulary, everywhere it is asked. -->
-        <div class="field">
-          <label for="ov-quality">Must still look</label>
-          <select id="ov-quality">
-            <option value="">follow the plan</option>
-            <option value="95">perfect, even for re-editing</option>
-            <option value="90">exactly the same to your eye</option>
-            <option value="85">the same unless you zoom in and compare</option>
-            <option value="80">the same at a glance</option>
-            <option value="70">clean when shown small</option>
-          </select>
-        </div>
-        <div class="redo-actions">
-          <button class="btn sm" id="ov-apply">Compress again</button>
-          <button class="btn quiet sm" id="ov-reset" hidden>Reset</button>
-          <button class="btn quiet sm" id="remove-btn">Remove</button>
-        </div>
-      </section>
-    </div>
-  </section>
 </main>
 </div><!-- /#app -->
 

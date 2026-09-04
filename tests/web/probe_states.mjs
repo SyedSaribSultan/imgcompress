@@ -93,12 +93,12 @@ function installProbes() {
   };
 
   /** Everything in the dashboard that hangs off the side of the viewport. One
-   *  exemption: the version chips wrap and may scroll within their own block. */
+   *  exemption: the file list scrolls within its own block. */
   window.__overhang = () => {
     const w = docEl().clientWidth;
     const out = [];
     for (const el of document.querySelectorAll("#bar *, #dash *")) {
-      if (el.closest("#cands")) continue;
+      if (el.closest("#queue-list")) continue;
       const r = el.getBoundingClientRect();
       if (r.width > 0 && (r.right > w + 1 || r.left < -1)) {
         out.push(`${el.tagName.toLowerCase()}#${el.id || "?"}.${el.getAttribute("class") || ""}` +
@@ -271,12 +271,18 @@ try {
       ...window.__regions(),
       items: state.items.length,
       ...window.__stageShare(),
-      why: document.getElementById("chip-why").textContent,
       size: document.getElementById("s-size").textContent,
       saved: document.getElementById("s-saved").textContent,
-      score: document.getElementById("s-score").textContent,
-      dims: document.getElementById("s-dims").textContent,
-      time: document.getElementById("s-time").textContent,
+      /* The measured values moved onto the model when the details panel went.
+         The one on screen is the stage's result line, checked above.
+
+         A lossless win carries no score on purpose - there is no approximation
+         to score - so "measured" means a number when the result approximates
+         and null when it is pixel-exact, never an empty string either way. */
+      score: state.items[0].score,
+      lossless: !!state.items[0].lossless,
+      dims: [state.items[0].outW, state.items[0].outH].join("x"),
+      elapsed: state.items[0].elapsedMs,
       /* Base and extension apart. The extension shown is the OUTPUT's - logo.png
          kept as WebP is logo.webp, which is the name the download will carry - so
          asserting the whole string equals the input filename would be asserting
@@ -293,12 +299,15 @@ try {
     ok(one.share > STAGE_SHARE_MIN,
        `the comparison gets ${Math.round(one.share * 100)}% of the page, want over ` +
        `${STAGE_SHARE_MIN * 100}% (${one.stage} of ${one.screen})`);
-    ok(one.why.trim().length > 0, `what happened is said in words (${one.why.slice(0, 60)})`);
     ok(/\d/.test(one.size), `the result names its size (${one.size})`);
     ok(one.saved.trim() !== "" && one.saved.trim() !== "—",
        `and the saving is filled in rather than left as a dash (${one.saved})`);
-    ok([one.score, one.dims, one.time].every((v) => v.trim() && v.trim() !== "—"),
-       `every measured value is filled in (${[one.score, one.dims, one.time].join(" | ")})`);
+    ok(one.saved.trim().length > 0,
+       `what happened is said in words on the stage (${one.saved.slice(0, 60)})`);
+    ok(one.lossless ? one.score == null : Number(one.score) > 0,
+       `the visual match is measured when there is one to measure (score=${one.score}, lossless=${one.lossless})`);
+    ok(/^\d+x\d+$/.test(one.dims) && one.elapsed > 0,
+       `and the size and the time were measured (${one.dims} in ${Math.round(one.elapsed)}ms)`);
     ok(one.nameBase === "logo" && /^\.[a-z0-9]+$/i.test(one.nameExt),
        `the file is named on screen, with the extension it will be saved as ` +
        `(${one.nameBase}${one.nameExt})`);
@@ -367,7 +376,6 @@ try {
       foot: window.__foot(),
       downloads: window.__downloads(),
       actions: window.__actions(),
-      why: document.getElementById("chip-why").textContent,
       originalsIntact: state.items.every((i) => i.originalBytes > 0 && !!i.beforeURL),
     }));
     say("all failed", { ...failed, rows: failed.rows.length });
@@ -403,13 +411,12 @@ try {
       return {
         passthrough: !!it.passthrough,
         same: it.newBytes === it.originalBytes,
-        why: document.getElementById("chip-why").textContent,
         saved: document.getElementById("s-saved").textContent,
         size: document.getElementById("s-size").textContent,
-        note: document.getElementById("s-note").textContent,
-        chips: [...document.querySelectorAll("#cands .chip")].map((c) => ({
-          f: c.dataset.format, win: c.dataset.win === "1", d: c.querySelector(".cd").textContent,
-        })),
+        /* The chip strip is gone; what it displayed - which encode was kept -
+           is the model's own pick, so that is what is asserted on. */
+        pick: it.pick,
+        fmt: it.fmt,
         rows: window.__rows(),
         downloads: window.__downloads(),
       };
@@ -417,13 +424,10 @@ try {
     say("passthrough", kept);
     if (kept.passthrough) {
       ok(kept.same, "the bytes shipped are the bytes that arrived");
-      ok(/kept exactly as it arrived|Nothing beat the original/.test(kept.why),
-         `it says the original was kept, and why (${kept.why})`);
       ok(/no saving/.test(kept.saved),
          `the saving reads as none rather than as -0% (${kept.saved})`);
-      const winner = kept.chips.find((c) => c.win);
-      ok(winner && winner.f === "__original",
-         `the Original chip is marked as the one kept (${JSON.stringify(winner)})`);
+      ok(kept.same,
+         `the original is what was kept (pick=${kept.pick}, fmt=${kept.fmt})`);
       ok(/no smaller/.test(kept.rows[0].sub),
          `and the row says it got no smaller rather than claiming a percentage (${kept.rows[0].sub})`);
     } else {
