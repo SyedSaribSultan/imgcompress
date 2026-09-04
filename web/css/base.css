@@ -77,20 +77,36 @@
      the pointer is coarse or the layout is one-handed. */
   --s-target: var(--oz-target-min);
 
-  /* Three stacks: Geist for the interface, Geist Mono for figures - tabular
-     digits so a column of sizes lines up and stops jittering as it counts -
-     and Fraunces where the product says its own name.
+  /* Two stacks. Fraunces sets the interface - all of it, from the wordmark to
+     the smallest label - and Geist Mono keeps the figures, because tabular
+     digits are what stop a column of sizes jittering as it counts and a
+     proportional serif has no equivalent.
 
-     --font-display is defined here rather than taken from the token layer
-     because the layer's --oz-font-display still names Bricolage, and that
-     sheet is vendored and generated upstream: naming the face here is the
-     one place this app is allowed to disagree with it. The fallback is the
-     same system serif stack a soft serif degrades into most gracefully, so a
-     blocked or slow face lands on a serif rather than snapping to the UI
-     sans - the wordmark keeps its voice either way. */
-  --font-ui: var(--oz-font-body);
+     This is deliberate and it is a real trade. Fraunces is a display face: an
+     "Old Style" soft serif with a wonk axis, drawn to have character at size.
+     Using it for body text buys the product a voice that no amount of spacing
+     or colour can, and costs a little of the effortless scanability a neutral
+     grotesque gives you. The optical-size axis is what makes it payable - the
+     face is shipped with opsz variable across 9..144 rather than pinned, so
+     the browser fits a sturdier, more open cut at 13px and lets the quirks
+     out at 38px, automatically, per element.
+
+     --font-ui is redefined here rather than overridden in a dozen places: it
+     is the one name every sheet already consumes, so changing the interface
+     font is one line and nothing can be left behind. --font-display stays as
+     its own name because the wordmark and the prose headings mean something
+     different by it, and a later decision to pull the interface back to a sans
+     should not have to unpick which is which.
+
+     Both are named here rather than taken from the token layer, whose
+     --oz-font-display still says Bricolage: that sheet is vendored and
+     generated upstream, and this is the one place the app is allowed to
+     disagree with it. The fallback is a system serif stack, so a blocked or
+     slow face lands on a serif rather than snapping to a sans - the page keeps
+     its voice either way. */
+  --font-ui: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
   --font-num: var(--oz-font-mono);
-  --font-display: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-display: var(--font-ui);
 
   /* Interaction states, straight off the system ramps. Hover and press are
      colour steps, never invented tints. */
@@ -160,12 +176,23 @@ body {
 
 h1, h2, h3 { margin: 0; font-size: 1rem; font-weight: 600; }
 
-/* The one place a display face earns its bytes: type set large enough for its
-   character to read. Fraunces is a soft serif with the wonk axis on, so at
-   13px uppercase - which is what h2 and h3 are in this interface - its quirks
-   become noise and its serifs become mush. It is scoped to the wordmark and to
-   real prose headings, and h2/h3 keep the interface face below. */
+/* Kept as a name rather than deleted: the interface and the display face are
+   the same family now, but "this is display type" is still a distinct thing to
+   say, and the tracking below is what it means at large sizes. */
 .display { font-family: var(--font-display); letter-spacing: -0.005em; }
+
+/* A serif needs a touch more room between lines than the grotesque this
+   interface was spaced for - its ascenders and descenders are longer, and at
+   the same leading the text closes up. One value, on the element everything
+   inherits from, rather than a correction per block. */
+body { line-height: 1.55; }
+
+/* The 13px uppercase micro-labels are where a soft serif is most at risk: at
+   that size, in caps, the quirks read as noise. The optical-size axis already
+   fits a sturdier cut there; a little extra tracking is what makes the caps
+   breathe, and it is the same trick the sans version needed for the same
+   reason - just slightly more of it. */
+h2, h3 { letter-spacing: 0.06em; }
 
 /* The faces are cut to wght 400..600 and nothing in this interface renders
    heavier. The user agent styles these at `bold` (700), which would synthesise

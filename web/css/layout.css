@@ -63,7 +63,6 @@ body {
    level 1 instead of mid-outline - but it keeps the lead-heading size. The
    double id outweighs the `#about h2` FAQ reset below. */
 #about #about-h {
-  font-family: var(--font-display);
   font-size: 22px;
   line-height: 1.35;
   color: var(--c-ink);
@@ -75,7 +74,6 @@ body {
    Reset from the 13px region-label style h2 normally carries, because these
    are prose headings, not chrome. */
 #about h2 {
-  font-family: var(--font-display);
   font-size: 17px;
   line-height: 1.4;
   color: var(--c-ink);
@@ -138,12 +136,16 @@ body {
   padding: 0;
   cursor: pointer;
   /* The wordmark is the one piece of type on this page that is the product
-     rather than about it, so it gets the display face. Set after the reset
-     below rather than through `font: inherit`, which would take the shorthand
-     and put the interface face back. 17px because a serif at the sans's 16
-     reads a step smaller than it measures. */
+     rather than about it. It shares the interface face now, so what is left
+     here is what is still true of it alone: a step larger than body text, and
+     tracked a little tighter the way a set name is.
+
+     font-family is stated rather than inherited because this is a <button>,
+     and form controls do not inherit the page's font - the user agent gives
+     them its own. Dropping it here once put the wordmark in Arial while every
+     other element on the page was correct. */
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }

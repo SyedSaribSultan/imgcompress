@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v6";
+const VERSION = "v7";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 
@@ -69,7 +69,6 @@ const HEAVY_PRECACHE = [
   "/vendor/oxipng.js", "/vendor/squoosh_oxipng_bg.wasm",
   "/vendor/webp.js", "/vendor/webp_enc_simd.wasm",
   "/vendor/avif.js", "/vendor/avif_enc.wasm",
-  "/fonts/geist-latin.woff2", "/fonts/geist-latin-ext.woff2",
   "/fonts/geist-mono-latin.woff2", "/fonts/geist-mono-latin-ext.woff2",
   "/fonts/fraunces-latin.woff2", "/fonts/fraunces-latin-ext.woff2",
 ];

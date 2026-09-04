@@ -34,50 +34,86 @@ try {
   const loaded = await pg.evaluate(() =>
     [...document.fonts].map((f) => `${f.family} ${f.weight} ${f.status}`).sort());
   console.log("  faces:", JSON.stringify(loaded, null, 0));
-  ok(loaded.length === 6, `six faces registered (${loaded.length})`);
+  ok(loaded.length === 4, `four faces registered (${loaded.length})`);
   ok(loaded.every((f) => f.endsWith("loaded") || f.endsWith("unloaded")),
      "no face failed to parse");
 
-  /* Are the brand faces the ones actually painting? The compressor page sets
-     the interface in Geist, its figures in Geist Mono, and its wordmark in
-     Fraunces - all three through the base.css aliases onto the token layer.
+  /* Are the brand faces the ones actually painting? The page sets ALL of its
+     type in Fraunces and its figures in Geist Mono, both through the base.css
+     aliases - --font-ui and --font-num - onto the token layer.
 
-     This used to check that Bricolage merely PARSED, because the page never
-     painted a glyph of it. It is a stronger check now: the display face is
-     read off the element that renders it, so a face that is shipped, declared
-     and still unused would fail here rather than pass on a technicality. */
+     Every assertion below reads the face off an element that renders it rather
+     than merely checking the file parses. Two faces have now been removed from
+     this app for failing exactly that distinction: Bricolage, which was
+     preloaded for months without painting a glyph, and then Geist, which was
+     the interface font right up until Fraunces took the job and stayed shipped
+     and precached afterwards. A gate that only proves a face LOADS cannot tell
+     you either of those. */
   const paints = await pg.evaluate(async () => {
     await document.fonts.ready;
     const check = (family, weight, size) => document.fonts.check(`${weight} ${size}px "${family}"`);
     return {
       fraunces600: check("Fraunces", 600, 17),
-      geist400: check("Geist", 400, 16),
+      fraunces400: check("Fraunces", 400, 15),
       geistMono: check("Geist Mono", 500, 14),
       bodyFamily: getComputedStyle(document.body).fontFamily,
       numFamily: getComputedStyle(document.getElementById("queue-count")).fontFamily,
       brandFamily: getComputedStyle(document.querySelector("#bar .brand")).fontFamily,
       aboutFamily: getComputedStyle(document.getElementById("about-h")).fontFamily,
+      labelFamily: getComputedStyle(
+        document.querySelector('#plan-fields label[for="target"]')).fontFamily,
+      /* A <button> does not inherit the page's font - the user agent gives it
+         one - so a control is where an interface-wide face is most likely to
+         be quietly missing. Dropping font-family from the wordmark once put it
+         in Arial while every other element on the page was correct. */
+      buttonFamily: getComputedStyle(document.getElementById("add-btn")).fontFamily,
     };
   });
   console.log("  paints:", JSON.stringify(paints));
   ok(paints.fraunces600, "Fraunces 600 is available");
-  ok(paints.geist400, "Geist 400 is available");
+  ok(paints.fraunces400, "Fraunces 400 is available at body size");
   ok(paints.geistMono, "Geist Mono is available");
-  ok(/Geist/.test(paints.bodyFamily), "body resolves to Geist first");
+  ok(/Fraunces/.test(paints.bodyFamily),
+     `body resolves to Fraunces first (${paints.bodyFamily})`);
   ok(/Geist Mono/.test(paints.numFamily), "figures resolve to Geist Mono first");
-  /* The display face is used, not merely shipped - the failure this replaces
-     is a 76,888-byte face that was preloaded for months and never drawn. */
   ok(/Fraunces/.test(paints.brandFamily),
      `the wordmark resolves to Fraunces first (${paints.brandFamily})`);
   ok(/Fraunces/.test(paints.aboutFamily),
      `and so does the about strip's lead heading (${paints.aboutFamily})`);
-  /* Chrome stays on the interface face: h2/h3 are 13px uppercase micro-labels
-     and a soft serif at that size is mush, so the display face must NOT have
-     leaked into them. */
-  const chrome = await pg.evaluate(() =>
-    getComputedStyle(document.getElementById("plan-h")).fontFamily);
-  ok(!/Fraunces/.test(chrome),
-     `region labels stay on the interface face (${chrome})`);
+  ok(/Fraunces/.test(paints.labelFamily),
+     `and every field label (${paints.labelFamily})`);
+  ok(/Fraunces/.test(paints.buttonFamily),
+     `and the buttons, which do not inherit it (${paints.buttonFamily})`);
+  /* The region labels are the hardest case for this face: 13px, uppercase,
+     tracked. They are IN Fraunces now by decision, which makes the thing worth
+     asserting not "which family" but that the optical-size axis survived the
+     subset - a face pinned to a display optical size would render those labels
+     with display-sized serifs, which is the failure that would actually look
+     wrong. */
+  const opsz = await pg.evaluate(async () => {
+    const face = [...document.fonts].find((f) => f.family === "Fraunces");
+    return face ? face.variationSettings || "normal" : null;
+  });
+  console.log("  Fraunces variation settings:", opsz);
+  const axes = await pg.evaluate(async () => {
+    /* Rendered width at two sizes, normalised. An optical-size axis changes the
+       letterforms between them; a pinned face merely scales, so the ratio would
+       be exactly the size ratio. */
+    const m = (px) => {
+      const el = document.createElement("span");
+      el.textContent = "Handgloves shrink";
+      el.style.cssText = `position:absolute;visibility:hidden;font-family:Fraunces;font-size:${px}px`;
+      document.body.append(el);
+      const w = el.getBoundingClientRect().width / px;
+      el.remove();
+      return w;
+    };
+    return { small: m(13), large: m(72) };
+  });
+  console.log("  normalised widths:", JSON.stringify(axes));
+  ok(Math.abs(axes.small - axes.large) > 0.005,
+     `the optical-size axis survived the subset, so 13px labels get their own `
+     + `cut rather than a shrunken display one (${axes.small.toFixed(4)} vs ${axes.large.toFixed(4)})`);
 
   // The ceiling, measured on every rendered element rather than in source.
   const heavy = await pg.evaluate(() => {
