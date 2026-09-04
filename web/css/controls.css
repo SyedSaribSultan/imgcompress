@@ -300,9 +300,25 @@ select {
 .field .pair > * { min-width: 0; }
 .field .pair > select,
 .field .pair > .picker { flex: 1; }
-/* Wide enough for four digits and the spinner. At the shared 7ch it clipped
-   "2560" to "256" plus an arrow, which reads as a different number. */
-.field .pair > input[type="number"] { flex: 0 0 9ch; width: auto; }
+/* Wide enough for four digits AND the spinner, whatever face is set.
+   
+   `ch` is the width of a "0", so it tracks the font - but only the digits do.
+   The spinner is chrome the browser adds outside that budget, and the padding
+   is fixed pixels, so a `ch` count that fit one face clipped another: swapping
+   the interface font to a wider one left "2560" rendering as "2." in a 63px
+   box that needed 81px, with every layout gate still green.
+   
+   So the width is stated as its parts. 4ch of digits is the real content, and
+   the rest is the space the control needs around it - which is why the min is
+   in pixels: the spinner does not scale with the type.
+   
+   tests/web/probe_widths.mjs measures scrollWidth against clientWidth on every
+   field with a value, at every viewport, so the next face that does not fit
+   says so rather than silently truncating a number someone is relying on. */
+.field .pair > input[type="number"] {
+  flex: 0 0 auto;
+  width: max(9ch, calc(4ch + 56px));
+}
 
 /* A static unit beside a number, not a control - so it is never focusable and
    never looks like something to click. */

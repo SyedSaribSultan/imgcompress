@@ -104,8 +104,8 @@
      disagree with it. The fallback is a system serif stack, so a blocked or
      slow face lands on a serif rather than snapping to a sans - the page keeps
      its voice either way. */
-  --font-ui: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
-  --font-num: var(--oz-font-mono);
+  --font-ui: 'Caveat', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-num: 'Geist Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --font-display: var(--font-ui);
 
   /* Interaction states, straight off the system ramps. Hover and press are

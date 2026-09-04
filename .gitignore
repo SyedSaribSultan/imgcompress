@@ -30,3 +30,8 @@ tests/real_world_fixtures/
 .firecrawl/
 
 tests/*.log
+
+# Downloaded font sources, re-fetched on demand by tools/gen_fonts.py.
+# The subset woff2 files it PRODUCES are committed; these originals are not,
+# because they are several megabytes and reproducible from the family name.
+.fontcache/

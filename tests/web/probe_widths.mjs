@@ -102,6 +102,31 @@ async function measure(pg) {
       }
     }
 
+    /* 3b. clipped by its OWN box, which is a different failure from the one
+     *     above and was caught by nothing. A field can sit entirely inside the
+     *     sidebar, cause no overlap and no sideways scroll, and still show
+     *     "2." where its value is 2560 - the box is the right size for the
+     *     panel and the wrong size for the text in it.
+     *
+     *     Found by swapping the interface font rather than by reading the CSS:
+     *     the resize limit is a 9ch input, and a wider face needed 81px of the
+     *     63px it had. Nobody reading that panel could tell what their resize
+     *     limit was, and every other gate here was green.
+     *
+     *     Only fields with a VALUE are checked. A label is allowed to
+     *     ellipsise - the design says so, and the full words ride the title -
+     *     but a number nobody can read is not a shortened label, it is a wrong
+     *     number. */
+    const truncated = [];
+    for (const f of document.querySelectorAll(
+        "#side input[type=number], #side input[type=text]")) {
+      if (!vis(f) || !f.value) continue;
+      if (f.scrollWidth > f.clientWidth + 1) {
+        truncated.push(
+          `${f.id || f.name}="${f.value}" needs ${f.scrollWidth}px, has ${f.clientWidth}px`);
+      }
+    }
+
     // 4. touch floor for the controls a finger has to hit. A checkbox wrapped
     //    in its label is measured as the label, because the label is the
     //    target - the whole row toggles it.
@@ -113,7 +138,8 @@ async function measure(pg) {
       if (r.height < 43.5) small.push(`${c.id || c.textContent.trim().slice(0, 18)} ${Math.round(r.height)}px`);
     }
 
-    return { sideways, overlaps, clipped: clipped.slice(0, 6), small: [...new Set(small)].slice(0, 8) };
+    return { sideways, overlaps, clipped: clipped.slice(0, 6), truncated: truncated.slice(0, 6),
+             small: [...new Set(small)].slice(0, 8) };
   });
 }
 
@@ -121,6 +147,8 @@ function judge(width, label, m, { touch }) {
   ok(m.sideways <= 0, `${width}px ${label}: no sideways scroll (${m.sideways}px)`);
   ok(m.overlaps.length === 0, `${width}px ${label}: regions tile, never stack (${m.overlaps.join("; ") || "clean"})`);
   ok(m.clipped.length === 0, `${width}px ${label}: nothing clipped at the sidebar edge (${m.clipped.join("; ") || "clean"})`);
+  ok(m.truncated.length === 0,
+     `${width}px ${label}: every field shows its whole value (${m.truncated.join("; ") || "clean"})`);
   if (touch) {
     ok(m.small.length === 0, `${width}px ${label}: every control clears 44px (${m.small.join("; ") || "clean"})`);
   }

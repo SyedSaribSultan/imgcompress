@@ -24,7 +24,8 @@ sys.path.insert(0, str(ROOT))
 WEB = ROOT / "web"
 WEB_CSS_DIR = WEB / "css"
 
-from tools import gen_tokens_subset as gen_tokens  # noqa: E402
+from tools import gen_fonts  # noqa: E402
+from tools import gen_tokens_subset as gen_tokens
 
 WEB_SHEETS = ("base.css", "layout.css", "controls.css",
               "queue.css", "compare.css")
@@ -127,6 +128,33 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
         self.assertEqual(
             re.findall(r"""\sstyle\s*=\s*["'][^"']*["']""", html), [],
             "index.html carries an inline style attribute")
+
+
+class TheTypefaceIsGenerated(unittest.TestCase):
+    """The interface font is one value, and everything it implies is derived.
+
+    Changing the face touches five files - the @font-face blocks, the preload,
+    the service worker's precache and its version, and the token in base.css -
+    and misses on any of them are silent. Two faces have shipped in this app
+    while painting no glyphs at all, each preloaded at the top of the critical
+    path, because a face was replaced and its files were left behind. So the
+    swap is a generator, and this is what stops the derived files drifting from
+    it.
+    """
+
+    def test_everything_the_font_choice_implies_is_current(self):
+        self.assertEqual(
+            gen_fonts.main(["--check"]), 0,
+            "the font files are stale. Run `python tools/gen_fonts.py` "
+            "and commit the result.")
+
+    def test_only_the_faces_in_use_are_shipped(self):
+        cfg = gen_fonts.load_config()
+        stale = [p.name for p in gen_fonts.stale_faces(cfg["display"], cfg["mono"])]
+        self.assertEqual(
+            stale, [],
+            "web/fonts/ ships faces nothing references - exactly the state "
+            "Bricolage and then Geist were left in")
 
 
 class TheTokenSheetIsGenerated(unittest.TestCase):

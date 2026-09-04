@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v9";
+const VERSION = "v14";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 
@@ -71,8 +71,7 @@ const HEAVY_PRECACHE = [
   "/vendor/mozjpeg.js", "/vendor/mozjpeg_enc.wasm",
   "/vendor/oxipng.js", "/vendor/squoosh_oxipng_bg.wasm",
   "/vendor/webp.js", "/vendor/webp_enc_simd.wasm",
-  "/fonts/geist-mono-latin.woff2", "/fonts/geist-mono-latin-ext.woff2",
-  "/fonts/fraunces-latin.woff2", "/fonts/fraunces-latin-ext.woff2",
+  "/fonts/caveat-latin.woff2", "/fonts/caveat-latin-ext.woff2", "/fonts/geist-mono-latin.woff2", "/fonts/geist-mono-latin-ext.woff2",
 ];
 
 /* And what it does NOT block on. avif_enc.wasm is 3,485,872 bytes - 1,116,248

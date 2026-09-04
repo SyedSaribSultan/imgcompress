@@ -3,9 +3,22 @@
  * leaves the origin. */
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { CHROME } from "./resolve_puppeteer.mjs";
+
+/* Which families the app is set in, read from the same file that generated
+   them. This gate used to name Fraunces in nine places, so swapping the
+   interface font made it fail nine times while describing the previous
+   design - which is a gate asserting its own history rather than the app's
+   rules. The rules are: the configured interface face paints everything, the
+   configured mono paints the figures, and nothing renders above semibold. */
+const FONTS = JSON.parse(readFileSync(
+  path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "tools", "fonts.json"),
+  "utf8"));
+const UI = FONTS.display;
+const MONO = FONTS.mono;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BASE = process.env.E2E_URL || "http://127.0.0.1:8155/";
@@ -49,13 +62,13 @@ try {
      the interface font right up until Fraunces took the job and stayed shipped
      and precached afterwards. A gate that only proves a face LOADS cannot tell
      you either of those. */
-  const paints = await pg.evaluate(async () => {
+  const paints = await pg.evaluate(async (fam) => {
     await document.fonts.ready;
     const check = (family, weight, size) => document.fonts.check(`${weight} ${size}px "${family}"`);
     return {
-      fraunces600: check("Fraunces", 600, 17),
-      fraunces400: check("Fraunces", 400, 15),
-      geistMono: check("Geist Mono", 500, 14),
+      ui600: check(fam.ui, 600, 17),
+      ui400: check(fam.ui, 400, 15),
+      mono: check(fam.mono, 500, 14),
       bodyFamily: getComputedStyle(document.body).fontFamily,
       numFamily: getComputedStyle(document.getElementById("queue-count")).fontFamily,
       brandFamily: getComputedStyle(document.querySelector("#bar .brand")).fontFamily,
@@ -68,21 +81,18 @@ try {
          in Arial while every other element on the page was correct. */
       buttonFamily: getComputedStyle(document.getElementById("add-btn")).fontFamily,
     };
-  });
+  }, { ui: UI, mono: MONO });
   console.log("  paints:", JSON.stringify(paints));
-  ok(paints.fraunces600, "Fraunces 600 is available");
-  ok(paints.fraunces400, "Fraunces 400 is available at body size");
-  ok(paints.geistMono, "Geist Mono is available");
-  ok(/Fraunces/.test(paints.bodyFamily),
-     `body resolves to Fraunces first (${paints.bodyFamily})`);
-  ok(/Geist Mono/.test(paints.numFamily), "figures resolve to Geist Mono first");
-  ok(/Fraunces/.test(paints.brandFamily),
-     `the wordmark resolves to Fraunces first (${paints.brandFamily})`);
-  ok(/Fraunces/.test(paints.aboutFamily),
-     `and so does the about strip's lead heading (${paints.aboutFamily})`);
-  ok(/Fraunces/.test(paints.labelFamily),
-     `and every field label (${paints.labelFamily})`);
-  ok(/Fraunces/.test(paints.buttonFamily),
+  const isUI = (v) => v.startsWith(`${UI},`) || v.startsWith(`"${UI}"`) || v === UI;
+  ok(paints.ui600, `${UI} 600 is available`);
+  ok(paints.ui400, `${UI} 400 is available at body size`);
+  ok(paints.mono, `${MONO} is available`);
+  ok(isUI(paints.bodyFamily), `body resolves to ${UI} first (${paints.bodyFamily})`);
+  ok(paints.numFamily.includes(MONO), `figures resolve to ${MONO} first`);
+  ok(isUI(paints.brandFamily), `the wordmark resolves to ${UI} first`);
+  ok(isUI(paints.aboutFamily), "and so does the about strip's lead heading");
+  ok(isUI(paints.labelFamily), "and every field label");
+  ok(isUI(paints.buttonFamily),
      `and the buttons, which do not inherit it (${paints.buttonFamily})`);
   /* The region labels are the hardest case for this face: 13px, uppercase,
      tracked. They are IN Fraunces now by decision, which makes the thing worth
@@ -90,30 +100,36 @@ try {
      subset - a face pinned to a display optical size would render those labels
      with display-sized serifs, which is the failure that would actually look
      wrong. */
-  const opsz = await pg.evaluate(async () => {
-    const face = [...document.fonts].find((f) => f.family === "Fraunces");
-    return face ? face.variationSettings || "normal" : null;
-  });
-  console.log("  Fraunces variation settings:", opsz);
-  const axes = await pg.evaluate(async () => {
+  console.log(`  interface face: ${UI}, figures: ${MONO}`);
+  const axes = await pg.evaluate(async (ui) => {
     /* Rendered width at two sizes, normalised. An optical-size axis changes the
        letterforms between them; a pinned face merely scales, so the ratio would
        be exactly the size ratio. */
     const m = (px) => {
       const el = document.createElement("span");
       el.textContent = "Handgloves shrink";
-      el.style.cssText = `position:absolute;visibility:hidden;font-family:Fraunces;font-size:${px}px`;
+      el.style.cssText = `position:absolute;visibility:hidden;font-family:${ui};font-size:${px}px`;
       document.body.append(el);
       const w = el.getBoundingClientRect().width / px;
       el.remove();
       return w;
     };
     return { small: m(13), large: m(72) };
-  });
-  console.log("  normalised widths:", JSON.stringify(axes));
-  ok(Math.abs(axes.small - axes.large) > 0.005,
-     `the optical-size axis survived the subset, so 13px labels get their own `
-     + `cut rather than a shrunken display one (${axes.small.toFixed(4)} vs ${axes.large.toFixed(4)})`);
+  }, UI);
+  /* Only meaningful for a face that HAS an optical-size axis. Where one does,
+     a 13px label gets a sturdier cut than a shrunken 72px one and the
+     normalised widths differ; where the family has no opsz, they are identical
+     and that is correct rather than a regression - so this reports the reading
+     and only asserts when the axis is supposed to be there. */
+  const hasOpsz = /opsz/.test(FONTS.axes || "");
+  const spread = Math.abs(axes.small - axes.large);
+  console.log(`  normalised widths 13px vs 72px: ${axes.small.toFixed(4)} / ${axes.large.toFixed(4)}`
+    + (hasOpsz ? "" : `  (${UI} has no optical-size axis)`));
+  if (hasOpsz) {
+    ok(spread > 0.005,
+       `the optical-size axis survived the subset, so 13px labels get their own `
+       + `cut rather than a shrunken display one (${spread.toFixed(4)} apart)`);
+  }
 
   // The ceiling, measured on every rendered element rather than in source.
   const heavy = await pg.evaluate(() => {
