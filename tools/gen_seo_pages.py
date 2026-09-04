@@ -12,8 +12,7 @@ Run it after any change to web/index.html and commit the result:
     python tools/gen_seo_pages.py            # writes web/<slug>.html + sitemap.xml
     python tools/gen_seo_pages.py --check    # exit 1 if anything is stale
 
-tests/test_seo_pages.py gates the --check in CI, the same pattern as
-gen_destinations.py.
+tests/test_seo_pages.py gates the --check in CI.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
-BASE_URL = "https://pocketsize.vercel.app"
+BASE_URL = "https://pocketsize.syedsarib.com"
 LASTMOD = "2026-08-14"
 
 PRIVACY = (

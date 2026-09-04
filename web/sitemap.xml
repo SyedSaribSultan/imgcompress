@@ -3,91 +3,91 @@
      tools/gen_seo_pages.py), and the proof page. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://pocketsize.vercel.app/</loc>
+    <loc>https://pocketsize.syedsarib.com/</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-to-200kb</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-to-200kb</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-to-100kb</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-to-100kb</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-to-50kb</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-to-50kb</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-to-1mb</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-to-1mb</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-jpeg</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-jpeg</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-png</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-png</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-webp</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-webp</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/png-to-avif</loc>
+    <loc>https://pocketsize.syedsarib.com/png-to-avif</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-for-email</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-for-email</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/bulk-image-compressor</loc>
+    <loc>https://pocketsize.syedsarib.com/bulk-image-compressor</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-video</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-video</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-video-for-discord</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-video-for-discord</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/compress-video-for-email</loc>
+    <loc>https://pocketsize.syedsarib.com/compress-video-for-email</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://pocketsize.vercel.app/nothing-is-uploaded</loc>
+    <loc>https://pocketsize.syedsarib.com/nothing-is-uploaded</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>

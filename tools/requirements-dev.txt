@@ -1,0 +1,17 @@
+# Development tools only. Nothing here ships - the app is a static web page
+# that runs entirely in the browser.
+#
+# What these are for:
+#   pillow, numpy  - writing the test fixtures and the validation vectors
+#   ssimulacra2    - the REFERENCE implementation of the quality metric.
+#                    tests/web/ss2_validate.mjs holds web/ss2.js to it, which
+#                    is what keeps the browser's score honest.
+#   scipy          - the reference metric's Gaussian blur
+#   ruff           - lint
+#
+# Install:  python -m pip install -r tools/requirements-dev.txt
+pillow>=10.0
+numpy>=1.24
+ssimulacra2>=0.3
+scipy>=1.10
+ruff>=0.5

@@ -13,7 +13,7 @@ its `puppeteer-core.js`). `CHROME_PATH` overrides the Chrome binary.
 ```
 python tests/web/make_web_fixtures.py     # once: builds fixtures/
 node tests/web/e2e.mjs                    # ~44 asserts against the local build
-E2E_URL=https://pocketsize.vercel.app/ node tests/web/e2e.mjs   # against prod
+E2E_URL=https://pocketsize.syedsarib.com/ node tests/web/e2e.mjs   # against prod
 ```
 
 What it holds the engine to, among other things: the fresh-profile quality

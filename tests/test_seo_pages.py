@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT))
 from tools import gen_seo_pages as gen  # noqa: E402
 
 WEB = ROOT / "web"
-BASE = "https://pocketsize.vercel.app"
+BASE = "https://pocketsize.syedsarib.com"
 
 GENERATED = [f"{p['slug']}.html" for p in gen.PAGES]
 HANDWRITTEN = ["nothing-is-uploaded.html"]

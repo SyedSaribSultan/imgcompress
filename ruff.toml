@@ -1,0 +1,13 @@
+# Moved out of pyproject.toml when the Python package was removed. The app is a
+# static web page now; the Python that remains is fixture builders, generators
+# and the metric-validation harness.
+line-length = 100
+target-version = "py39"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# The fixture builders and validators put a sys.path line above their imports.
+"tests/*" = ["E402"]

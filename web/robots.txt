@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://pocketsize.vercel.app/sitemap.xml
+Sitemap: https://pocketsize.syedsarib.com/sitemap.xml
