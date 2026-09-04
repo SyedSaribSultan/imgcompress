@@ -64,9 +64,6 @@ try {
         return {
           size: m.human(1.4 * 1024 * 1024),
           score: m.scoreText(90.5, false),
-          /* A clock stays digits in every locale - 2:31 is not localised, and
-             pretending otherwise would be worse than leaving it alone. */
-          clock: m.clock(151),
           /* What the browser ACTUALLY resolved to. Without this the probe
              cannot tell "the code ignores the locale" from "the runner never
              applied the locale", and the second one would quietly turn every
@@ -88,8 +85,6 @@ try {
         got.size === wantSize, `${got.size} (want ${wantSize})`);
       check(`${locale}: the visual-match score too`,
         got.score === wantScore, `${got.score} (want ${wantScore})`);
-      check(`${locale}: a running time is still clock notation`,
-        got.clock === "2:31", got.clock);
     } finally {
       await browser.close();
     }

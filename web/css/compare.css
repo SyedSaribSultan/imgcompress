@@ -52,7 +52,6 @@
    transform - so the split, the divider and the zoom work on a clip exactly as
    they work on a picture, with nothing about them knowing which it is. */
 #frame > img,
-#frame > video,
 #frame > .after,
 #frame > canvas {
   position: absolute;
@@ -62,10 +61,8 @@
   display: block;
 }
 #frame > .after > img,
-#frame > .after > video { width: 100%; height: 100%; display: block; }
 /* [hidden] wins over these anyway - see base.css - but a layer with no source
    must never be a black rectangle sitting over the one that has one. */
-#frame > video { background: transparent; }
 
 /* Pixels stay pixels past 1:1. Inspecting compression artefacts through a
    smoothing filter would be inspecting the filter. */
@@ -220,24 +217,6 @@
 .zoom { display: inline-flex; align-items: center; gap: var(--s-1); }
 .zoom > .z { min-width: 5ch; text-align: center; font-size: 14px; color: var(--c-ink-2); }
 
-/* ------------------------------- transport ------------------------------- */
-
-/* Play, position, elapsed. On the top bar rather than on the player itself,
-   because the split's own slider covers the whole stage and native controls
-   would be unreachable exactly when the comparison is in use. Both players
-   move together: this drives the original and the compressed side follows. */
-.transport {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  min-width: 0;
-}
-.transport > .z {
-  min-width: 11ch;
-  text-align: center;
-  font-size: 14px;
-  color: var(--c-ink-2);
-}
 /* A real range, kept native - the accent is the app's own, and nothing here
    repaints a control it does not fully own. */
 .scrub {

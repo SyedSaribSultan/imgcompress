@@ -72,11 +72,8 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
                 self.assertEqual(found, [], f"{name} hand-types {found}")
 
     def test_every_token_used_is_defined_in_base(self):
-        # media-accent.css is part of the vocabulary too: it names the one
-        # colour that has to survive outside the cascade.
         defined = set(re.findall(r"^\s*(--[a-z0-9-]+)\s*:",
-                                 _web_css("base.css")
-                                 + _web_css("media-accent.css"), re.M))
+                                 _web_css("base.css"), re.M))
         for name in WEB_SHEETS[1:]:
             used = set(re.findall(r"var\((--[a-z0-9-]+)", _web_css(name)))
             # Locally-set custom properties, written by JS or by a sibling rule.

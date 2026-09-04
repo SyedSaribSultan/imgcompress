@@ -20,11 +20,6 @@ window.DESTINATIONS = {
   DESTINATION_ORDER,
   DESTINATION_FORMATS,
   DESTINATION_NUMBERS,
-  /* Video's own columns of the same table. A destination missing from these
-     two takes no video at all, which is a fact the table states rather than
-     something this app decides. */
-  DESTINATION_VIDEO_FORMATS,
-  DESTINATION_VIDEO_NUMBERS,
   OLD_TARGET_NAMES,
   DOCUMENTS_MAX_DIMENSION,
   destinationOf,

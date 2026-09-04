@@ -287,18 +287,6 @@ body[data-focus="1"] #dash {
    after the command-line note instead of between the two things a first-time
    visitor has to read in sequence. */
 #side:has(#queue-list[hidden]) #queue-sec { flex: 0 0 auto; }
-#side:has(#queue-list[hidden]) #cli-note { margin-top: auto; }
-
-/* The pip-install pointer. Quiet, last, and never in the way. The install
-   command has no spaces to break on, so it is allowed to break anywhere
-   rather than prop the sidebar open. */
-#cli-note {
-  padding: var(--s-3) var(--s-4);
-  border-top: 1px solid var(--c-line);
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-#cli-note a { color: var(--c-ink-2); }
 
 #stage {
   grid-area: stage;

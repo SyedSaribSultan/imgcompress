@@ -18,7 +18,7 @@
 
 import { $, setText, show, toastAside } from "./dom.js";
 import {
-  state, D, DEFAULT_DIMENSION, DIMENSION_MODES, queueKinds,
+  state, D, DEFAULT_DIMENSION, DIMENSION_MODES,
 } from "./state.js";
 import {
   human, parseSize, wordsForQuality, FORMAT_CHOICE_LABEL, LOSSLESS_CAPABLE,
@@ -62,13 +62,8 @@ export function renderFormatOptions() {
   auto.value = "";
   auto.dataset.label = "automatic — keep whichever comes out best";
   auto.textContent = auto.dataset.label;
-  /* "the file", not "the image": this control governs the picture formats, but
-     the sentence describes the rule, and the same rule runs on a video - it is
-     encoded more than one way and the best result is kept. Saying "image" here
-     while a clip is in the queue is the interface not noticing what it holds.
-     Which FORMATS a video may be written as is not a control and never becomes
-     one: a video run keeps only the winner, so offering a swap would be a
-     control that lies. See the note in facts.js. */
+  /* The rule, said once: the engine writes the file every allowed way and
+     keeps whichever came out best. */
   auto.title = "Writes the file every allowed way and keeps the best one";
   sel.appendChild(auto);
 
@@ -324,85 +319,7 @@ export function reflectQualityWords() {
   const pinned = pin ? ` Always saved as ${fmtLabel(pin)}.` : "";
   setText($("quality-note"), (capping
     ? `The best quality that fits under ${human(parseSize($("plan-cap").value))}, and never worse than ${words}.`
-    : `The smallest file that still looks ${words}.`) + pinned
-    + videoSentence(q));
-}
-
-/* What this control means for a VIDEO, when there is one in the queue.
- *
- * This exists because the control was lying. A destination carries two quality
- * floors - one for pictures, one for video - and `videoPlan()` correctly runs
- * the video one, while this panel only ever showed the picture one. For
- * "Website or app" that is 90 on screen and 92 in the engine. The whole reason
- * `reflectQualityWords` exists is to stop the plan and the engine drifting
- * apart, so a silent two-point difference is exactly the bug it was written to
- * prevent, not a rounding detail.
- *
- * Two facts are added, and only when they are true:
- *
- *   - the floor video will really use, whenever it differs from the picture
- *     one. Said in the same words the picture floor is said in, because it is
- *     the same question about the same thing.
- *   - the destination's byte ceiling, which governs `email` (18 MB), `chat`
- *     (10 MB) and `social` (500 MB) and had no representation anywhere in the
- *     interface. Read-only on purpose: it is a fact about where the video is
- *     going, not a question. Making it editable would add a decision, and
- *     would let a person "raise" Discord's limit, which Discord will not
- *     honour.
- *
- * A mixed queue says both floors rather than picking one, because hiding
- * either is a lie about what is about to happen to half the files. */
-function videoSentence(pictureFloor) {
-  const { hasImages, hasVideo } = queueKinds();
-  if (!hasVideo) return "";
-
-  const target = D.destinationOf($("target").value);
-  const numbers = D.DESTINATION_VIDEO_NUMBERS[target];
-  /* A destination that takes no video says so instead - "Thumbnail or avatar"
-     is for pictures, and a video sent there is left exactly as it is. The
-     result panel already says this per file; the plan should not wait. */
-  if (!numbers) {
-    return hasImages
-      ? " Video is left exactly as it is here — this destination is for pictures."
-      : " This destination is for pictures, so video is left exactly as it is.";
-  }
-
-  /* `videoPlan()`'s rule, restated rather than reimplemented: a floor the
-     person has moved off the destination's own picture default is their answer
-     and counts for the video too. Only when they have NOT spoken does the
-     video floor differ from what the words above already say. */
-  const picture = D.DESTINATION_NUMBERS[target];
-  const spoken = picture && pictureFloor !== picture.qualityTarget;
-  const floor = spoken ? pictureFloor : numbers.qualityTarget;
-
-  /* The comparison is between the WORDS, not the numbers.
-     "Website or app" holds pictures to 90 and video to 92, and both land in the
-     same band - so a sentence built from the numbers differing says "still look
-     exactly the same to your eye" twice and tells a person nothing they had not
-     already read. The panel speaks in words on purpose (the 0-100 floor is a
-     fact about the machine, not a question for anyone), so two floors are
-     worth distinguishing exactly when they are worth different words. */
-  const pictureWords = wordsForQuality(pictureFloor);
-  const videoWords = wordsForQuality(floor);
-  const differs = videoWords !== pictureWords;
-
-  /* Whole sentences, assembled by case rather than by joining fragments.
-     Joining produced "Video is held to exactly the same to your eye" and a
-     stranded "kept under 10 MB." - each fragment read fine alone and neither
-     was a sentence. More cases, less cleverness; what a person reads is the
-     only thing being optimised here. */
-  const looks = differs ? `still look ${videoWords}` : "";
-  const cap = numbers.sizeCapMb ? `stay under ${numbers.sizeCapMb} MB` : "";
-  const subject = hasImages ? "The video has to" : "It also has to";
-
-  if (looks && cap) return ` ${subject} ${looks}, and ${cap}.`;
-  if (looks) return ` ${subject} ${looks}.`;
-  if (cap) {
-    return hasImages
-      ? ` The video has to stay under ${numbers.sizeCapMb} MB.`
-      : ` It also has to stay under ${numbers.sizeCapMb} MB.`;
-  }
-  return "";
+    : `The smallest file that still looks ${words}.`) + pinned);
 }
 
 /** A click on the words. "custom" is not a choice a person can make - it only

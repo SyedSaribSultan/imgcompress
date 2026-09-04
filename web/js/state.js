@@ -51,12 +51,6 @@ export const state = {
      null means "not asked yet", which is different from false. */
   caps: { webp: null, png8: null, avif: null },
 
-  /* And the same question asked of the video worker: does this browser have
-     WebCodecs at all, and which of our formats will it write. null means the
-     answer has not come back yet, which is why nothing tests it as falsy -
-     "we have not asked" and "it cannot" are different things to say to a
-     person holding a video. */
-  videoCaps: null,
 
   suffix: false,
 
@@ -101,27 +95,6 @@ export function firstInteresting() {
   return state.items.find(isReady) || state.items[0] || null;
 }
 
-/** What this run is actually about.
- *
- *  One place answers it, because "is there a video in the queue" decides what
- *  several different parts of the interface should say, and a module that works
- *  it out for itself is a module that can disagree with the others. A mixed
- *  queue is the ordinary case, not an edge case: a person drops a folder and it
- *  has both in it.
- *
- *  Both flags rather than one enum, for the same reason: `mixed` as a third
- *  state would make every caller handle three cases when what each one actually
- *  wants to know is "do I need to speak about pictures" and "do I need to speak
- *  about video" - which are independent questions with independent answers. */
-export function queueKinds() {
-  let hasImages = false, hasVideo = false;
-  for (const it of state.items) {
-    if (it.isVideo) hasVideo = true;
-    else hasImages = true;
-    if (hasImages && hasVideo) break;
-  }
-  return { hasImages, hasVideo };
-}
 
 /** What the engine is actually run with for one image: the plan, plus whatever
  *  that image overrides. All three of a destination's numbers can be overridden
@@ -134,96 +107,6 @@ export function effectiveSettings(item) {
     if (item.override.maxDimension != null) s.maxDimension = item.override.maxDimension;
   }
   return s;
-}
-
-/** Can this browser re-encode video at all? Three states, and only one of them
- *  is a yes: unknown (nobody has asked), no (no WebCodecs, or no encoder it
- *  will admit to), and a list of formats. */
-export function canEncodeVideo() {
-  const c = state.videoCaps;
-  return !!(c && c.webcodecs && Array.isArray(c.formats) && c.formats.length);
-}
-
-/** The one sentence for a browser that cannot do this. Approved copy (V8), in
- *  one place so the intake refusal and a job that reaches the engine anyway
- *  say exactly the same thing. */
-export const NO_VIDEO_HERE =
-  "This browser can't re-encode video yet — the desktop app can.";
-
-/* ------------------------------ how big is too big ----------------------- */
-
-/* Two thresholds, because there are two different honest answers.
- *
- * A video encode in a browser costs memory that does not shrink to nothing:
- * the codec pipeline, a window of decoded frames, the staging buffer. Measured
- * after the streaming work, the encode itself adds roughly 1.3 GB on a 287 MB
- * clip and 1.8-2.2 GB on a 663 MB one - sub-linear, but never small. On a
- * machine with 8 GB shared with everything else, a big enough file still ends
- * in swapping, and swapping stops the whole computer rather than one tab.
- *
- * So: above HEAVY, say plainly that it will take a while and the machine will
- * be busy - and then do it, because the person asked. Above TOO_BIG, do not
- * start; recommend the desktop tier, which streams from disk and has no
- * equivalent ceiling (its own limit is 4 GB, and it is not holding the file in
- * a tab). Refusing is friendlier than freezing.
- *
- * These are deliberately not derived from `deviceMemory`: it is absent on
- * Safari and Firefox entirely and rounded to a power of two where it exists,
- * so a threshold built on it would be a guess wearing a number. A flat, stated
- * limit is honest and the desktop route is always available. */
-export const HEAVY_VIDEO_BYTES = 200 * 1024 * 1024;
-export const TOO_BIG_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
-
-/** Said before a long job starts, not after it. Plain about the cost, because
- *  "your computer will be busy" is the part a person needs in order to decide
- *  whether to start it now or after lunch. */
-export const HEAVY_VIDEO_WARNING =
-  "That's a big video. It will take a while, and your computer will be busy "
-  + "while it works.";
-
-/** Said instead of starting. Names the way forward rather than only the
- *  refusal - the same shape as NO_VIDEO_HERE. */
-export const TOO_BIG_VIDEO_HERE =
-  "That video is too big to compress in a browser tab — the desktop app "
-  + "handles it straight from your disk.";
-
-/** What the engine is actually run with for one VIDEO.
- *
- *  Video reads the video columns of the destination table and never the image
- *  ones: the frame cap, the floor and the byte ceiling are different numbers
- *  for the same destination, and mixing them would silently run a video at a
- *  picture's settings. Returns null when this destination takes no video -
- *  which the table itself decides, exactly as the desktop engine reads it.
- *
- *  Zero new decisions: nothing here is a question. The person chose where the
- *  video is going and that is the whole of it. */
-export function videoPlan(item) {
-  const target = D.destinationOf(state.settings.target);
-  const numbers = D.DESTINATION_VIDEO_NUMBERS[target];
-  if (!numbers) return null;
-  const picture = D.DESTINATION_NUMBERS[target];
-
-  /* The floor. A destination carries one for video and another for pictures,
-     and the video one is the default. But "Must still look" is the person
-     speaking about quality out loud, so when it has been moved off the
-     destination's own picture default, that answer is theirs and it counts
-     for the video too - the same rule the command line follows, where a
-     quality given on the line overrides the destination's and nothing else
-     does. */
-  const spoken = picture && state.settings.qualityTarget !== picture.qualityTarget;
-  const floor = item?.override?.qualityTarget
-    ?? (spoken ? state.settings.qualityTarget : numbers.qualityTarget);
-
-  return {
-    target,
-    formats: D.DESTINATION_VIDEO_FORMATS[target] || [],
-    /* The frame cap is the destination's, and a per-video override can zero it
-       - which is what the resize disclosure's own undo does. */
-    maxDimension: item?.override?.maxDimension ?? numbers.maxDimension,
-    qualityTarget: floor,
-    sizeCapBytes: Math.round((numbers.sizeCapMb || 0) * 1024 * 1024),
-    audio: numbers.audio,
-  };
 }
 
 /** Batch totals, over everything that has a result. */

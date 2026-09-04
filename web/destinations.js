@@ -1,11 +1,11 @@
-/* GENERATED FILE - DO NOT EDIT.
+/* The destination table: where a picture is going, and the numbers that
+ * follow from it.
  *
- * Written by tools/gen_destinations.py from pocketsize/destinations.py, which
- * is the reference for every value here. Edit that file and re-run the
- * generator; CI regenerates this one and fails if it differs from what is
- * committed.
+ * This was generated from pocketsize/destinations.py while a Python engine
+ * shipped alongside the browser one. There is one engine now, so this file is
+ * the reference itself and is edited directly.
  *
- * Loaded by both engines: worker.js pulls it in with importScripts, and
+ * Loaded twice per page: worker.js pulls it in with importScripts, and
  * index.html loads it before app.js. Both share one global scope per context,
  * so these bindings are visible to whichever file needs them.
  */
@@ -121,72 +121,6 @@ const DESTINATION_NUMBERS = {
     "maxDimension": 0,
     "qualityTarget": 95.0,
     "help": "No resizing, highest fidelity. For print and originals."
-  }
-};
-
-/* Which video formats each destination may write, as codec+container
- * pairs. A destination missing from this map takes no video. */
-const DESTINATION_VIDEO_FORMATS = {
-  "web": [
-    "av1-mp4",
-    "h264-mp4"
-  ],
-  "documents": [
-    "h264-mp4"
-  ],
-  "email": [
-    "h264-mp4"
-  ],
-  "chat": [
-    "h264-mp4",
-    "av1-mp4"
-  ],
-  "social": [
-    "h264-mp4"
-  ],
-  "original": [
-    "av1-mp4",
-    "h264-mp4"
-  ]
-};
-
-/* Video's own frame size, visual match, byte ceiling and sound rule. */
-const DESTINATION_VIDEO_NUMBERS = {
-  "web": {
-    "maxDimension": 1920,
-    "qualityTarget": 92.0,
-    "sizeCapMb": 0.0,
-    "audio": "copy"
-  },
-  "documents": {
-    "maxDimension": 1920,
-    "qualityTarget": 90.0,
-    "sizeCapMb": 0.0,
-    "audio": "aac"
-  },
-  "email": {
-    "maxDimension": 1920,
-    "qualityTarget": 90.0,
-    "sizeCapMb": 18.0,
-    "audio": "copy"
-  },
-  "chat": {
-    "maxDimension": 1280,
-    "qualityTarget": 88.0,
-    "sizeCapMb": 10.0,
-    "audio": "aac"
-  },
-  "social": {
-    "maxDimension": 1920,
-    "qualityTarget": 90.0,
-    "sizeCapMb": 500.0,
-    "audio": "aac"
-  },
-  "original": {
-    "maxDimension": 0,
-    "qualityTarget": 96.0,
-    "sizeCapMb": 0.0,
-    "audio": "copy"
   }
 };
 

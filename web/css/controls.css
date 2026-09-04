@@ -240,9 +240,6 @@ select {
      clears the floor and the box itself just gets big enough to read. */
   label.check { min-height: var(--s-target); }
   .check input { width: 20px; height: 20px; }
-  /* An inline link is as tall as its line; a tappable one is as tall as a
-     fingertip. */
-  #cli-note a { display: inline-flex; align-items: center; min-height: var(--s-target); }
 }
 
 /* ------------------------------- segmented ------------------------------- */

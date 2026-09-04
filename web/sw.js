@@ -31,7 +31,7 @@ const PRECACHE = [
   "/",
   "/heyoz-tokens.css",
   "/fonts.css",
-  "/css/base.css", "/css/media-accent.css", "/css/layout.css", "/css/controls.css",
+  "/css/base.css", "/css/layout.css", "/css/controls.css",
   "/css/queue.css", "/css/compare.css", "/css/facts.css",
   "/destinations.js",
   "/js/destinations-bridge.js", "/js/theme.js", "/js/dom.js", "/js/format.js",
@@ -39,7 +39,6 @@ const PRECACHE = [
   "/js/intake.js", "/js/engine.js", "/js/queue.js", "/js/compare.js",
   "/js/facts.js", "/js/save.js", "/js/panels.js", "/js/main.js",
   "/worker.js",
-  "/video-worker.js",
   "/ss2.module.js", "/ss2.js",
   "/site.webmanifest", "/favicon.svg", "/favicon.ico",
   "/icon-192.png", "/icon-512.png",
@@ -63,16 +62,12 @@ const USE_CASE_PAGES = new Set([
   "/png-to-avif",
   "/compress-for-email",
   "/bulk-image-compressor",
-  "/compress-video",
-  "/compress-video-for-discord",
-  "/compress-video-for-email",
 ]);
 
 const HEAVY_PRECACHE = [
   "/vendor/mozjpeg.js", "/vendor/mozjpeg_enc.wasm",
   "/vendor/oxipng.js", "/vendor/squoosh_oxipng_bg.wasm",
   "/vendor/webp.js", "/vendor/webp_enc_simd.wasm",
-  "/vendor/mediabunny.min.js",
   "/vendor/avif.js", "/vendor/avif_enc.wasm",
   "/fonts/geist-latin.woff2", "/fonts/geist-latin-ext.woff2",
   "/fonts/geist-mono-latin.woff2", "/fonts/geist-mono-latin-ext.woff2",
@@ -155,12 +150,12 @@ self.addEventListener("fetch", (e) => {
          multiplying.
 
          The use-case pages are added on first visit rather than precached:
-         there are thirteen of them and precaching all of them would cost
-         every visitor several hundred kilobytes for twelve pages they will
-         never open. Someone who arrived at /compress-video and comes back
-         offline gets the page they actually used, with its plan already set,
-         instead of being bounced to the generic app. The list is finite and
-         known, so this cannot grow without bound either. */
+         precaching all of them would cost every visitor several hundred
+         kilobytes for pages they will never open. Someone who arrived at
+         /compress-jpeg and comes back offline gets the page they actually
+         used, with its plan already set, instead of being bounced to the
+         generic app. The list is finite and known, so this cannot grow
+         without bound either. */
       if (fresh.ok && (PRECACHE_SET.has(url.pathname)
                        || USE_CASE_PAGES.has(url.pathname))) {
         (await caches.open(SHELL)).put(url.pathname, fresh.clone());

@@ -29,7 +29,7 @@ const fontsCss = readFileSync(path.join(WEB, "fonts.css"), "utf8");
 const CONSUMERS = [
   "index.html",
   "css/base.css", "css/layout.css", "css/controls.css",
-  "css/queue.css", "css/compare.css", "css/facts.css", "css/media-accent.css",
+  "css/queue.css", "css/compare.css", "css/facts.css",
 ];
 const consumed = CONSUMERS
   .map((rel) => { try { return readFileSync(path.join(WEB, rel), "utf8"); }

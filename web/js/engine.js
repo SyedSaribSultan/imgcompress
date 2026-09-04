@@ -23,8 +23,7 @@
 
 import { toast } from "./dom.js";
 import {
-  state, isBusy, effectiveSettings, select, firstInteresting,
-  videoPlan, canEncodeVideo, NO_VIDEO_HERE, ORIGINAL_PICK, D,
+  state, isBusy, effectiveSettings, select, firstInteresting, D,
 } from "./state.js";
 import { mimeFor, fmtLabel } from "./format.js";
 import { adoptCandidateBytes, autoView, applyView } from "./views.js";
@@ -108,11 +107,7 @@ export function holdWork(on) {
 
 export async function dispatch() {
   if (held) return;
-  /* Video goes down its own path: a different worker, a different protocol and
-     one job at a time. It is driven from here so that every existing caller of
-     dispatch() - a drop, a settings change, a finished job - drives both. */
-  dispatchVideo();
-  const queued = state.items.filter((i) => i.status === "queued" && !i.isVideo);
+  const queued = state.items.filter((i) => i.status === "queued");
   if (!queued.length) return;
   ensurePool(queued.length);
 
@@ -178,7 +173,6 @@ export function cancelAll() {
     slot.w.terminate();
     pool[slot.index] = makeWorker(slot.index);
   }
-  stopVideoWorker();
   for (const item of stopping) {
     // Nothing stale or half-shown survives a stop as though it were a result.
     if (item.stale || item.liveCandidates) clearResult(item);
@@ -187,332 +181,10 @@ export function cancelAll() {
     item.frac = 0;
   }
   batchActive = false;
-  const noun = stopping.some((i) => i.isVideo) ? "file" : "image";
-  toast(`Stopped — ${stopping.length} ${noun}${stopping.length === 1 ? "" : "s"} left uncompressed`);
+  toast(`Stopped — ${stopping.length} image${stopping.length === 1 ? "" : "s"} left uncompressed`);
   scheduleRender();
 }
 
-/* ============================== video ==================================== *
- *
- * A second worker, a second protocol, and one job at a time.
- *
- * It is a MODULE worker, because Mediabunny ships as an ES module, and it is
- * separate from the pool for a reason that is not tidiness: a video job holds
- * decoded frames, runs for minutes and saturates the machine's encoder, and
- * none of that belongs in the pool that has to stay responsive enough to
- * compress a screenshot. One at a time for the same reason - two concurrent
- * video encodes on one machine finish later than two in a row, and neither
- * would report honest progress.
- *
- * The contract, in full (see web/video-worker.js):
- *
- *   out  { type: "probe" }                  -> what can this browser encode?
- *   out  { type: "job", id, file, settings } settings: maxDimension,
- *                                            qualityTarget, formats,
- *                                            sizeCapBytes
- *   in   { type: "caps", caps }             { webcodecs, formats, hardware }
- *   in   { type: "progress", id, stage, fraction, detail }
- *   in   { type: "done", id, result, blob }
- *   in   { type: "failed", id, error }
- *
- * There is no abort message and there does not need to be: terminating the
- * worker is the only way to interrupt a running encode anyway, and the next
- * job builds a fresh one.
- */
-
-let videoWorker = null;
-let videoBusy = null;             // the id of the job in flight, or null
-const videoRev = new Map();       // job id -> the settings revision it was sent under
-
-function ensureVideoWorker() {
-  if (videoWorker) return videoWorker;
-  try {
-    videoWorker = new Worker("/video-worker.js", { type: "module" });
-  } catch {
-    /* No module workers at all. That is an answer, and the same one the person
-       gets from a browser with no encoder: this cannot happen here. */
-    state.videoCaps = { webcodecs: false, formats: [] };
-    scheduleRender();
-    return null;
-  }
-  videoWorker.onmessage = (e) => onVideoMessage(e.data || {});
-  videoWorker.onerror = () => {
-    /* The module failed to load - the vendored reader, or the shared metric.
-       Whatever is in flight fails with a reason rather than hanging. */
-    const item = videoBusy && state.byId.get(videoBusy);
-    if (item) {
-      item.status = "failed";
-      item.error = "the video engine could not start in this browser";
-    }
-    videoBusy = null;
-    if (state.videoCaps == null) state.videoCaps = { webcodecs: false, formats: [] };
-    scheduleRender();
-    dispatch();
-  };
-  return videoWorker;
-}
-
-function stopVideoWorker() {
-  if (!videoWorker) return;
-  /* Terminate rather than ask: a WebCodecs encode mid-flight has no other
-     interruption, and a worker holding frames for a job nobody wants is worse
-     than the cost of starting a new one. */
-  videoWorker.terminate();
-  videoWorker = null;
-  videoBusy = null;
-}
-
-/** Ask what this browser can encode. Idempotent, and cheap after the first
- *  call - the answer is cached on state and the worker stays warm. */
-export function probeVideoSupport() {
-  if (state.videoCaps) return;
-  const w = ensureVideoWorker();
-  if (w) w.postMessage({ type: "probe" });
-}
-
-/* The stages the worker reports, in words. The worker names the codec it is
- * trying; that name is deliberately not repeated here - the plan asks where a
- * video is going and nothing about codecs, and "Testing av1-mp4" would be the
- * first jargon on the page. What a waiting person needs is what is happening
- * and how far along it is. */
-const VIDEO_STAGE_TEXT = {
-  "reading": () => "Reading the video…",
-  "looking for the setting": (pct) => `Finding the setting that still looks right · ${pct}%`,
-  "compressing": (pct) => `Compressing the whole video · ${pct}%`,
-  "checking the result": (pct) => `Checking it against the original · ${pct}%`,
-  "done": () => "Finishing up…",
-};
-
-/** The whole job's progress, not one format's.
- *
- *  The worker searches, encodes and verifies each format in turn and reports a
- *  fraction within that format - so with two formats the raw number runs to
- *  0.9 and then starts again at 0.09. A bar that goes backwards reads as work
- *  being lost, so each format gets its own share of the run. */
-function videoFraction(item, msg) {
-  const list = item.videoFormats || [];
-  if (msg.stage === "done") return 1;
-  const detail = String(msg.detail || "");
-  const named = detail.split(",")[0].trim();
-  const index = list.indexOf(named);
-  const within = Math.max(0, Math.min(1, msg.fraction || 0));
-  if (index < 0 || list.length < 2) return within;
-  return Math.min(1, (index + within) / list.length);
-}
-
-/** One video finished without being compressed, on purpose. The file is kept
- *  exactly as it arrived and the reason is said in place - which is what the
- *  desktop tier does with the same three situations. */
-function leaveAlone(item, note, keepEvidence = false) {
-  item.status = "done";
-  /* When a run actually happened and the original still won, what it tried
-     stays on screen: "nothing beat the original" is only believable next to
-     the things that did not beat it. Nothing was tried in the other two
-     cases, so there is nothing to show. */
-  if (!keepEvidence) item.candidates = [];
-  item.candBlobs = new Map();
-  item.warnings = [];
-  item.elapsedMs = item.startedAt != null ? performance.now() - item.startedAt : null;
-  item.outW = item.width;
-  item.outH = item.height;
-  item.auto = {
-    fmt: ORIGINAL_PICK, ext: null, blob: item.file,
-    newBytes: item.originalBytes,
-    level: null, score: null, lossless: true,
-    note, passthrough: true,
-  };
-  item.pick = null;
-  applyView(item, item.auto);
-  item.stale = false;
-}
-
-function failVideo(item, error) {
-  item.status = "failed";
-  item.error = error;
-  item.frac = 0;
-}
-
-function dispatchVideo() {
-  if (held || videoBusy) return;
-  const item = state.items.find((i) => i.status === "queued" && i.isVideo);
-  if (!item) return;
-
-  /* Nobody has asked the browser yet. Ask, and come back when it answers -
-     the caps message calls dispatch() again. The row sits at "waiting", which
-     is what is actually true. */
-  if (state.videoCaps == null) { probeVideoSupport(); return; }
-
-  if (!canEncodeVideo()) { failVideo(item, NO_VIDEO_HERE); scheduleRender(); dispatch(); return; }
-
-  const plan = videoPlan(item);
-  const label = D.DESTINATION_NUMBERS[D.destinationOf(state.settings.target)]?.label
-    || "This destination";
-
-  /* Three ways a video is finished before it starts, all of them answers
-     rather than errors, and all of them the same answers the desktop tier
-     gives:
-       - the destination takes no video at all;
-       - the plan promises every pixel kept, which no re-encode can honour;
-       - and, further down, a result that came out bigger than the original. */
-  if (!plan) {
-    leaveAlone(item, `“${label}” is for pictures, not video — this was left exactly as it is.`);
-    scheduleRender(); dispatch(); maybeFinish();
-    return;
-  }
-  if (state.settings.lossless) {
-    leaveAlone(item, "“Identical — every pixel kept” cannot be promised for video, "
-      + "so this was left exactly as it is.");
-    scheduleRender(); dispatch(); maybeFinish();
-    return;
-  }
-
-  const formats = plan.formats.filter((f) => state.videoCaps.formats.includes(f));
-  if (!formats.length) { failVideo(item, NO_VIDEO_HERE); scheduleRender(); dispatch(); return; }
-
-  const w = ensureVideoWorker();
-  if (!w) { failVideo(item, NO_VIDEO_HERE); scheduleRender(); dispatch(); return; }
-
-  videoBusy = item.id;
-  videoRev.set(item.id, state.settingsRev);
-  item.status = "working";
-  item.stage = "reading";
-  item.progress = "Reading the video…";
-  item.frac = 0;
-  item.videoFormats = formats;
-  item.videoPlan = plan;
-  item.startedAt = performance.now();
-  item.elapsedMs = null;
-  scheduleRender("queue");
-
-  w.postMessage({
-    type: "job", id: item.id, file: item.file,
-    settings: {
-      maxDimension: plan.maxDimension,
-      qualityTarget: plan.qualityTarget,
-      formats,
-      /* The byte ceiling is part of the plan, not advice. It was computed
-         here and then dropped on the floor for a while - the worker never
-         saw it, so "Fits Discord's free 10 MB limit" could hand back 14 MB
-         with nothing said. */
-      sizeCapBytes: plan.sizeCapBytes || 0,
-    },
-  });
-}
-
-function onVideoMessage(msg) {
-  if (msg.type === "caps") {
-    state.videoCaps = msg.caps || { webcodecs: false, formats: [] };
-    scheduleRender();
-    dispatch();
-    return;
-  }
-
-  const item = state.byId.get(msg.id);
-  if (!item) {
-    if (msg.type !== "progress") { videoBusy = null; dispatch(); }
-    return;
-  }
-  if (item.status === "cancelled") return;
-
-  if (msg.type === "progress") {
-    item.stage = msg.stage;
-    item.frac = videoFraction(item, msg);
-    const say = VIDEO_STAGE_TEXT[msg.stage];
-    item.progress = say ? say(Math.round(item.frac * 100)) : "working…";
-    scheduleRender("queue");
-    if (state.selected === item.id) scheduleRender("stage");
-    return;
-  }
-
-  videoBusy = null;
-  const rev = videoRev.get(msg.id);
-  videoRev.delete(msg.id);
-
-  if (rev !== state.settingsRev && !item.override) {
-    /* The plan moved while this was encoding. Straight back to the queue to be
-       redone under the settings actually in force - a result measured against
-       a floor nobody is asking for any more is worse than no result. */
-    item.status = "queued";
-    item.startedAt = null;
-    item.frac = 0;
-    scheduleRender(); dispatch();
-    return;
-  }
-
-  if (item.startedAt != null) item.elapsedMs = performance.now() - item.startedAt;
-
-  if (msg.type === "failed") {
-    failVideo(item, msg.error || "failed");
-    scheduleRender(); dispatch(); maybeFinish();
-    return;
-  }
-
-  if (msg.type === "done") {
-    const r = msg.result || {};
-    const plan = item.videoPlan || videoPlan(item) || {};
-    /* Every candidate the bake-off produced, as evidence. Unlike the picture
-       tier, only the winner's BYTES survive - a video is too big to keep four
-       of - so these are a record and not a set of one-tap swaps, and the panel
-       says so rather than offering chips that would do nothing. */
-    item.candidates = (r.candidates || []).map((c) => ({
-      format: c.format, bytes: c.bytes, score: c.score, lossless: false,
-    }));
-    item.candBlobs = new Map();
-    item.metric = "ss2";
-    /* What the worker could not do is part of the result - a format that
-       failed at the real resolution is a fact, not noise. */
-    item.warnings = r.warnings || [];
-    /* The original's shape, as the engine actually read it - rotation applied.
-       A phone held upright records a landscape frame and flags it, and every
-       number downstream has to mean the picture rather than the way it was
-       filed away. */
-    if (r.shownWidth) { item.width = r.shownWidth; item.height = r.shownHeight; }
-    item.outW = r.width || item.width;
-    item.outH = r.height || item.height;
-    if (r.duration) item.duration = r.duration;
-    item.sizeTarget = plan.sizeCapBytes || 0;
-    /* Flags, never inferred from the numbers. The engine says whether a byte
-       ceiling took the quality decision away from the floor; the UI's job is
-       to repeat it on the same line as the percentage, not to guess it. */
-    item.videoCapped = !!r.capped;
-    item.missedSize = !!r.missedSize;
-    item.audioNote = r.audioNote || "";
-    item.videoFloor = plan.qualityTarget;
-
-    const blob = msg.blob;
-    /* Never hand back a worse file. The picture tier has always refused to
-       write anything bigger than what it was given, and a video is the file
-       where that matters most. */
-    if (!blob || blob.size >= item.originalBytes) {
-      leaveAlone(item,
-        "Already smaller than anything this browser could make — left exactly as it is.",
-        true);
-    } else {
-      item.status = "done";
-      item.pick = null;
-      item.auto = {
-        fmt: r.format,
-        /* The container, taken from the format key rather than typed, so the
-           two can never disagree about what was written. */
-        ext: "." + String(r.format || "").split("-").pop(),
-        blob,
-        newBytes: blob.size,
-        level: r.level ?? null,
-        score: r.score,
-        lossless: false,
-        note: r.note || "",
-        passthrough: false,
-      };
-      applyView(item, item.auto);
-      item.stale = false;
-    }
-  }
-
-  if (!state.selected) select(item.id);
-  scheduleRender();
-  dispatch();
-  maybeFinish();
-}
 
 const STAGE_TEXT = {
   codec: (d) => `Loading the ${fmtLabel(d)} engine…`,
@@ -700,8 +372,6 @@ function clearResult(item) {
   item.liveCandidates = null;
   item.diffURL = null;
   item.stale = false;
-  item.videoCapped = false;
-  item.audioNote = "";
 }
 
 /** Send items back to the start.
@@ -718,21 +388,6 @@ export function requeue(ids, opts = {}) {
     const item = state.byId.get(id);
     if (!item) continue;
     if (item.status === "working") {
-      /* A video mid-encode has no abort message to send: the only way to stop
-         a WebCodecs run is to end the worker, so it is ended and the item goes
-         straight back to the queue rather than waiting for a reply that would
-         never come. */
-      if (item.isVideo) {
-        if (videoBusy === item.id) stopVideoWorker();
-        videoRev.delete(item.id);
-        item.status = "queued";
-        item.frac = 0;
-        item.startedAt = null;
-        if (keep && item.afterURL) item.stale = true;
-        else clearResult(item);
-        any = true;
-        continue;
-      }
       const slot = pool[item.slot];
       if (keep && slot && slot.itemId === item.id) {
         slot.w.postMessage({ type: "abort", id: item.id });
@@ -764,9 +419,6 @@ export function removeItems(ids) {
   for (const id of ids) {
     const item = state.byId.get(id);
     if (!item) continue;
-    // A video being encoded right now is being encoded for nobody. Stop it.
-    if (videoBusy === id) stopVideoWorker();
-    videoRev.delete(id);
     if (item.beforeURL) URL.revokeObjectURL(item.beforeURL);
     if (item.afterURL) URL.revokeObjectURL(item.afterURL);
     if (item.thumbURL) URL.revokeObjectURL(item.thumbURL);
@@ -777,6 +429,6 @@ export function removeItems(ids) {
   }
   if (!state.selected) select(firstInteresting()?.id);
   scheduleRender();
-  // Removing the video that was in flight frees the engine for the next one.
+  // Removing whatever was in flight frees a worker for the next one.
   dispatch();
 }

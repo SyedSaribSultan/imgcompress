@@ -64,13 +64,12 @@
   "@type": "WebApplication",
   "name": "Pocketsize",
   "url": "https://pocketsize.syedsarib.com/",
-  "description": "Free, private image and video compression in the browser. PNG, JPEG, WebP, AVIF, MP4 and WebM. Every result is measured against the original. Nothing is uploaded, and it works offline.",
+  "description": "Free, private image compression in the browser. PNG, JPEG, WebP and AVIF. Every result is measured against the original. Nothing is uploaded, and it works offline.",
   "applicationCategory": "MultimediaApplication",
   "operatingSystem": "Any — runs in the browser",
   "isAccessibleForFree": true,
   "featureList": [
     "Image compression",
-    "Video compression",
     "Runs on your device — nothing is uploaded",
     "Every result measured against the original",
     "Works offline after one visit"
@@ -95,7 +94,6 @@
 <link rel="stylesheet" href="/fonts.css">
 
 <link rel="stylesheet" href="/css/base.css">
-<link rel="stylesheet" href="/css/media-accent.css">
 <link rel="stylesheet" href="/css/layout.css">
 <link rel="stylesheet" href="/css/controls.css">
 <link rel="stylesheet" href="/css/queue.css">
@@ -146,7 +144,7 @@
 <h1 class="vh">Compress a PNG — losslessly, or further</h1>
 
 <noscript>
-  <p id="noscript">Pocketsize compresses images and video entirely in your
+  <p id="noscript">Pocketsize compresses images entirely in your
   browser, which needs JavaScript turned on. Nothing is uploaded either way.</p>
 </noscript>
 
@@ -201,7 +199,7 @@
     <span id="save-label">Download</span>
   </button>
 
-  <input type="file" id="file-input" multiple accept="image/*,video/*" hidden>
+  <input type="file" id="file-input" multiple accept="image/*" hidden>
 
   <div id="batch" role="progressbar" aria-label="Batch progress"
        aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="batch-bar"></i></div>
@@ -231,10 +229,10 @@
       <div id="queue-empty">
         <button class="btn primary" id="empty-add">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-          Choose pictures or video
+          Choose pictures
         </button>
         <p>or drop them anywhere on this page, or paste a screenshot</p>
-        <p class="muted">Your pictures and videos never leave your computer.</p>
+        <p class="muted">Your pictures never leave your computer.</p>
       </div>
 
       <div id="queue-list" role="listbox" aria-labelledby="queue-h" tabindex="0" hidden></div>
@@ -365,13 +363,6 @@
       </div>
     </section>
 
-    <!-- The one line for the people whose job is folders and scripts. The web
-         page and the pip package are the same engine; this is where the page
-         finally says so. -->
-    <p id="cli-note" class="muted">Also a command line — the same engine, for
-      folders and scripts:
-      <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank"
-         rel="noopener"><code>pip install pocketsize</code></a></p>
 
     <!-- The panel's edge is the person's: drag it, or focus it and use the
          arrow keys. Double-click puts the width back to automatic. -->
@@ -389,15 +380,6 @@
       <div id="frame">
         <img id="img-before" alt="Original image" decoding="async">
         <div class="after" id="img-after-wrap"><img id="img-after" alt="Compressed image" decoding="async"></div>
-        <!-- The same two layers again, for video. One #frame, one transform,
-             so the split, the divider and the zoom keep working unchanged -
-             and the compressed player follows the original's clock, because
-             two free-running players drift apart within seconds and a split
-             showing second 3 against second 5 is not a comparison. -->
-        <video id="vid-before" playsinline preload="metadata" hidden></video>
-        <div class="after" id="vid-after-wrap" hidden>
-          <video id="vid-after" playsinline preload="metadata" muted></video>
-        </div>
         <canvas id="img-diff" aria-label="Difference heatmap"></canvas>
       </div>
 
@@ -416,23 +398,7 @@
       <div class="segmented" role="group" aria-label="Comparison mode">
         <button id="mode-split" aria-pressed="true">Split</button>
         <button id="mode-after" aria-pressed="false">After</button>
-        <!-- Disabled on a video, with the reason in the title: the heatmap is
-             built from two decoded still frames, and a frame of a clip is not
-             the clip. A control that stayed live and drew nothing would be
-             worse than one that says what it is for. -->
         <button id="mode-diff" aria-pressed="false">Diff</button>
-      </div>
-      <!-- The video's own transport. It lives up here rather than on the
-           player because the invisible split slider covers the whole stage,
-           so native controls would be unreachable exactly when the comparison
-           is being used - and because a person can watch the original while
-           the compressed one is still being made. Pressing play moves both
-           sides; the compressed one follows. -->
-      <div class="transport" id="transport" hidden>
-        <button class="btn quiet sm" id="vid-play" aria-label="Play the video">Play</button>
-        <input type="range" id="vid-seek" class="scrub" min="0" max="1000" value="0"
-               aria-label="Position in the video">
-        <span class="z num" id="vid-time">0:00 / 0:00</span>
       </div>
       <span class="spacer"></span>
       <div class="zoom" role="group" aria-label="Zoom">
@@ -474,7 +440,7 @@
       <p id="stage-empty">Nothing to compare yet.</p>
       <button class="btn" id="stage-choose">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-      Choose pictures or video
+      Choose pictures
       </button>
     </div>
 
@@ -519,9 +485,6 @@
           <div><div class="k">Format</div><div class="v" id="s-format">—</div></div>
           <div><div class="k">Visual match</div><div class="v num" id="s-score">—</div></div>
           <div><div class="k">Dimensions</div><div class="v num" id="s-dims">—</div></div>
-          <!-- Video only: how long the clip runs, which is the fact that
-               explains why this one took minutes. -->
-          <div id="s-length-cell" hidden><div class="k">Length</div><div class="v num" id="s-length">—</div></div>
           <div><div class="k">Time</div><div class="v num" id="s-time">—</div></div>
         </div>
         <p class="note" id="s-note" hidden></p>
@@ -608,8 +571,7 @@
     <div><kbd>Delete</kbd><span>remove the selected picture</span></div>
     <div><kbd>?</kbd><span>this card</span></div>
   </div>
-  <p class="muted">The same engine as a command line:
-    <code>pip install pocketsize</code> ·
+  <p class="muted">
     <a href="https://github.com/SyedSaribSultan/pocketsize" target="_blank" rel="noopener">source &amp; licence</a></p>
   <div class="row">
     <button class="btn primary" id="help-close">Close</button>
