@@ -97,6 +97,53 @@ FALLBACKS = {
 }
 
 
+# What a "normal" interface face measures. Arial's x-height is 0.52 of its em,
+# and every size in this app was chosen against a face in that region - so a
+# family whose x-height is smaller has to be SET larger to read the same size.
+REFERENCE_X_HEIGHT = 0.52
+
+
+def x_height_ratio(path: Path) -> float:
+    """The face's x-height as a fraction of its em, read from the font itself.
+
+    OS/2 publishes sxHeight, which is the designer's own figure and the right
+    one to trust. Where it is absent or zero - older or hand-made fonts - the
+    height of the actual 'x' glyph is measured instead, which is what the
+    number means anyway.
+    """
+    from fontTools.ttLib import TTFont  # noqa: PLC0415
+    font = TTFont(path)
+    upem = font["head"].unitsPerEm
+    os2 = font.get("OS/2")
+    if os2 is not None and getattr(os2, "sxHeight", 0):
+        return os2.sxHeight / upem
+    glyphs = font.getGlyphSet()
+    if "x" not in glyphs:
+        return REFERENCE_X_HEIGHT
+    from fontTools.pens.boundsPen import BoundsPen  # noqa: PLC0415
+    pen = BoundsPen(glyphs)
+    glyphs["x"].draw(pen)
+    return (pen.bounds[3] / upem) if pen.bounds else REFERENCE_X_HEIGHT
+
+
+def type_scale(path: Path) -> float:
+    """How much bigger this face must be set to read its nominal size.
+
+    Type is specified in px and perceived by x-height, and the two come apart
+    badly between families: Caveat's x-height is 0.36 of its em against Arial's
+    0.52, so 16px of Caveat reads about a third smaller than 16px of anything
+    ordinary and the whole interface looks shrunk without one number being
+    wrong. Every UI size in the sheets is written as
+    `calc(<px> * var(--type-scale))`, and this is what sets it.
+
+    Clamped, because this is a correction and not a licence: a face with a
+    large x-height should not be shrunk below its designed size, and no face
+    should be blown up past half again.
+    """
+    ratio = x_height_ratio(path)
+    return round(min(1.5, max(1.0, REFERENCE_X_HEIGHT / ratio)), 2)
+
+
 def slug(family: str) -> str:
     """'Instrument Serif' -> 'instrument-serif', which is the filename stem."""
     return re.sub(r"[^a-z0-9]+", "-", family.lower()).strip("-")
@@ -312,7 +359,7 @@ def rewrite_sw(display: str, mono: str, bump_version: bool = True) -> str:
     return js
 
 
-def rewrite_base(display: str, mono: str, kind: str) -> str:
+def rewrite_base(display: str, mono: str, kind: str, scale: float) -> str:
     """The one line the whole interface reads its face from.
 
     Both stacks are written as literals rather than as var(--oz-font-*). The
@@ -329,8 +376,12 @@ def rewrite_base(display: str, mono: str, kind: str) -> str:
     css, n2 = re.subn(
         r"(  --font-num: )[^;]*;",
         lambda m: f"{m.group(1)}'{mono}', {FALLBACKS['mono']};", css, count=1)
-    if not (n1 and n2):
-        raise SystemExit("could not find --font-ui / --font-num in web/css/base.css")
+    css, n3 = re.subn(
+        r"(  --type-scale: )[^;]*;",
+        lambda m: f"{m.group(1)}{scale};", css, count=1)
+    if not (n1 and n2 and n3):
+        raise SystemExit(
+            "could not find --font-ui / --font-num / --type-scale in web/css/base.css")
     return css
 
 
@@ -346,13 +397,13 @@ def stale_faces(display: str, mono: str) -> list[Path]:
     return sorted(p for p in FONT_DIR.glob("*.woff2") if p.name not in keep)
 
 
-def planned(display: str, mono: str, kind: str, sizes,
+def planned(display: str, mono: str, kind: str, scale: float, sizes,
             bump_version: bool = True) -> list[tuple[Path, str]]:
     return [
         (WEB / "fonts.css", fonts_css(display, mono, sizes)),
         (WEB / "index.html", rewrite_index(display, mono)),
         (WEB / "sw.js", rewrite_sw(display, mono, bump_version)),
-        (WEB / "css" / "base.css", rewrite_base(display, mono, kind)),
+        (WEB / "css" / "base.css", rewrite_base(display, mono, kind, scale)),
     ]
 
 
@@ -386,14 +437,18 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("no families known - pass --display and --mono once, and "
                  "tools/fonts.json will remember them")
 
+    ui_latin = FONT_DIR / f"{slug(display)}-latin.woff2"
+
     if args.check:
+        scale = type_scale(ui_latin) if ui_latin.is_file() else 1.0
         # Sizes are only used in a comment; read them off what is on disk so a
         # check does not need the network.
         sizes = {f: {s: (FONT_DIR / f"{slug(f)}-{s}.woff2").stat().st_size
                      for s in SUBSETS if (FONT_DIR / f"{slug(f)}-{s}.woff2").is_file()}
                  for f in (display, mono)}
         stale = [p.relative_to(ROOT)
-                 for p, want in planned(display, mono, kind, sizes, bump_version=False)
+                 for p, want in planned(display, mono, kind, scale, sizes,
+                                        bump_version=False)
                  if p.read_text(encoding="utf-8") != want]
         extra = [p.relative_to(ROOT) for p in stale_faces(display, mono)]
         if stale or extra:
@@ -412,7 +467,11 @@ def main(argv: list[str] | None = None) -> int:
         for subset, n in sizes[family].items():
             print(f"  {slug(family)}-{subset}.woff2  {n:,} bytes")
 
-    for path, content in planned(display, mono, kind, sizes):
+    scale = type_scale(ui_latin)
+    print(f"  x-height {x_height_ratio(ui_latin):.3f} of em "
+          f"-> --type-scale {scale}")
+
+    for path, content in planned(display, mono, kind, scale, sizes):
         path.write_text(content, encoding="utf-8", newline="\n")
         print(f"wrote {path.relative_to(ROOT)}")
 

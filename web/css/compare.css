@@ -106,7 +106,7 @@
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   color: var(--c-over-ink);
-  font-size: 13px;
+  font-size: calc(13px * var(--type-scale));
   font-weight: 500;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -223,11 +223,11 @@
   background-size: 13px;
 }
 
-.stage-bar .size { font-size: 15px; color: var(--c-ink-2); }
-.stage-bar .saved { font-size: 15px; color: var(--c-good); }
+.stage-bar .size { font-size: calc(15px * var(--type-scale)); color: var(--c-ink-2); }
+.stage-bar .saved { font-size: calc(15px * var(--type-scale)); color: var(--c-good); }
 
 .zoom { display: inline-flex; align-items: center; gap: var(--s-1); }
-.zoom > .z { min-width: 5ch; text-align: center; font-size: 14px; color: var(--c-ink-2); }
+.zoom > .z { min-width: 5ch; text-align: center; font-size: calc(14px * var(--type-scale)); color: var(--c-ink-2); }
 
 /* A real range, kept native - the accent is the app's own, and nothing here
    repaints a control it does not fully own. */
@@ -268,7 +268,7 @@
   border-radius: 999px;
   background: var(--c-over-glass);
   color: var(--c-over-ink);
-  font-size: 13px;
+  font-size: calc(13px * var(--type-scale));
   white-space: nowrap;
   z-index: 2;
   pointer-events: none;
@@ -293,6 +293,6 @@
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   color: var(--c-over-ink);
-  font-size: 15px;
+  font-size: calc(15px * var(--type-scale));
   z-index: 2;
 }

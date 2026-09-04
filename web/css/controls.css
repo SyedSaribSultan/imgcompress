@@ -74,7 +74,7 @@
   box-shadow: 0 1px 0 -1px var(--c-chrome-shadow);
 }
 
-.btn.sm { padding: var(--s-1) var(--s-2); font-size: 14px; }
+.btn.sm { padding: var(--s-1) var(--s-2); font-size: calc(14px * var(--type-scale)); }
 .btn.sm > svg { width: 14px; height: 14px; }
 
 /* No border, no fill - for actions that sit inside something already framed. */
@@ -317,7 +317,39 @@ select {
    says so rather than silently truncating a number someone is relying on. */
 .field .pair > input[type="number"] {
   flex: 0 0 auto;
-  width: max(9ch, calc(4ch + 56px));
+  /* 4ch of digits plus the room the control needs around them. The spinner and
+     the padding do not scale with the type, but the FONT SIZE they sit beside
+     does - so the allowance is expressed against it rather than as a constant.
+     A fixed 56px fit at --type-scale 1 and clipped again the moment the scale
+     went up, which is the same bug this line was written to fix. */
+  /* Sized by the browser from the content, with a floor.
+     
+     Every hand-computed width here has been wrong at least once: 7ch clipped
+     "2560" to "256", 9ch clipped it to "2." under a wider face, and an
+     allowance in fixed pixels stopped fitting the moment the type scaled. The
+     arithmetic keeps failing because the parts do not share a unit - digits
+     scale with the font, the spinner does not, and the padding is its own
+     thing again.
+     
+     min-content is what the field actually needs, computed by the engine that
+     draws it. The floor keeps it from collapsing when it is briefly empty. */
+  /* Sized from the value, by the browser.
+     
+     Every hand-computed width here has been wrong at least once: 7ch clipped
+     "2560" to "256", 9ch clipped it to "2." under a wider face, and a fixed
+     pixel allowance stopped fitting the moment the type scaled. The arithmetic
+     keeps failing because the parts do not share a unit - the digits scale
+     with the font, the spinner does not, and min-content on an <input> does
+     not count the value at all.
+     
+     field-sizing: content is the feature for exactly this, and it degrades
+     honestly: where it is unsupported the declaration is ignored and the
+     width below applies, which is the same generous fixed box as before. The
+     ceiling is what stops a long value pushing the sidebar's regions apart. */
+  field-sizing: content;
+  width: 11ch;
+  min-width: 9ch;
+  max-width: 100%;
 }
 
 /* A static unit beside a number, not a control - so it is never focusable and
@@ -340,7 +372,7 @@ select {
    it. It is a readout and never a control, so it is never focusable. */
 .plan-why {
   color: var(--c-ink-3);
-  font-size: 14px;
+  font-size: calc(14px * var(--type-scale));
   padding-top: var(--s-2);
 }
 
@@ -490,7 +522,7 @@ select {
   border-radius: 999px;
   background: var(--c-accent);
   color: var(--c-accent-ink);
-  font-size: 18px;
+  font-size: calc(18px * var(--type-scale));
   font-weight: 600;
   box-shadow: var(--elev-3);
   pointer-events: none;

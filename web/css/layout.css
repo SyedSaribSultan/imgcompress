@@ -63,7 +63,7 @@ body {
    level 1 instead of mid-outline - but it keeps the lead-heading size. The
    double id outweighs the `#about h2` FAQ reset below. */
 #about #about-h {
-  font-size: 22px;
+  font-size: calc(22px * var(--type-scale));
   line-height: 1.35;
   color: var(--c-ink);
   letter-spacing: 0;
@@ -74,7 +74,7 @@ body {
    Reset from the 13px region-label style h2 normally carries, because these
    are prose headings, not chrome. */
 #about h2 {
-  font-size: 17px;
+  font-size: calc(17px * var(--type-scale));
   line-height: 1.4;
   color: var(--c-ink);
   letter-spacing: 0;
@@ -82,7 +82,7 @@ body {
   margin-top: var(--s-2);
 }
 #about p {
-  font-size: 15px;
+  font-size: calc(15px * var(--type-scale));
   line-height: 1.6;
   color: var(--c-ink-2);
   margin: 0;
@@ -93,7 +93,7 @@ body {
    says so, and says the privacy promise holds either way. */
 #noscript {
   padding: var(--s-4);
-  font-size: 15px;
+  font-size: calc(15px * var(--type-scale));
   text-align: center;
   border-bottom: 1px solid var(--c-line);
 }
@@ -145,7 +145,7 @@ body {
      them its own. Dropping it here once put the wordmark in Arial while every
      other element on the page was correct. */
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: calc(18px * var(--type-scale));
   font-weight: 600;
   letter-spacing: -0.01em;
 }

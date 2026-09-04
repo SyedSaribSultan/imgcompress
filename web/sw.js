@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v14";
+const VERSION = "v17";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 

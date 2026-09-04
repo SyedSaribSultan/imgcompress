@@ -96,7 +96,7 @@
 /* The standing invitation under the list. */
 #queue-hint {
   padding: var(--s-1) var(--s-4) var(--s-2);
-  font-size: 13px;
+  font-size: calc(13px * var(--type-scale));
   text-align: center;
 }
 
@@ -166,7 +166,7 @@
 .row > .now {
   grid-column: 3;
   grid-row: 1;
-  font-size: 14px;
+  font-size: calc(14px * var(--type-scale));
   color: var(--c-ink-2);
 }
 
@@ -174,7 +174,7 @@
 .row > .sub {
   grid-column: 2 / span 2;
   grid-row: 2;
-  font-size: 14px;
+  font-size: calc(14px * var(--type-scale));
   color: var(--c-ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -234,7 +234,7 @@ body[data-drag="1"] #side { outline: 2px dashed var(--c-accent); outline-offset:
 #queue-foot {
   padding: var(--s-2) var(--s-4);
   border-top: 1px solid var(--c-line);
-  font-size: 14px;
+  font-size: calc(14px * var(--type-scale));
   color: var(--c-ink-3);
   display: flex;
   align-items: center;

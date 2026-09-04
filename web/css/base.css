@@ -105,6 +105,25 @@
      slow face lands on a serif rather than snapping to a sans - the page keeps
      its voice either way. */
   --font-ui: 'Caveat', ui-serif, Georgia, 'Times New Roman', serif;
+
+  /* How much bigger this face has to be set to READ the size it is nominally
+     at. Fonts are specified in px but perceived by x-height, and the two come
+     apart badly between families: measured off a rendered glyph, Caveat's
+     x-height is 0.36 of its font-size against Arial's 0.52 and Georgia's 0.48,
+     so 16px of Caveat reads about a third smaller than 16px of anything
+     ordinary. Setting it at a nominal 16 makes an interface that looks shrunk
+     without any single number being wrong.
+
+     So every UI size is written as `calc(<px> * var(--type-scale))`, and this
+     is the one value that moves them. tools/gen_fonts.py measures the face and
+     writes it, which is the only reason it can be trusted to be right rather
+     than eyeballed - and why swapping to a face with a normal x-height puts it
+     back to 1 automatically.
+
+     The figures do NOT scale with it. Geist Mono is set at the size it was
+     chosen at, and a scale meant for a handwriting face would blow the
+     tabular columns apart. */
+  --type-scale: 1.3;
   --font-num: 'Geist Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --font-display: var(--font-ui);
 
@@ -167,7 +186,7 @@ body {
   margin: 0;
   background: var(--c-bg);
   color: var(--c-ink);
-  font: 16px/1.5 var(--font-ui);
+  font: calc(16px * var(--type-scale))/1.5 var(--font-ui);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -202,7 +221,7 @@ b, strong, th { font-weight: 600; }
 /* Section labels. Small and quiet: the data is the content, not its name.
    13px is the floor for uppercase micro-labels, and this is the floor. */
 h2, h3 {
-  font-size: 13px;
+  font-size: calc(13px * var(--type-scale));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
