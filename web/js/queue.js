@@ -13,8 +13,16 @@
 import { $, setText, show } from "./dom.js";
 import { state, isReady, isBusy, totals } from "./state.js";
 import { human, fmtLabel } from "./format.js";
+import { takeDirtyItems } from "./render.js";
 
-const rows = new Map();   // id -> the element showing it
+/* id -> { el, and the children paintRow writes to }.
+ *
+ * The children are resolved once, when the row is built, rather than looked up
+ * on every paint. paintRow ran seven querySelectors per row per frame, and a
+ * batch repaints on nearly every worker message: at two hundred rows that was
+ * about fourteen hundred selector matches a frame, all of them re-finding
+ * elements that had not moved since the row was created. */
+const rows = new Map();
 
 /** The second line of a row: what happened, or what is happening. */
 function subLine(it) {
@@ -68,54 +76,72 @@ function makeRow(it) {
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>' +
     '</span>' +
     '<span class="track" hidden><i></i></span>';
-  return el;
+  /* Resolved once. Everything paintRow touches is found here and never looked
+     up again for the life of the row. */
+  return {
+    el,
+    thumb: el.querySelector(".thumb"),
+    head: el.querySelector(".name-head"),
+    tail: el.querySelector(".name-tail"),
+    retry: el.querySelector(".retry"),
+    now: el.querySelector(".now"),
+    sub: el.querySelector(".sub"),
+    track: el.querySelector(".track"),
+    bar: el.querySelector(".track > i"),
+  };
 }
 
 /* End-ellipsis hides exactly the part of an export name that distinguishes it
  * from its siblings, so the tail survives: the last few characters and the
  * extension stay visible while the middle gives way. The full name rides the
  * row's title for anyone who wants all of it. */
-function paintName(el, name) {
+function paintName(row, name) {
   const TAIL = 10;
-  const head = name.length > TAIL ? name.slice(0, -TAIL) : "";
-  const tail = name.length > TAIL ? name.slice(-TAIL) : name;
-  setText(el.querySelector(".name-head"), head);
-  setText(el.querySelector(".name-tail"), tail);
+  setText(row.head, name.length > TAIL ? name.slice(0, -TAIL) : "");
+  setText(row.tail, name.length > TAIL ? name.slice(-TAIL) : name);
 }
 
-function paintRow(el, it) {
-  const thumb = el.querySelector(".thumb");
-  if (it.thumbURL && thumb.getAttribute("src") !== it.thumbURL) {
-    thumb.src = it.thumbURL;
+function paintRow(row, it) {
+  const el = row.el;
+  if (it.thumbURL && row.thumb.getAttribute("src") !== it.thumbURL) {
+    row.thumb.src = it.thumbURL;
   }
-  paintName(el, it.name);
+  paintName(row, it.name);
   if (el.title !== it.name) el.title = it.name;
 
-  show(el.querySelector(".retry"), it.status === "failed");
-  setText(el.querySelector(".now"), isReady(it) ? human(it.newBytes) : "");
+  show(row.retry, it.status === "failed");
+  setText(row.now, isReady(it) ? human(it.newBytes) : "");
 
-  const sub = el.querySelector(".sub");
   const { text, tone } = subLine(it);
-  setText(sub, text);
-  sub.className = `sub${tone ? ` ${tone}` : ""}`;
+  setText(row.sub, text);
+  const subClass = `sub${tone ? ` ${tone}` : ""}`;
+  if (row.sub.className !== subClass) row.sub.className = subClass;
 
   /* Progress is only drawn while there is progress to draw. A track sitting at
      zero on a finished row reads as a job that never started. */
-  const track = el.querySelector(".track");
   const busy = it.status === "working";
-  show(track, busy);
-  if (busy) track.firstElementChild.style.transform = `scaleX(${it.frac || 0})`;
+  show(row.track, busy);
+  if (busy) row.bar.style.transform = `scaleX(${it.frac || 0})`;
 
   /* Status and chosen format as data attributes as well as words. Anything that
      needs to know what state a row is in - a stylesheet, the browser harness -
      reads these rather than parsing the sentence, which is display text and free
      to be reworded. */
-  el.dataset.status = it.status;
-  el.dataset.format = it.fmt || "";
-  el.setAttribute("aria-selected", String(state.selected === it.id));
-  // The row's whole accessible name, so a screen reader gets the file and its
-  // result in one read rather than four unlabelled fragments.
-  el.setAttribute("aria-label", `${it.name}. ${text}`);
+  if (el.dataset.status !== it.status) el.dataset.status = it.status;
+  const fmt = it.fmt || "";
+  if (el.dataset.format !== fmt) el.dataset.format = fmt;
+  const selected = String(state.selected === it.id);
+  if (el.getAttribute("aria-selected") !== selected) {
+    el.setAttribute("aria-selected", selected);
+  }
+  /* The row's whole accessible name, so a screen reader gets the file and its
+     result in one read rather than four unlabelled fragments. Guarded like the
+     rest: rewriting an unchanged aria-label is not free, and on some screen
+     readers it re-announces the row. */
+  const label = `${it.name}. ${text}`;
+  if (el.getAttribute("aria-label") !== label) {
+    el.setAttribute("aria-label", label);
+  }
 }
 
 export function renderQueue() {
@@ -130,20 +156,32 @@ export function renderQueue() {
   setText($("queue-count"), String(state.items.length));
 
   // Drop the rows whose items are gone, so a cleared queue leaves no orphans.
-  for (const [id, el] of rows) {
-    if (!state.byId.has(id)) { el.remove(); rows.delete(id); }
+  for (const [id, row] of rows) {
+    if (!state.byId.has(id)) { row.el.remove(); rows.delete(id); }
   }
+
+  /* Which rows actually changed, or null for all of them. The ordering pass
+     below still walks every item on every render - it is one property read and
+     a comparison per row, and it is what keeps the DOM in the model's order -
+     but paintRow, which is fifteen or so DOM operations, runs only where
+     something moved. */
+  const only = takeDirtyItems();
 
   let prev = null;
   for (const it of state.items) {
-    let el = rows.get(it.id);
-    if (!el) { el = makeRow(it); rows.set(it.id, el); }
-    paintRow(el, it);
+    let row = rows.get(it.id);
+    if (!row) {
+      row = makeRow(it);
+      rows.set(it.id, row);
+      paintRow(row, it);          // a new row is dirty by definition
+    } else if (!only || only.has(it.id)) {
+      paintRow(row, it);
+    }
     // Keep the DOM order equal to the model order without touching rows that are
     // already in the right place.
     const shouldFollow = prev ? prev.nextElementSibling : list.firstElementChild;
-    if (shouldFollow !== el) list.insertBefore(el, shouldFollow || null);
-    prev = el;
+    if (shouldFollow !== row.el) list.insertBefore(row.el, shouldFollow || null);
+    prev = row.el;
   }
 
   renderBatch();

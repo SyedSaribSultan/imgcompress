@@ -140,7 +140,7 @@ export async function dispatch() {
        image's, and reporting the wait as work would be a lie. */
     item.startedAt = performance.now();
     item.elapsedMs = null;
-    scheduleRender("queue");
+    scheduleRender("queue", item.id);
 
     const buffer = await item.bytesPromise;
     item.bytesPromise = null;   // transferred below; a second read must re-open
@@ -208,6 +208,8 @@ function onWorkerMessage(slot, msg) {
   if (item.status === "cancelled") return;
 
   if (msg.type === "progress") {
+    const wasFrac = item.frac || 0;
+    const wasSay = item.progress;
     item.frac = msg.frac ?? item.frac ?? 0;
     item.stage = msg.stage;
     item.formats = msg.total || item.formats;
@@ -218,8 +220,20 @@ function onWorkerMessage(slot, msg) {
       const fn = STAGE_TEXT[msg.stage];
       item.progress = fn ? fn(msg.detail, Math.round((item.frac || 0) * 100)) : "working…";
     }
-    scheduleRender("queue");
-    if (state.selected === item.id) scheduleRender("stage");
+    /* A frame is only worth asking for if something would look different.
+       A worker posts progress far faster than the screen refreshes, and a bar
+       three hundred pixels wide cannot render a movement of half a percent -
+       so a frame that would only nudge `frac` by less than that is skipped.
+       The sentence is not subject to the gate: the words change independently
+       of the number, and the terminal frames (0 and 1) always paint, because
+       "started" and "finished" are the two positions that must never be the
+       ones dropped. */
+    const moved = Math.abs((item.frac || 0) - wasFrac) >= 0.005;
+    const terminal = item.frac === 0 || item.frac >= 1;
+    if (moved || terminal || item.progress !== wasSay) {
+      scheduleRender("queue", item.id);
+      if (state.selected === item.id) scheduleRender("stage");
+    }
     return;
   }
 
