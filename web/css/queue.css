@@ -39,6 +39,22 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  /* Off-screen rows cost nothing to style, lay out or paint.
+   *
+   * The list is not virtualized - rows are real elements, reconciled by id -
+   * so at two hundred images the browser was doing layout and paint work for
+   * roughly two hundred rows to show the twenty that fit. This hands that
+   * decision to the engine: a row outside the scrollport skips its own
+   * rendering entirely until it approaches.
+   *
+   * The intrinsic size is measured, not guessed, and it is the WORKING height
+   * rather than the settled one: a row is 70px while its progress track is
+   * revealed and 64px afterwards, and reserving the smaller of the two would
+   * make the scrollbar creep as a batch finished. `auto` means the real height
+   * is remembered once a row has been rendered, so the estimate only ever
+   * matters for rows nobody has scrolled to yet. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 70px;
   transition:
     background-color var(--dur-fx) var(--ease-fx),
     border-color var(--dur-fx) var(--ease-fx),

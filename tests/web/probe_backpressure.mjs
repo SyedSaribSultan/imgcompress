@@ -86,6 +86,37 @@ try {
   ok(res.done + res.failed === res.n, "every item reached a terminal state");
   ok(res.failed === 0, `nothing failed (${res.failed})`);
   ok(truePeak <= res.pool + 2, `reads stayed inside the window (peak ${truePeak} <= ${res.pool+2})`);
+
+  /* The same batch is the only place worth checking content-visibility, which
+     queue.css puts on every row: off-screen rows skip their own layout and
+     paint, and the ways that goes wrong are a row collapsing to nothing, the
+     scrollbar lying about the list's length, or text disappearing from
+     find-in-page. All three are invisible at three files and obvious at
+     twenty-four. */
+  const list = await pg.evaluate(async () => {
+    const el = document.getElementById("queue-list");
+    const rows = [...el.querySelectorAll(".row")];
+    const last = rows[rows.length - 1];
+    const beforeScroll = {
+      zeroBoxes: rows.filter((r) => r.getBoundingClientRect().height === 0).length,
+      scrollH: Math.round(el.scrollHeight),
+      offscreenText: last.querySelector(".sub").textContent,
+    };
+    el.scrollTop = el.scrollHeight;
+    await new Promise((r) => requestAnimationFrame(r));
+    await new Promise((r) => setTimeout(r, 300));
+    return { ...beforeScroll,
+      renderedH: Math.round(last.getBoundingClientRect().height),
+      renderedName: last.querySelector(".name-tail").textContent };
+  });
+  console.log("  list:", JSON.stringify(list));
+  ok(list.zeroBoxes === 0,
+     `no row collapsed to zero height under content-visibility (${list.zeroBoxes})`);
+  ok(list.scrollH > 900, `the scrollbar reflects the real length (${list.scrollH}px)`);
+  ok(/→/.test(list.offscreenText),
+     "an off-screen row still carries its text, so find-in-page can reach it");
+  ok(list.renderedH > 40 && list.renderedName.length > 0,
+     `and scrolling to the end renders it (${list.renderedH}px "${list.renderedName}")`);
 } finally { await b.close(); server.kill(); }
 console.log(bad===0 ? "\nOK" : `\n${bad} problem(s)`);
 process.exit(bad?1:0);
