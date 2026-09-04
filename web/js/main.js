@@ -24,7 +24,7 @@ import {
 import {
   startEngine, dispatch, requeue, removeItems, cancelAll, setBatchEndHandler, pool,
   readingCount, readingPeakSeen,
-  holdWork, warmCodecs,
+  holdWork, warmCodecs, warmAvif,
 } from "./engine.js";
 import { addFiles, filesFromDataTransfer, countItemWords } from "./intake.js";
 import { chooseCandidate } from "./views.js";
@@ -587,22 +587,47 @@ if ("serviceWorker" in navigator) {
     });
   }).catch(() => {});
 
-  /* Warm the codecs only once this page is service-worker-controlled, so the
-     warm reads the freshly installed cache. Before this, the warm fired on a
-     timer and RACED the install's own download of the same files - a first
-     visit could fetch the 3.5 MB AVIF codec twice. Repeat visits are
-     controlled immediately, so they warm immediately. */
-  if (navigator.serviceWorker.controller) warmTheCodecs();
-  else navigator.serviceWorker.addEventListener("controllerchange", () => warmTheCodecs(), { once: true });
+  /* Warm the codecs only once the offline copy is actually WRITTEN, so the warm
+     reads the cache instead of re-downloading the same files.
+
+     The gate is a message the service worker sends when its precache has
+     finished, because no signal the page can observe by itself means that.
+     This worker calls skipWaiting() and clients.claim(), so it takes control
+     part-way through activating: on a cold profile `controllerchange` fired at
+     ~536ms while the install did not finish until ~933ms, and
+     `navigator.serviceWorker.ready` was no better. Both were tried here and
+     both let the warm race the very download it exists to wait for - every
+     codec fetched twice on a first visit, which is precisely the bug the
+     comment that used to sit here claimed to have fixed.
+
+     A repeat visit is already controlled and gets no message, so it warms at
+     once. The timeout is the belt: a worker that never reports leaves the app
+     warming a little later rather than not at all. */
+  let warmed = false;
+  const warmOnce = () => { if (!warmed) { warmed = true; warmTheCodecs(); } };
+  if (navigator.serviceWorker.controller) warmOnce();
+  else {
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "precached") warmOnce();
+    });
+    setTimeout(warmOnce, 15000);
+  }
 } else {
   // No offline layer to wait for - warm once the first paint is out the door.
   setTimeout(warmTheCodecs, 1000);
 }
-
-/* Waits for the offline copy to be ready, so this reads the cache instead of
- * racing the install's own download of the very same files. */
+/* The AVIF encoder is compiled at idle rather than with the others: it is
+ * bigger than everything else put together, and its download is already
+ * handled by the service worker's deferred precache, so this only pays the
+ * compile. requestIdleCallback ships in all three engines now; the timer is
+ * for older installs. */
 function warmTheCodecs() {
   warmCodecs();
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(() => warmAvif(), { timeout: 8000 });
+  } else {
+    setTimeout(warmAvif, 4000);
+  }
 }
 
 /* Installed as an app, the OS can hand files straight here - right-click an

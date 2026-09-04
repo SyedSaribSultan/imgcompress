@@ -1845,11 +1845,20 @@ onmessage = (e) => {
        downloading. The page sends this once the service worker's offline copy
        is ready, so the warm READS the cache instead of racing the very
        download that fills it - a first visit used to fetch the AVIF codec
-       twice because this fired on a timer. A weak device skips warming AVIF -
-       the one download heavy enough to matter there. */
+       twice because this fired on a timer.
+
+       AVIF is no longer part of this message. It is not in the precache
+       either, so warming it here would put a 1.1 MB download on the critical
+       path by the back door - which is precisely what deferring it was for.
+       The page asks for it separately, at idle, through "warm-avif". */
     loadMozjpeg().catch(() => {});
     loadOxipng().catch(() => {});
     loadWebp().catch(() => {});
+  } else if (msg.type === "warm-avif") {
+    /* The big one, fetched when the page says the machine is otherwise idle.
+       A weak device never gets asked: it is the one download heavy enough to
+       matter there, and the automatic format set drops AVIF on those machines
+       anyway, so warming it would be paying for an encoder that will not run. */
     if (!WEAK_DEVICE) loadAvif().catch(() => {});
   }
 };

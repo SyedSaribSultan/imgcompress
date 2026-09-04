@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v7";
+const VERSION = "v9";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 
@@ -64,13 +64,35 @@ const USE_CASE_PAGES = new Set([
   "/bulk-image-compressor",
 ]);
 
+/* What the install BLOCKS on: the shell's own weight, the three small codecs,
+ * and the two faces the page paints with. Everything here has to land before
+ * "ready to work offline" can honestly be announced. */
 const HEAVY_PRECACHE = [
   "/vendor/mozjpeg.js", "/vendor/mozjpeg_enc.wasm",
   "/vendor/oxipng.js", "/vendor/squoosh_oxipng_bg.wasm",
   "/vendor/webp.js", "/vendor/webp_enc_simd.wasm",
-  "/vendor/avif.js", "/vendor/avif_enc.wasm",
   "/fonts/geist-mono-latin.woff2", "/fonts/geist-mono-latin-ext.woff2",
   "/fonts/fraunces-latin.woff2", "/fonts/fraunces-latin-ext.woff2",
+];
+
+/* And what it does NOT block on. avif_enc.wasm is 3,485,872 bytes - 1,116,248
+ * over the wire, about 64% of everything a first visit downloads - for an
+ * encoder that competes on some destinations and that many visitors will never
+ * choose. Waiting for it means the offline promise is not kept until the
+ * largest file in the app has landed.
+ *
+ * It is still cached, just not as a precondition: the install kicks this off
+ * and does not await it. That distinction is the whole fix, and it has to live
+ * HERE rather than in the page, because the page cannot do it. The compression
+ * worker loads codecs with importScripts, and a worker created before the
+ * service worker took control is an uncontrolled client - its fetches bypass
+ * the fetch handler entirely and are never cached. Measured: fromServiceWorker
+ * was false for every codec, and avif_enc.wasm was missing from the cache
+ * afterwards even though the app had just used it. Deferring it to a page-side
+ * idle callback therefore did not defer the download at all; it only stopped
+ * the file being stored. */
+const HEAVY_DEFERRED = [
+  "/vendor/avif.js", "/vendor/avif_enc.wasm",
 ];
 
 self.addEventListener("install", (e) => {
@@ -89,7 +111,24 @@ self.addEventListener("install", (e) => {
       shell.addAll(PRECACHE.map((u) => new Request(u, { cache: "reload" }))),
       heavy.addAll(HEAVY_PRECACHE),
     ]);
+    /* The offline copy is now genuinely written, and that is a different moment
+       from any the page can observe for itself: skipWaiting() and
+       clients.claim() below mean this worker takes control part-way through
+       activating, so both `controllerchange` and `navigator.serviceWorker.ready`
+       resolve while the caches above may still be filling. Measured on a cold
+       profile: control at ~536ms, install finished at ~933ms. Anything the page
+       holds back "until the cache is ready" has to wait for this message. */
+    for (const client of await self.clients.matchAll({ includeUncontrolled: true })) {
+      client.postMessage({ type: "precached" });
+    }
     await self.skipWaiting();
+
+    /* Started, deliberately NOT awaited, and deliberately after skipWaiting -
+       so the big codec downloads in the background while the app is already
+       usable and already offline-capable. A failure here is not an install
+       failure: no AVIF in the cache means the first job that wants it fetches
+       it, which is exactly the behaviour before any of this. */
+    heavy.addAll(HEAVY_DEFERRED).catch(() => {});
   })());
 });
 

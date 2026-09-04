@@ -10,6 +10,7 @@
  *
  *   out  { type: "probe" }                          -> asks what this browser can write
  *   out  { type: "warm" }                           -> load codecs now (cache is ready)
+ *   out  { type: "warm-avif" }                      -> and the big one, at idle
  *   out  { type: "job", id, rev, name, buffer, mime, settings }
  *   in   { type: "caps", caps }                     answer to the probe
  *   in   { type: "progress", id, rev, stage, frac, detail, total }
@@ -99,6 +100,16 @@ export function startEngine() {
 export function warmCodecs() {
   ensurePool(1);
   pool[0].w.postMessage({ type: "warm" });
+}
+
+/** The AVIF encoder, which is bigger than everything else put together and is
+ *  therefore neither precached nor part of the ordinary warm. Called from
+ *  main.js at idle, after the offline install has finished, so the largest
+ *  file in the app is fetched when nothing is competing for the network. The
+ *  worker ignores it on a weak device. */
+export function warmAvif() {
+  ensurePool(1);
+  pool[0].w.postMessage({ type: "warm-avif" });
 }
 
 /** Mark the start of a run. Adding files to a run already in flight extends it
