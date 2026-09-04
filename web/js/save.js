@@ -169,9 +169,37 @@ const ZCRC = (() => {
 })();
 
 function zcrc32(bytes) {
-  let c = 0xffffffff;
+  return crcFinal(crcUpdate(0xffffffff, bytes));
+}
+
+/* The same loop in running form, so a file's checksum can be accumulated over
+ * chunks as they arrive rather than over one buffer holding all of it. */
+function crcUpdate(c, bytes) {
   for (let i = 0; i < bytes.length; i++) c = ZCRC[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+  return c;
+}
+const crcFinal = (c) => (c ^ 0xffffffff) >>> 0;
+
+/** Checksum a Blob without ever holding it whole.
+ *
+ *  blob.stream() hands back 64KB-ish chunks, which is the entire point: the
+ *  alternative is arrayBuffer(), and doing that for every entry at once is
+ *  what made a two-hundred-image download allocate the whole output in RAM
+ *  before writing a single byte of the archive.
+ *
+ *  The fallback is for anything without Blob.stream - it is in every current
+ *  engine, but a checksum that throws produces an archive that looks fine and
+ *  will not extract, which is not a failure worth being clever about. */
+async function crcOfBlob(blob) {
+  if (typeof blob.stream !== "function") return zcrc32(new Uint8Array(await blob.arrayBuffer()));
+  const reader = blob.stream().getReader();
+  let c = 0xffffffff;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    c = crcUpdate(c, value);
+  }
+  return crcFinal(c);
 }
 
 async function zipStore(entries) {
@@ -183,11 +211,24 @@ async function zipStore(entries) {
   const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xffff;
   const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xffff;
 
-  const datas = await Promise.all(entries.map((e) => e.blob.arrayBuffer()));
-  entries.forEach((entry, i) => {
-    const data = new Uint8Array(datas[i]);
+  /* One entry at a time, and never the bytes themselves.
+   *
+   * This used to be `Promise.all(entries.map(e => e.blob.arrayBuffer()))`,
+   * which decoded every result into memory simultaneously - on a two-hundred
+   * image batch that is the whole output resident at once, on top of the
+   * afterBlobs the queue is already holding, in order to build a Blob that
+   * would have copied it all again.
+   *
+   * Two changes make it unnecessary. The checksum is streamed, so a file is
+   * read in chunks and never assembled. And the entry pushed into `chunks` is
+   * the BLOB, not its bytes: the Blob constructor accepts Blob parts, and the
+   * browser is free to keep those backed by disk rather than by the heap. The
+   * archive is still assembled in one call at the end, but what it assembles
+   * is a list of references and a handful of small headers. */
+  for (const entry of entries) {
+    const size = entry.blob.size;
     const nameBytes = encoder.encode(entry.name);
-    const crc = zcrc32(data);
+    const crc = await crcOfBlob(entry.blob);
 
     const local = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(local.buffer);
@@ -195,7 +236,7 @@ async function zipStore(entries) {
     lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true); lv.setUint16(8, 0, true);
     lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
     lv.setUint32(14, crc, true);
-    lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true);
+    lv.setUint32(18, size, true); lv.setUint32(22, size, true);
     lv.setUint16(26, nameBytes.length, true);
     local.set(nameBytes, 30);
 
@@ -205,15 +246,16 @@ async function zipStore(entries) {
     cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, 0x0800, true);
     cv.setUint16(10, 0, true); cv.setUint16(12, dosTime, true); cv.setUint16(14, dosDate, true);
     cv.setUint32(16, crc, true);
-    cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+    cv.setUint32(20, size, true); cv.setUint32(24, size, true);
     cv.setUint16(28, nameBytes.length, true);
     cv.setUint32(42, offset, true);
     cdir.set(nameBytes, 46);
 
-    chunks.push(local, data);
+    /* The Blob goes in as itself. Nothing here ever sees its bytes. */
+    chunks.push(local, entry.blob);
     central.push(cdir);
-    offset += local.length + data.length;
-  });
+    offset += local.length + size;
+  }
 
   let centralSize = 0;
   for (const c of central) centralSize += c.length;
