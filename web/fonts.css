@@ -1,17 +1,17 @@
 /* ---------------------------------------------------------------------------
    Self-hosted webfaces for the HeyOz type tokens.
 
-   The token values name 'Bricolage Grotesque', 'Geist' and 'Geist Mono' as
-   their first families. Upstream fetches those from Google Fonts by <link>,
+   The token values name 'Fraunces', 'Geist' and 'Geist Mono' as their first
+   families. Upstream fetches those from Google Fonts by <link>,
    which this app cannot do: it would be a third-party request, and "nothing
    ever leaves your device" is the product's headline promise, enforced by a
    `default-src 'none'` CSP. So the files are served from this origin instead —
    same typography, still zero external connections.
 
-   All six faces are **variable**, requested from Google Fonts at `wght@400..600`
-   rather than the full 200..800 / 100..900 ranges. That is not only a size
-   saving: this app never renders above semibold, so the heavier masters would
-   be bytes that can never be drawn. 191 KB for the set.
+   All six faces are **variable**, held to `wght 400..600` rather than the full
+   200..800 / 100..900 ranges. That is not only a size saving: this app never
+   renders above semibold, so the heavier masters would be bytes that can never
+   be drawn. 143 KB for the set.
 
    Latin and latin-ext only. Each face keeps the exact `unicode-range` Google
    ships it with, so a glyph outside the subset falls through to the next family
@@ -22,25 +22,47 @@
    families the tokens name, so there is no metric mismatch to compensate for.
    --------------------------------------------------------------------------- */
 
-/* ------------------------------ display / heading ------------------------- */
+/* ------------------------------ display / heading -------------------------
+   Fraunces, an "Old Style" soft serif, is the display face. It replaced
+   Bricolage Grotesque, which was shipped and registered here for months and
+   never painted a single glyph - the token layer named it and no rule ever
+   consumed it.
+
+   Subset from the upstream four-axis variable font (SIL OFL 1.1), not from
+   Google's CSS API, because the API's build carries only opsz and wght and the
+   two axes that give this face its character are the other two:
+
+     SOFT  0    the crisp cut rather than the rounded one; the palette is warm
+                enough already and the soft cut goes gummy at heading size.
+     WONK  1    the wonky substitutions ON - the leaning n/m/h and the bulbous
+                flags. This is the entire reason for choosing Fraunces, so the
+                axis is pinned to the expressive end rather than left to a
+                default that browsers would render at 0.
+     opsz  36   pinned. Optical size is a heading-only concern here and pinning
+                it halves the file: 60,144 bytes variable against 31,952.
+     wght  400..600  kept variable, matching every other face in this file and
+                the app's own semibold ceiling.
+
+   31,952 bytes for latin - well under the 76,888 the never-painted Bricolage
+   preload used to spend, so adding a face still leaves the critical path
+   lighter than it was. tools/gen_fonts.py rebuilds both files from source.
+   --------------------------------------------------------------------------- */
 @font-face {
-  font-family: 'Bricolage Grotesque';
+  font-family: 'Fraunces';
   font-style: normal;
   font-weight: 400 600;
-  font-stretch: 100%;
   font-display: swap;
-  src: url('/fonts/bricolage-grotesque-latin.woff2') format('woff2');
+  src: url('/fonts/fraunces-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Bricolage Grotesque';
+  font-family: 'Fraunces';
   font-style: normal;
   font-weight: 400 600;
-  font-stretch: 100%;
   font-display: swap;
-  src: url('/fonts/bricolage-grotesque-latin-ext.woff2') format('woff2');
+  src: url('/fonts/fraunces-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;

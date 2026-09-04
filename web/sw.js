@@ -20,7 +20,7 @@
 
 "use strict";
 
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = `pocketsize-shell-${VERSION}`;
 const HEAVY = `pocketsize-heavy-${VERSION}`;
 
@@ -37,7 +37,7 @@ const PRECACHE = [
   "/js/destinations-bridge.js", "/js/theme.js", "/js/dom.js", "/js/format.js",
   "/js/state.js", "/js/views.js", "/js/render.js", "/js/settings.js",
   "/js/intake.js", "/js/engine.js", "/js/queue.js", "/js/compare.js",
-  "/js/save.js", "/js/panels.js", "/js/main.js",
+  "/js/save.js", "/js/panels.js", "/js/picker.js", "/js/main.js",
   "/worker.js",
   "/ss2.module.js", "/ss2.js",
   "/site.webmanifest", "/favicon.svg", "/favicon.ico",
@@ -71,7 +71,7 @@ const HEAVY_PRECACHE = [
   "/vendor/avif.js", "/vendor/avif_enc.wasm",
   "/fonts/geist-latin.woff2", "/fonts/geist-latin-ext.woff2",
   "/fonts/geist-mono-latin.woff2", "/fonts/geist-mono-latin-ext.woff2",
-  "/fonts/bricolage-grotesque-latin.woff2", "/fonts/bricolage-grotesque-latin-ext.woff2",
+  "/fonts/fraunces-latin.woff2", "/fonts/fraunces-latin-ext.woff2",
 ];
 
 self.addEventListener("install", (e) => {

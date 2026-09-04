@@ -116,6 +116,132 @@ try {
   console.log("\nkeyboard reachable in the result view:", JSON.stringify(keys, null, 1));
   ok(keys.length > 0, `the result view is reachable from the keyboard (${keys.length} controls)`);
 
+  /* ---- the drawn dropdowns owe everything the native ones gave away ----
+   * Replacing a <select> means taking on the whole contract it used to honour
+   * for free. Each of these is a way to ship a control someone cannot use, so
+   * each is checked rather than assumed:
+   *
+   *   the native select survives as the model and the fallback
+   *   the button is labelled by its question, not by its current value
+   *   the roles and state a screen reader needs are present and correct
+   *   arrow keys move, Enter commits, Escape cancels, type-ahead jumps
+   *   the choice reaches the app - a change event, and settings.js listening
+   */
+  {
+    const shape = await pg.evaluate(() => {
+      const btn = document.getElementById("target-btn");
+      const list = document.getElementById("target-list");
+      const sel = document.getElementById("target");
+      const labelledBy = (btn.getAttribute("aria-labelledby") || "").split(/\s+/);
+      return {
+        enhanced: !!btn && !!list,
+        nativeStillThere: !!sel && sel.tagName === "SELECT",
+        nativeHiddenFromAT: sel.getAttribute("aria-hidden") === "true" && sel.tabIndex === -1,
+        btnFocusable: btn.tabIndex !== -1 && !btn.disabled,
+        haspopup: btn.getAttribute("aria-haspopup"),
+        expandedClosed: btn.getAttribute("aria-expanded"),
+        listRole: list.getAttribute("role"),
+        /* The accessible name has to include the QUESTION. A button named only
+           "Website or app" tells a screen-reader user what the answer is and
+           never what was asked. */
+        namedByLabel: labelledBy.some((id) => {
+          const el = document.getElementById(id);
+          return el && /going to/i.test(el.textContent || "");
+        }),
+      };
+    });
+    console.log("\npicker shape:", JSON.stringify(shape, null, 1));
+    ok(shape.enhanced, "the plan's dropdowns are enhanced");
+    ok(shape.nativeStillThere,
+       "the native select is still in the document as the model and the fallback");
+    ok(shape.nativeHiddenFromAT,
+       "and hidden from the accessibility tree, so the control is met once, not twice");
+    ok(shape.btnFocusable, "the drawn control takes focus");
+    ok(shape.haspopup === "listbox" && shape.listRole === "listbox",
+       `it announces itself as a listbox (haspopup=${shape.haspopup}, role=${shape.listRole})`);
+    ok(shape.expandedClosed === "false", "and announces that it is closed");
+    ok(shape.namedByLabel,
+       "its accessible name carries the question, not just the answer");
+
+    /* The keyboard model, driven through real key events rather than by calling
+       into the module - what is being checked is that a person with no pointer
+       can operate it. */
+    await pg.focus("#target-btn");
+    await pg.keyboard.press("Enter");
+    const opened = await pg.evaluate(() => ({
+      expanded: document.getElementById("target-btn").getAttribute("aria-expanded"),
+      active: document.getElementById("target-btn").getAttribute("aria-activedescendant"),
+      /* Focus stays on the button: the list is activedescendant-driven, so the
+         visible focus ring never goes somewhere the eye cannot follow. */
+      focusStayed: document.activeElement.id === "target-btn",
+    }));
+    ok(opened.expanded === "true", "Enter opens it");
+    ok(!!opened.active, `and marks an active option (${opened.active})`);
+    ok(opened.focusStayed, "with focus still on the button, as the pattern requires");
+
+    await pg.keyboard.press("ArrowDown");
+    const moved = await pg.evaluate(() =>
+      document.getElementById("target-btn").getAttribute("aria-activedescendant"));
+    ok(moved !== opened.active, `Down moves the active option (${opened.active} -> ${moved})`);
+
+    /* Escape cancels: it closes and commits NOTHING, which is the difference
+       between a menu and a trap. */
+    const before = await pg.evaluate(() => document.getElementById("target").value);
+    await pg.keyboard.press("Escape");
+    const cancelled = await pg.evaluate(() => ({
+      expanded: document.getElementById("target-btn").getAttribute("aria-expanded"),
+      value: document.getElementById("target").value,
+      focused: document.activeElement.id,
+    }));
+    ok(cancelled.expanded === "false", "Escape closes it");
+    ok(cancelled.value === before, "and changes nothing");
+    ok(cancelled.focused === "target-btn", "and gives focus back to the button");
+
+    /* Enter commits, and the choice has to reach the app - the whole point of
+       keeping the select as the model is that settings.js never learned this
+       control exists. */
+    await pg.keyboard.press("Enter");
+    await pg.keyboard.press("ArrowDown");
+    await pg.keyboard.press("Enter");
+    /* Longer than pushSettings' 350ms debounce in main.js: the control commits
+       synchronously, the plan is pushed on a timer, and a 250ms wait made this
+       assertion fail against a picker that was working perfectly. */
+    await new Promise((r) => setTimeout(r, 700));
+    const committed = await pg.evaluate(() => ({
+      value: document.getElementById("target").value,
+      shown: document.querySelector("#target-btn .picker-value").textContent.trim(),
+      /* state.settings, NOT currentSettings(): the latter reads the select
+         directly and would report the new value whether or not the change
+         event ever fired, so asserting on it proves nothing. state.settings is
+         written only by pushSettings(), which runs from the change listener -
+         so this is the one reading that goes stale if the event is dropped.
+         The first version of this check used currentSettings() and stayed
+         green when the dispatch was deliberately removed. */
+      planTarget: imgc.state.settings.target,
+      expanded: document.getElementById("target-btn").getAttribute("aria-expanded"),
+    }));
+    console.log("committed:", JSON.stringify(committed));
+    ok(committed.value !== before, `Enter commits a different choice (${before} -> ${committed.value})`);
+    ok(committed.expanded === "false", "and closes the list");
+    ok(!!committed.shown, `the button shows the new answer (${committed.shown})`);
+    ok(committed.planTarget === committed.value,
+       `and the plan received it through the select's own change event `
+       + `(state.settings.target=${committed.planTarget}, select=${committed.value})`);
+
+    /* Type-ahead, which is the one affordance people miss most when a select is
+       replaced by a div. */
+    await pg.focus("#target-btn");
+    await pg.keyboard.press("KeyE");
+    await new Promise((r) => setTimeout(r, 150));
+    const typed = await pg.evaluate(() => {
+      const id = document.getElementById("target-btn").getAttribute("aria-activedescendant");
+      return { id, text: id ? document.getElementById(id).textContent.trim() : null };
+    });
+    ok(/^e/i.test(typed.text || ""),
+       `typing a letter jumps to that option (${typed.text})`);
+    await pg.keyboard.press("Escape");
+  }
+
   /* The comparison modes are the primary control on the result view, so they
      have to be operable without a pointer: focusable, and Enter must do what a
      tap does. This replaces the chip assertions, which went with the details

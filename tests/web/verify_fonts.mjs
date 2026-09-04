@@ -39,31 +39,45 @@ try {
      "no face failed to parse");
 
   /* Are the brand faces the ones actually painting? The compressor page sets
-     the interface in Geist and its figures in Geist Mono (via the base.css
-     aliases onto the token layer); Bricolage is registered by fonts.css but
-     this page has no display type to spend it on. */
+     the interface in Geist, its figures in Geist Mono, and its wordmark in
+     Fraunces - all three through the base.css aliases onto the token layer.
+
+     This used to check that Bricolage merely PARSED, because the page never
+     painted a glyph of it. It is a stronger check now: the display face is
+     read off the element that renders it, so a face that is shipped, declared
+     and still unused would fail here rather than pass on a technicality. */
   const paints = await pg.evaluate(async () => {
     await document.fonts.ready;
-    /* Bricolage is declared and shipped but this page never paints with it,
-       and browsers only fetch a face on first use - so it is loaded here
-       explicitly, which is exactly the claim worth checking: the file is
-       there and parses when asked for. */
-    await document.fonts.load('600 48px "Bricolage Grotesque"').catch(() => {});
     const check = (family, weight, size) => document.fonts.check(`${weight} ${size}px "${family}"`);
     return {
-      bricolage600: check("Bricolage Grotesque", 600, 48),
+      fraunces600: check("Fraunces", 600, 17),
       geist400: check("Geist", 400, 16),
       geistMono: check("Geist Mono", 500, 14),
       bodyFamily: getComputedStyle(document.body).fontFamily,
       numFamily: getComputedStyle(document.getElementById("queue-count")).fontFamily,
+      brandFamily: getComputedStyle(document.querySelector("#bar .brand")).fontFamily,
+      aboutFamily: getComputedStyle(document.getElementById("about-h")).fontFamily,
     };
   });
   console.log("  paints:", JSON.stringify(paints));
-  ok(paints.bricolage600, "Bricolage Grotesque 600 is available");
+  ok(paints.fraunces600, "Fraunces 600 is available");
   ok(paints.geist400, "Geist 400 is available");
   ok(paints.geistMono, "Geist Mono is available");
   ok(/Geist/.test(paints.bodyFamily), "body resolves to Geist first");
   ok(/Geist Mono/.test(paints.numFamily), "figures resolve to Geist Mono first");
+  /* The display face is used, not merely shipped - the failure this replaces
+     is a 76,888-byte face that was preloaded for months and never drawn. */
+  ok(/Fraunces/.test(paints.brandFamily),
+     `the wordmark resolves to Fraunces first (${paints.brandFamily})`);
+  ok(/Fraunces/.test(paints.aboutFamily),
+     `and so does the about strip's lead heading (${paints.aboutFamily})`);
+  /* Chrome stays on the interface face: h2/h3 are 13px uppercase micro-labels
+     and a soft serif at that size is mush, so the display face must NOT have
+     leaked into them. */
+  const chrome = await pg.evaluate(() =>
+    getComputedStyle(document.getElementById("plan-h")).fontFamily);
+  ok(!/Fraunces/.test(chrome),
+     `region labels stay on the interface face (${chrome})`);
 
   // The ceiling, measured on every rendered element rather than in source.
   const heavy = await pg.evaluate(() => {

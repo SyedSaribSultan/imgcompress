@@ -34,10 +34,13 @@ WEB_SHEETS = ("base.css", "layout.css", "controls.css",
 # them declared. --side-w and --queue-h are the person's own panel sizes
 # (js/panels.js); --split-* is the picture's live rectangle and --clip its
 # derived split, both written by js/compare.js; --bar-h is measured from the
-# real bar by js/main.js.
+# real bar by js/main.js; --picker-max and --picker-wide are the room a dropdown
+# has below and to the right of its button, measured by js/picker.js when the
+# list opens.
 _JS_SET_TOKENS = frozenset({
     "--clip", "--bar-h", "--side-w", "--queue-h",
     "--split-x", "--split-y", "--split-w", "--split-h",
+    "--picker-max", "--picker-wide",
 })
 
 

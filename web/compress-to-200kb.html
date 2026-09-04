@@ -34,11 +34,13 @@
 <!-- The three faces that paint the first screen, fetched alongside the CSS
      rather than after it - without these, the fallback face paints first and
      the page visibly re-sets itself. -->
-<!-- Only the faces this page actually paints with. Bricolage is registered by
-     fonts.css and stays available to anything that asks for it, but nothing on
-     this page sets display type, so preloading it spent 76,888 bytes of the
-     Highest-priority fetch queue ahead of the render-blocking CSS behind it.
-     tests/web/verify_fonts.mjs asserts the face still parses on demand. -->
+<!-- Only the faces this page actually paints with, and only their latin cuts.
+     Fraunces sets the wordmark, which is above the fold on every entry point,
+     so it is preloaded alongside the interface face rather than discovered a
+     stylesheet late; the latin-ext cuts are not, because a page that needs one
+     will ask. This list was 76,888 bytes heavier when it preloaded a face
+     nothing on the page rendered. -->
+<link rel="preload" href="/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/geist-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
 
@@ -57,6 +59,7 @@
 <link rel="modulepreload" href="/js/compare.js">
 <link rel="modulepreload" href="/js/save.js">
 <link rel="modulepreload" href="/js/panels.js">
+<link rel="modulepreload" href="/js/picker.js">
 
 <!-- What this page is, for the machines that catalogue software. A data
      block, never executed, so the CSP's ban on inline EXECUTABLE script

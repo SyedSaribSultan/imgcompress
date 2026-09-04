@@ -24,6 +24,7 @@ import {
   human, parseSize, wordsForQuality, FORMAT_CHOICE_LABEL, LOSSLESS_CAPABLE,
   fmtLabel,
 } from "./format.js";
+import { refreshPickers } from "./picker.js";
 
 const QUALITY_PRESETS = [95, 90, 85, 80, 70];
 
@@ -204,6 +205,11 @@ export function reflectPlan() {
   reflectQualityWords();
   reflectDirty();
   reflectSelectTitles();
+  /* The drawn dropdowns read their words off the selects, and this function is
+     what rebuilds those options and rewrites those values - so it is the one
+     place that has to tell them to look again. Every other writer already ends
+     up here. A no-op when js/picker.js chose not to enhance anything. */
+  refreshPickers();
 }
 
 /* The sidebar is narrow and a collapsed <select> shows one line, so a long

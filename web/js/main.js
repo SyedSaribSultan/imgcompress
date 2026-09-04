@@ -13,6 +13,7 @@
 
 import { $, setText, show, toast, toastAside } from "./dom.js";
 import { bindPanels } from "./panels.js";
+import { bindPickers } from "./picker.js";
 import { state, current, select, isReady, isBusy, totals } from "./state.js";
 import { scheduleRender, renderNow } from "./render.js";
 import { human, splitName } from "./format.js";
@@ -518,6 +519,10 @@ bindTheme();
 bindPanels();
 bindIntake();
 bindPlan();
+/* After bindPlan, which is what fills the destination and format selects: the
+   drawn controls read their options from the real ones, so there have to be
+   options to read. Before the first render for the same reason. */
+bindPickers();
 bindQueue();
 bindStage();
 bindKeys();

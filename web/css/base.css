@@ -77,10 +77,20 @@
      the pointer is coarse or the layout is one-handed. */
   --s-target: var(--oz-target-min);
 
-  /* Two stacks: Geist for the interface, Geist Mono for figures - tabular
-     digits so a column of sizes lines up and stops jittering as it counts. */
+  /* Three stacks: Geist for the interface, Geist Mono for figures - tabular
+     digits so a column of sizes lines up and stops jittering as it counts -
+     and Fraunces where the product says its own name.
+
+     --font-display is defined here rather than taken from the token layer
+     because the layer's --oz-font-display still names Bricolage, and that
+     sheet is vendored and generated upstream: naming the face here is the
+     one place this app is allowed to disagree with it. The fallback is the
+     same system serif stack a soft serif degrades into most gracefully, so a
+     blocked or slow face lands on a serif rather than snapping to the UI
+     sans - the wordmark keeps its voice either way. */
   --font-ui: var(--oz-font-body);
   --font-num: var(--oz-font-mono);
+  --font-display: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
 
   /* Interaction states, straight off the system ramps. Hover and press are
      colour steps, never invented tints. */
@@ -149,6 +159,13 @@ body {
 .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 
 h1, h2, h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+
+/* The one place a display face earns its bytes: type set large enough for its
+   character to read. Fraunces is a soft serif with the wonk axis on, so at
+   13px uppercase - which is what h2 and h3 are in this interface - its quirks
+   become noise and its serifs become mush. It is scoped to the wordmark and to
+   real prose headings, and h2/h3 keep the interface face below. */
+.display { font-family: var(--font-display); letter-spacing: -0.005em; }
 
 /* The faces are cut to wght 400..600 and nothing in this interface renders
    heavier. The user agent styles these at `bold` (700), which would synthesise

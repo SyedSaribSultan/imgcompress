@@ -119,6 +119,141 @@ select {
   background-size: 14px;
 }
 
+/* ------------------------------- the picker -------------------------------
+   The plan's dropdowns, drawn rather than delegated.
+
+   A native <select> hands its open list to the operating system, and no page
+   can style that - so the menu was the one surface in this app wearing someone
+   else's clothes. These classes dress the button and the list in the same
+   vocabulary as everything else: the hard plate of .btn, the app's own line and
+   surface colours, the accent for the current choice.
+
+   The <select> itself has not gone anywhere. js/picker.js keeps it as the model
+   and hides it with .picker-native below; if that module never runs, the rule
+   is inert and the native control is simply visible and working. That is the
+   whole reason the hiding lives in a class rather than in an inline style.
+   --------------------------------------------------------------------------- */
+
+/* Out of sight, out of the accessibility tree, still in the layout's flow at
+   zero size so it stays focusable and label-associable. clip-path rather than
+   display:none, which would make the element unfocusable and break the
+   fallback this component's safety rests on. */
+.picker-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.picker { position: relative; display: flex; min-width: 0; flex: 1; }
+
+/* The closed control. Deliberately the same plate as .btn - same border, same
+   flat shadow, same press travel - because it IS a button now, and a dropdown
+   that looked like a text field while behaving like a button would be lying
+   about which one it is. */
+.picker-btn {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: var(--s-1) calc(var(--s-2) + 20px) var(--s-1) var(--s-2);
+  border: 1px solid var(--c-line);
+  border-radius: var(--radius);
+  background: var(--c-raised) var(--icon-chevron) no-repeat
+              right var(--s-2) center / 14px;
+  color: var(--c-ink);
+  box-shadow: var(--elev-1);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fx) var(--ease-fx),
+    box-shadow var(--dur-fx) var(--ease-fx);
+}
+.picker-btn:hover:not(:disabled) { border-color: var(--c-line-hover); }
+.picker-btn:disabled { cursor: default; opacity: 0.55; }
+/* Open is a state the closed control shows, so the two read as one object
+   rather than as a button with an unrelated card under it. */
+.picker[data-open="1"] .picker-btn { border-color: var(--c-accent); }
+
+/* The value can be longer than the column; it ellipsises rather than widening
+   the sidebar. The full words ride the button's title, and the list itself
+   never truncates - see .picker-opt. */
+.picker-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The list. Absolutely positioned so it can overlap whatever follows, and
+   capped in height so a seven-item destination list scrolls inside itself
+   instead of running off a short window. */
+/* Fixed, not absolute: the sidebar is a scroll container that clips its own
+   overflow, and a menu positioned inside it could never be wider or taller
+   than the column. Fixed takes the list out of that box entirely - so
+   js/picker.js writes its viewport coordinates on every open, and the scroll
+   and resize listeners there close it rather than let it drift. */
+.picker-list {
+  position: fixed;
+  /* At least the button's width, but free to grow to its own content and to
+     the room measured in js/picker.js. The words in this list are the answer to
+     the question - "the same unless you zoom in and compare" - and a menu that
+     wrapped every option to three lines inside a 147px column would be the
+     truncation problem moved rather than solved. */
+  min-width: 100%;
+  width: max-content;
+  max-width: var(--picker-wide, 320px);
+  z-index: 40;
+  /* --picker-max is written by js/picker.js from the room actually available
+     between the button and the edge of the viewport. The 320px is the ceiling
+     it is capped at, and the fallback if the measurement never ran. */
+  max-height: min(var(--picker-max, 320px), 320px);
+  overflow-y: auto;
+  padding: var(--s-1);
+  border: 1px solid var(--c-line-hover);
+  border-radius: var(--radius);
+  background: var(--c-bg);
+  box-shadow: var(--elev-3);
+  /* Overscroll containment: reaching the end of this list must not start
+     scrolling the sidebar behind it. */
+  overscroll-behavior: contain;
+}
+/* Which side it opens on, and where, is measured in js/picker.js and written
+   as real coordinates - there is nothing left for a static rule to assume. */
+
+.picker-opt {
+  padding: var(--s-2);
+  border-radius: var(--radius-sm);
+  color: var(--c-ink);
+  cursor: pointer;
+  /* The list is where the full words live, so an option wraps rather than
+     ellipsising: "the same unless you zoom in and compare" is the answer, and
+     an answer cut off mid-clause is not one. */
+  white-space: normal;
+}
+/* One highlight, driven by the keyboard and the pointer alike, so arrowing and
+   hovering cannot disagree about what is about to be chosen. */
+.picker-opt.is-active { background: var(--c-selected); }
+/* The current choice, which is a different fact from the active one: a mark
+   rather than a fill, so both can show at once without a colour fight. */
+.picker-opt[aria-selected="true"] {
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--c-accent);
+}
+.picker-opt[aria-disabled="true"] {
+  color: var(--c-ink-3);
+  cursor: default;
+}
+.picker-opt[aria-disabled="true"].is-active { background: none; }
+
 /* A labelled row in the plan. The label is the question, the control is the
    answer, and they stay on one line until the column is too narrow to hold
    both - at which point the control drops below its own label rather than
@@ -139,7 +274,13 @@ select {
    intrinsic minimum unless told it may - so "indistinguishable unless you
    compare" propped the whole sidebar open to 497px inside a 375px viewport and
    the page scrolled sideways. */
+/* The .picker wrapper stands in the layout where its <select> used to, so
+   every sizing rule in this file names both. The select is still in the
+   document - hidden, as the model - and a rule that named only it would size
+   nothing once the control is enhanced, which is exactly how the shrink row
+   collapsed to a bare chevron the first time this was tried. */
 .field > select,
+.field > .picker,
 .field > input { flex: 1 1 120px; min-width: 0; }
 
 /* The row that pairs two numbers - a size and its unit, a limit and its edge.
@@ -154,9 +295,11 @@ select {
 }
 /* Wide enough that its shortest option reads whole when selected; the longer
    "never" option may ellipsise, and the sentence under the plan restates it. */
-#shrink-mode { flex: 1 1 auto; min-width: 11ch; }
+#shrink-mode,
+#shrink-field .pair > .picker { flex: 1 1 auto; min-width: 11ch; }
 .field .pair > * { min-width: 0; }
-.field .pair > select { flex: 1; }
+.field .pair > select,
+.field .pair > .picker { flex: 1; }
 /* Wide enough for four digits and the spinner. At the shared 7ch it clipped
    "2560" to "256" plus an arrow, which reads as a different number. */
 .field .pair > input[type="number"] { flex: 0 0 9ch; width: auto; }

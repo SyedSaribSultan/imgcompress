@@ -63,7 +63,8 @@ body {
    level 1 instead of mid-outline - but it keeps the lead-heading size. The
    double id outweighs the `#about h2` FAQ reset below. */
 #about #about-h {
-  font-size: 20px;
+  font-family: var(--font-display);
+  font-size: 22px;
   line-height: 1.35;
   color: var(--c-ink);
   letter-spacing: 0;
@@ -74,7 +75,8 @@ body {
    Reset from the 13px region-label style h2 normally carries, because these
    are prose headings, not chrome. */
 #about h2 {
-  font-size: 16px;
+  font-family: var(--font-display);
+  font-size: 17px;
   line-height: 1.4;
   color: var(--c-ink);
   letter-spacing: 0;
@@ -129,14 +131,21 @@ body {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  font-weight: 600;
   color: var(--c-ink);
   text-decoration: none;
-  font: inherit;
   background: none;
   border: 0;
   padding: 0;
   cursor: pointer;
+  /* The wordmark is the one piece of type on this page that is the product
+     rather than about it, so it gets the display face. Set after the reset
+     below rather than through `font: inherit`, which would take the shorthand
+     and put the interface face back. 17px because a serif at the sans's 16
+     reads a step smaller than it measures. */
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 /* Batch progress, as a hairline along the bottom edge of the bar. It belongs to
