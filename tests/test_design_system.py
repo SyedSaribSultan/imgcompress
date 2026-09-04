@@ -15,15 +15,30 @@ one nobody can change everywhere at once.
 from __future__ import annotations
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 WEB = ROOT / "web"
 WEB_CSS_DIR = WEB / "css"
 
+from tools import gen_tokens_subset as gen_tokens  # noqa: E402
+
 WEB_SHEETS = ("base.css", "layout.css", "controls.css",
               "queue.css", "compare.css")
+
+# Custom properties written by JavaScript rather than defined in a sheet, so
+# neither the base-defines rule nor the palette prune should expect to find
+# them declared. --side-w and --queue-h are the person's own panel sizes
+# (js/panels.js); --split-* is the picture's live rectangle and --clip its
+# derived split, both written by js/compare.js; --bar-h is measured from the
+# real bar by js/main.js.
+_JS_SET_TOKENS = frozenset({
+    "--clip", "--bar-h", "--side-w", "--queue-h",
+    "--split-x", "--split-y", "--split-w", "--split-h",
+})
 
 
 def _read(path: Path) -> str:
@@ -81,8 +96,7 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
             # by js/panels.js onto <html>. --split-* is the picture's own live
             # rectangle, written onto the range by js/compare.js so the caliper
             # cannot leave the image.
-            used -= {"--clip", "--bar-h", "--side-w", "--queue-h",
-                     "--split-x", "--split-y", "--split-w", "--split-h"}
+            used -= _JS_SET_TOKENS
             with self.subTest(sheet=name):
                 self.assertEqual(sorted(used - defined), [],
                                  f"{name} uses tokens base.css does not define")
@@ -110,6 +124,47 @@ class TheBrowserAppHasOnePlaceForValues(unittest.TestCase):
         self.assertEqual(
             re.findall(r"""\sstyle\s*=\s*["'][^"']*["']""", html), [],
             "index.html carries an inline style attribute")
+
+
+class TheTokenSheetIsGenerated(unittest.TestCase):
+    """web/heyoz-tokens.css is pruned from the vendored palette, not hand-cut.
+
+    The vendored sheet carries an entire design system; this app reaches a
+    small fraction of it, and the rest is dead weight on a render-blocking
+    resource. Cutting it by hand would work exactly once - the next re-vendor
+    would restore it silently - so the cut is a generator and this is what
+    stops it rotting.
+    """
+
+    def test_the_shipped_sheet_matches_the_generator(self):
+        self.assertEqual(
+            gen_tokens.main(["--check"]), 0,
+            "web/heyoz-tokens.css is stale. Run "
+            "`python tools/gen_tokens_subset.py` and commit the result.")
+
+    def test_the_full_palette_is_kept_for_regeneration(self):
+        self.assertTrue(
+            gen_tokens.SOURCE.is_file(),
+            f"{gen_tokens.SOURCE.relative_to(ROOT)} is missing - the pruned "
+            "sheet cannot be rebuilt or re-vendored without it.")
+
+    def test_the_prune_keeps_every_token_the_app_reads(self):
+        """The real invariant: nothing the app reaches may be cut.
+
+        A generator that pruned too eagerly would leave a var() resolving to
+        nothing, which CSS reports by silently dropping the declaration - no
+        error, just an unstyled control. So the check is direct: every token
+        named anywhere outside the sheet is defined inside the shipped one.
+        """
+        shipped = _read(WEB / "heyoz-tokens.css")
+        defined = set(re.findall(r"^\s*(--[a-z0-9-]+)\s*:", shipped, re.M))
+        # base.css is the app's own vocabulary and defines its own names; the
+        # palette only has to satisfy what is left.
+        own = set(re.findall(r"^\s*(--[a-z0-9-]+)\s*:", _web_css("base.css"), re.M))
+        missing = sorted(gen_tokens.used_tokens() - defined - own - _JS_SET_TOKENS)
+        self.assertEqual(
+            missing, [],
+            "the pruned sheet drops tokens the app still asks for")
 
 
 class MotionIsTokenised(unittest.TestCase):

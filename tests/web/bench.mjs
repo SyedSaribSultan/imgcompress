@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer, { CHROME } from "./resolve_puppeteer.mjs";
-import { uploadAndStart } from "./drive.mjs";
+import { uploadAndStart, uploadAndFinish } from "./drive.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const BENCH = path.join(here, process.env.BENCH_DIR || "bench");
@@ -57,10 +57,19 @@ try {
    * a green gate over a configuration that does not exist. If a destination is
    * ever given a different frame again, fix the destination or snapshot it
    * separately - do not hold it still here. */
-  // Warm the codecs first so the measurement is steady-state, not first-load.
-  await pg.evaluate(() => addSamples());
-  await pg.waitForFunction(() => state.items.length === 2 &&
-    state.items.every((i) => ["done", "saved", "failed"].includes(i.status)), { timeout: 300000 });
+  /* Warm the codecs first so the measurement is steady-state, not first-load.
+   *
+   * This used to call addSamples(), a demo-file loader that no longer exists
+   * anywhere in the app - so this line threw ReferenceError and took the whole
+   * gate with it. It is warmed with a real fixture through the same seam every
+   * other harness uses instead of a bespoke entry point, which is why the
+   * replacement cannot rot the same way: drive.mjs is exercised by e2e and
+   * every probe, so a change that breaks it cannot reach main quietly.
+   *
+   * One small fixture, not two demo files: the point is to pay the codec
+   * download and compile once, and a 600x600 PNG pays it as completely as a
+   * 12MP photograph would while costing seconds rather than a minute. */
+  await uploadAndFinish(pg, [path.join(here, "fixtures", "logo.png")], 300_000);
   await pg.evaluate(() => { document.getElementById("clear-btn").click(); });
   await new Promise((r) => setTimeout(r, 300));
 
@@ -87,8 +96,17 @@ try {
     perf: i.perf || null,
   })));
 
+  /* The pool the run actually used, read by the name the app actually exports.
+     The previous version asked `typeof pool` inside the page, which was right
+     when the app put pool on the window and silently became null the moment
+     "Reset the browser UI to one page" moved it behind window.imgc - the
+     typeof guard turned the missing global into a null rather than an error,
+     so the reading degraded without anything going red. Measured against a
+     live page: `typeof pool` is "undefined" and window.imgc.pool.length is
+     real, which is why the committed baselines from before that refactor carry
+     a pool size and every run since would have carried null. */
   const pool = await pg.evaluate(() => ({
-    poolSize: typeof pool !== "undefined" ? pool.length : null,
+    poolSize: window.imgc?.pool?.length ?? null,
     cores: navigator.hardwareConcurrency,
   }));
 
