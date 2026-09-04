@@ -90,6 +90,50 @@ try {
   console.log(" ", JSON.stringify(weird));
   ok(weird.max === 4,
      `memory wins over cores, which is the direction that protects the tab (${weird.max})`);
+
+  /* ---- warming the pool costs nothing only when the cache can serve it ----
+   * Every worker compiles its own codecs, so warming just pool[0] leaves the
+   * rest compiling on their first job. But warming them all on a FIRST visit
+   * is a worse trade than the compile it avoids: workers created before the
+   * service worker takes control are uncontrolled clients whose importScripts
+   * fetches bypass the fetch handler, so six warmed workers meant twelve real
+   * downloads of the same four files. Measured, not assumed - half the
+   * responses reported fromServiceWorker false. */
+  console.log("\n=== warming: first visit against a return visit ===");
+  {
+    /* A fresh browser context, because the five subtests above already
+       installed the service worker in this one - a "first visit" measured
+       after them is not one, and the check silently passed on 24 cached
+       responses the first time it was written. */
+    const ctx = await b.createBrowserContext();
+    const pg = await ctx.newPage();
+    let wire = 0, cached = 0;
+    pg.on("response", (r) => {
+      if (!/\/vendor\/.*\.wasm/.test(r.url())) return;
+      wire++;
+      if (r.fromServiceWorker()) cached++;
+    });
+    await pg.goto("http://127.0.0.1:8307/", { waitUntil: "networkidle0" });
+    await new Promise((r) => setTimeout(r, 6000));
+    const cold = { wire, cached, pool: await pg.evaluate(() => imgc.pool.length) };
+    console.log("  first visit:", JSON.stringify(cold));
+    ok(cold.pool === 1,
+       `a first visit warms one worker, not the whole pool (${cold.pool})`);
+    ok(cold.wire <= 4,
+       `so each codec is downloaded once, not once per worker (${cold.wire})`);
+
+    wire = 0; cached = 0;
+    await pg.reload({ waitUntil: "networkidle0" });
+    await new Promise((r) => setTimeout(r, 6000));
+    const warm = { wire, cached, pool: await pg.evaluate(() => imgc.pool.length) };
+    console.log("  return visit:", JSON.stringify(warm));
+    ok(warm.pool > 1, `a return visit warms the whole pool (${warm.pool})`);
+    ok(warm.wire > 0 && warm.cached === warm.wire,
+       `and every byte of it comes from the cache (${warm.cached}/${warm.wire})`);
+    await pg.close();
+    await ctx.close();
+  }
+
 } finally { await b.close(); server.kill(); }
 
 console.log(bad === 0 ? "\nOK — the pool is sized from what the machine says, cautiously"

@@ -131,8 +131,28 @@ export function startEngine() {
  *  service worker), so the warm reads the cache instead of racing the install
  *  download. Safe to call more than once - the worker caches each load. */
 export function warmCodecs() {
-  ensurePool(1);
-  pool[0].w.postMessage({ type: "warm" });
+  /* Every worker, not just the first - but only where that is free.
+   *
+   * A codec is compiled per worker: a WebAssembly.Module does not cross the
+   * thread boundary by being cached on one side, so warming only pool[0] left
+   * every other worker compiling on its first job, exactly when a batch was
+   * trying to start.
+   *
+   * Warming all of them is only cheap if the bytes come from the cache, and on
+   * a FIRST visit they do not. Workers created before the service worker takes
+   * control are uncontrolled clients, and their importScripts fetches bypass
+   * the fetch handler entirely - measured, fromServiceWorker was false for
+   * exactly half of them, so warming six workers cold meant twelve real
+   * downloads of the same four files. That is a worse trade than the compile
+   * it was avoiding.
+   *
+   * So a controlled page warms the pool, and an uncontrolled one warms the one
+   * worker it needs to answer the first drop. A first visit is precisely the
+   * visit where the download has not been paid yet; a return visit is where
+   * the compile is all that is left, and that is the one this helps. */
+  const controlled = navigator.serviceWorker?.controller != null;
+  ensurePool(controlled ? POOL_MAX : 1);
+  for (const slot of pool) slot.w.postMessage({ type: "warm" });
 }
 
 /** The AVIF encoder, which is bigger than everything else put together and is
@@ -141,8 +161,12 @@ export function warmCodecs() {
  *  file in the app is fetched when nothing is competing for the network. The
  *  worker ignores it on a weak device. */
 export function warmAvif() {
-  ensurePool(1);
-  pool[0].w.postMessage({ type: "warm-avif" });
+  /* Same rule, and it matters more here: avif_enc.wasm is 1.1 MB over the
+     wire, so warming an uncontrolled pool would multiply the largest download
+     in the app by the number of workers. */
+  const controlled = navigator.serviceWorker?.controller != null;
+  ensurePool(controlled ? POOL_MAX : 1);
+  for (const slot of pool) slot.w.postMessage({ type: "warm-avif" });
 }
 
 /** Mark the start of a run. Adding files to a run already in flight extends it
