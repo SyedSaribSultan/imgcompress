@@ -42,9 +42,27 @@ export const pool = [];
 
 let batchActive = false;
 let onBatchEnd = null;
+/* How many file reads are in flight, and whether a dispatch is already walking
+ * the queue. Both module-level on purpose - see dispatch. */
+let reading = 0;
+let dispatching = false;
+let dispatchAgain = false;
 
 /** Called when a run finishes with nothing left in flight. */
 export function setBatchEndHandler(fn) { onBatchEnd = fn; }
+
+/* Test seam. The browser harness asserts that the read window actually bounds
+ * how much of a batch is resident at once - a regression to reading every file
+ * up front would not fail any other check, it would just quietly make a
+ * 200-file drop a gigabyte of ArrayBuffer. Counting items with a bytesPromise
+ * from outside does NOT measure this: the promise stays set after it resolves,
+ * until the post loop transfers the buffer and clears it. */
+export const readingCount = () => reading;
+/* The high-water mark, because sampling from outside cannot catch a read that
+ * starts and finishes between two polls - and a peak of zero from a poller
+ * that simply kept missing is a gate that measured nothing. */
+let readingPeak = 0;
+export const readingPeakSeen = () => readingPeak;
 
 function makeWorker(index) {
   const w = new Worker("/worker.js");
@@ -105,19 +123,73 @@ export function holdWork(on) {
   if (!held) dispatch();
 }
 
+/* One walk of the queue at a time.
+ *
+ * dispatch awaits mid-loop and is called from ten places - a worker finishing,
+ * a settings change, a removal, and now every completed file read. Two walks
+ * overlapping is not a theoretical race: both see the same queued items, both
+ * await the same bytesPromise, and both post it - and the second postMessage
+ * throws DataCloneError, because the first transferred the buffer and detached
+ * it. Observed, on a 24-file batch, the first time the read window was bounded.
+ *
+ * A call that arrives mid-walk sets a flag instead of running, and the walk in
+ * progress goes round again when it finishes. That way nothing is dropped and
+ * nothing is done twice. */
 export async function dispatch() {
   if (held) return;
+  if (dispatching) { dispatchAgain = true; return; }
+  dispatching = true;
+  try {
+    await walkQueue();
+  } finally {
+    dispatching = false;
+  }
+  if (dispatchAgain) { dispatchAgain = false; dispatch(); }
+}
+
+async function walkQueue() {
   const queued = state.items.filter((i) => i.status === "queued");
   if (!queued.length) return;
   ensurePool(queued.length);
 
-  /* Start every read at once. This loop used to await each file's bytes before
-     handing the next item to a worker, so with a dozen files the last worker sat
-     idle through eleven sequential reads before it got any work. */
+  /* Read ahead, but only far enough to keep the pool fed.
+   *
+   * This started every read at once, which fixed a real bug - it used to await
+   * each file's bytes before handing the next item to a worker, so the last
+   * worker sat idle through eleven sequential reads. But "all of them" made
+   * peak memory a function of how many files were dropped rather than of what
+   * the machine can chew on: two hundred five-megabyte photographs is a
+   * gigabyte of ArrayBuffer resident before a single one has been encoded, and
+   * on a phone that is the tab.
+   *
+   * The window is the pool plus two: every worker has its bytes, and two more
+   * are in flight so a slot never waits on a disk read. Beyond that the reads
+   * are simply not started yet - each completion tops the window up, so this
+   * throttles memory without throttling throughput.
+   *
+   * `reading` is a module-level count rather than a local one because dispatch
+   * is re-entrant: it awaits mid-loop and is called from nine places, so two
+   * overlapping runs each keeping their own tally would each open a full
+   * window. Decrementing in the settle handler rather than after the await is
+   * the same reasoning - the count has to fall when the read finishes, not
+   * when some particular caller gets around to noticing. */
+  const window = pool.length + 2;
   for (const item of queued) {
-    if (!item.bytesPromise) {
-      item.bytesPromise = item.file.arrayBuffer().catch(() => null);
-    }
+    if (reading >= window) break;
+    if (item.bytesPromise) continue;
+    reading += 1;
+    if (reading > readingPeak) readingPeak = reading;
+    item.bytesPromise = item.file.arrayBuffer()
+      .catch(() => null)
+      .finally(() => {
+        reading -= 1;
+        /* A slot freed by a finished read is a slot the next file can use.
+           Without this the window would drain to zero and stop, because the
+           only other thing that calls dispatch is a worker finishing. The
+           guard in dispatch is what keeps this from re-entering the walk that
+           is very likely still in progress above. */
+        dispatch();
+      });
   }
 
   for (const item of queued) {
@@ -126,7 +198,7 @@ export async function dispatch() {
     let slot = item.slot != null && pool[item.slot] && !pool[item.slot].busy
       ? pool[item.slot] : null;
     if (!slot) slot = pool.find((s) => !s.busy);
-    if (!slot) return;
+    if (!slot) return;   // every worker is busy; a finishing one calls back
 
     slot.busy = true;
     slot.itemId = item.id;
@@ -142,6 +214,15 @@ export async function dispatch() {
     item.elapsedMs = null;
     scheduleRender("queue", item.id);
 
+    /* Its read may not have started yet - the window above is bounded, so a
+       queued item can reach this loop with nothing pending. Leave it queued;
+       the read that frees a window slot calls dispatch again. */
+    if (!item.bytesPromise) {
+      item.status = "queued";
+      item.startedAt = null;
+      slot.busy = false; slot.itemId = null;
+      continue;
+    }
     const buffer = await item.bytesPromise;
     item.bytesPromise = null;   // transferred below; a second read must re-open
     if (!buffer) {
